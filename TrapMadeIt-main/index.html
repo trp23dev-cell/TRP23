@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TRAP MADE IT - The Come Up</title>
+</head>
+<body>
+<noscript><div style="position:fixed;inset:0;background:#0a0908;color:#e8e0d0;display:flex;align-items:center;justify-content:center;text-align:center;padding:30px;font-family:Georgia,serif;font-size:18px;line-height:1.8;z-index:999">
+You're viewing this in an email preview, which can't run the game.<br>
+<b>Download the file, then open it in Chrome, Safari or Edge.</b></div></noscript>
+
+<!-- LOADING -->
+<div id="loader">
+  <div class="bg"></div><div class="shade"></div><div class="grain"></div>
+  <div class="l-top">
+    <div class="chap">Chapter 1</div>
+    <div class="logo display">TRAP</div>
+    <div class="sub">Made It</div>
+  </div>
+  <div class="l-bottom">
+    <div class="headline" id="loadHeadline">Build Your Empire</div>
+    <div class="tag" id="loadTag">Hustle. Upgrade. Take over.<br>Every choice shapes your path.</div>
+    <div class="barwrap">
+      <div class="bartrack"><div class="barfill" id="loadBar"></div></div>
+      <div class="barmeta"><span>LOADING...</span><span id="loadPct">0%</span></div>
+    </div>
+    <button id="enterBtn">Enter the Trap</button>
+    <div class="l-mono display">T</div>
+  </div>
+</div>
+
+<!-- HUD -->
+<div id="hud">
+  <div class="hud-top">
+    <div class="brand display"><div class="b1">TRAP<span>.</span></div><div class="b2" id="levelLabel" style="font-family:'Barlow Condensed'">Made It</div></div>
+    <div class="coins">
+      <div class="coin-ico">T</div>
+      <div><div class="amt" id="coinAmt">1,600</div><div class="lbl">Trap Coins</div></div>
+    </div>
+  </div>
+  <div id="crosshair"></div>
+  <div id="hoverTag"></div>
+  <div id="toast"></div>
+  <div class="hud-bottom">
+    <div class="objective">
+      <div class="o1">Objective</div>
+      <div class="o2" id="objText">Explore the house</div>
+      <div class="o3" id="stashLine">STASH: <span class="hid">STILL HIDDEN</span></div>
+      <div class="progressline">
+        <div class="pl-meta"><span>The Come Up</span><span id="plPct">0%</span></div>
+        <div class="pl-track"><div class="pl-fill" id="plFill"></div></div>
+      </div>
+    </div>
+  </div>
+  <div class="controls-hint" id="desktopControlsHint">
+    <b>W A S D</b> - move<br><b>Click</b> - activate mouse look<br><b>Esc</b> - release cursor
+  </div>
+  <div class="display-settings" id="displaySettings">
+    <button id="displayCog" class="display-cog" aria-label="Display settings" title="Display settings">⚙</button>
+    <div class="display-panel" id="displayPanel">
+      <div class="dp-title">Display</div>
+      <label for="qualitySelect">Quality</label>
+      <select id="qualitySelect">
+        <option value="low">Low</option>
+        <option value="medium">Medium</option>
+        <option value="high">High</option>
+      </select>
+      <label for="brightnessSlider">Brightness <span id="brightnessValue">130%</span></label>
+      <input id="brightnessSlider" type="range" min="80" max="260" step="1" value="130" />
+      <label for="bloomSlider">Glow <span id="bloomValue">25%</span></label>
+      <input id="bloomSlider" type="range" min="0" max="60" step="1" value="25" />
+      <button id="displayResetBtn" class="display-reset-btn">Reset Display</button>
+    </div>
+  </div>
+</div>
+
+<!-- EVIDENCE / DRAWING BOARD -->
+<div class="panel-wrap" id="boardPanel">
+  <div class="panel">
+    <div class="panel-head">
+      <div class="ph-title"><span class="ph-num">02</span><span class="ph-name display">The Drawing Board</span></div>
+      <button class="xbtn" data-close="boardPanel">✕</button>
+    </div>
+    <div class="missions" id="missionList"></div>
+    <div class="board-foot type">Clear the board. Find the stash. Level up.<span id="codesFoot"></span></div>
+  </div>
+</div>
+
+<div id="fader"></div>
+<div id="levelIntro">
+  <div class="ln" id="liNum">LEVEL 01</div>
+  <div class="lt" id="liName">THE COME UP</div>
+  <div class="ls" id="liSub">Every empire starts at the bottom.</div>
+</div>
+
+<!-- STASH FOUND -->
+<div class="panel-wrap" id="stashPanel">
+  <div class="panel" style="width:auto">
+    <div class="lock-inner">
+      <div class="li-icon">📦</div>
+      <h2 class="display">Stash Found</h2>
+      <p id="stashText"></p>
+      <div class="req" id="stashCode"></div>
+      <p style="margin-top:10px;font-size:11px">Screenshot the code — it's your real-world deal for this level. One per player.</p>
+      <div style="margin-top:22px"><button class="xbtn" data-close="stashPanel" style="width:auto;padding:0 26px;height:40px;letter-spacing:.3em;font-family:'Barlow Condensed'">TAKE IT</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- FINALE / START YOUR LABEL -->
+<div class="panel-wrap" id="finalePanel">
+  <div class="panel" style="width:auto;max-width:640px">
+    <div class="lock-inner">
+      <div class="li-icon">🏷️</div>
+      <h2 class="display">Start Your Label</h2>
+      <p id="finaleText">From a squat kitchen to your own warehouse. This is where Chapter 2 begins — design your own piece from TRAP templates, put your name on the tag, and the best community design becomes a real drop. Coming soon.</p>
+      <div class="req">YOU MADE IT — THE WAREHOUSE IS YOURS</div>
+      <div style="margin-top:22px"><button class="xbtn" data-close="finalePanel" style="width:auto;padding:0 26px;height:40px;letter-spacing:.3em;font-family:'Barlow Condensed'">CLOSE</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- SHOP / 3D PRODUCT VIEWER -->
+<div class="panel-wrap" id="shopPanel">
+  <div class="panel">
+    <div class="panel-head">
+      <div class="ph-title"><span class="ph-num">03</span><span class="ph-name display" id="shopTitle">Item Analysis</span></div>
+      <button class="xbtn" data-close="shopPanel">✕</button>
+    </div>
+    <div class="shop-body">
+      <div id="viewerCanvasWrap">
+        <div class="variant-row" id="variantRow"></div>
+        <div class="drag-hint">Drag to inspect — 360°</div>
+      </div>
+      <div class="shop-info">
+        <div class="si-case type">Case file // limited drop</div>
+        <div class="si-name display" id="siName">Chain Detail Set</div>
+        <div class="si-color" id="siColor">Black</div>
+        <div class="si-desc" id="siDesc"></div>
+        <div class="valuation">
+          <div class="v-title">Street Intelligence</div>
+          <div class="v-row"><span>Street value</span><b id="vStreet">£850</b></div>
+          <div class="v-row"><span>Brand value</span><b id="vBrand">£620</b></div>
+          <div class="v-row"><span>Demand level</span><b id="vDemand">HIGH</b></div>
+        </div>
+        <div class="price-row"><span class="p-coins" id="siPrice">1,250</span><span class="p-lbl">Trap Coins</span></div>
+        <button class="buy-btn" id="buyBtn">Buy Now</button>
+        <div class="owned-flag" id="ownedFlag">✓ In your closet</div>
+        <div class="topup">Short on coins? <a id="topupLink">Top up</a> — £10 = 1,000 Trap Coins. Every real purchase earns coins back.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- LOCKED DOOR / WAREHOUSE -->
+<div class="panel-wrap" id="doorPanel">
+  <div class="panel" style="width:auto">
+    <div class="lock-inner">
+      <div class="li-icon" id="doorIcon">🔒</div>
+      <h2 class="display" id="doorTitle">The Flats</h2>
+      <p id="doorText">The door to Flat 13 won't budge. Word on the street: only players who cleared the drawing board get through to the estate. Finish your missions — buy your way up, build your collection, earn respect.</p>
+      <div class="req" id="doorReq">Requires: all missions cleared</div>
+      <div style="margin-top:26px"><button class="xbtn" data-close="doorPanel" style="width:auto;padding:0 26px;height:40px;letter-spacing:.3em;font-family:'Barlow Condensed'">CLOSE</button></div>
+    </div>
+  </div>
+</div>
+
+
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>
