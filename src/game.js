@@ -907,11 +907,60 @@ function buildGarment(product,height=1.5,lit=true){
   bk.rotation.y=Math.PI; bk.position.z=-.015; fr.position.z=.015;
   g.add(fr,bk); return g;
 }
+// ---- 3D mannequin: drapes the real garment photos over a body-shaped form ----
+// Vertical profile of a standing body, t=0 feet .. t=1 collar. Front + back
+// shells share this contour so a flat product photo reads as a fitted garment.
+function _profile(stops,t){
+  if(t<=stops[0][0]) return stops[0][1];
+  for(let i=1;i<stops.length;i++){
+    if(t<=stops[i][0]){
+      const [t0,v0]=stops[i-1],[t1,v1]=stops[i];
+      return v0+(v1-v0)*((t-t0)/((t1-t0)||1));
+    }
+  }
+  return stops[stops.length-1][1];
+}
+const _bodyWidth=[[0,.42],[.12,.40],[.30,.54],[.42,.80],[.50,.84],[.58,.72],[.70,.94],[.82,1.0],[.90,.56],[1,.32]];
+const _bodyDepth=[[0,.13],[.30,.22],[.50,.30],[.66,.34],[.82,.26],[.92,.16],[1,.10]];
+function mannequinBodyGeo(w,h){
+  const geo=new THREE.PlaneGeometry(w,h,18,30);
+  const pos=geo.attributes.position;
+  for(let i=0;i<pos.count;i++){
+    const x=pos.getX(i), y=pos.getY(i);
+    const t=(y/h)+.5;                 // 0 bottom .. 1 top
+    const u=(x/w)+.5;                 // 0..1 across
+    pos.setX(i, x*_profile(_bodyWidth,t));                       // body silhouette
+    pos.setZ(i, _profile(_bodyDepth,t)*w*Math.cos((u-.5)*Math.PI)); // rounded chest/belly
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
+function buildMannequin(product,height=1.6,lit=true){
+  const g=new THREE.Group();
+  const w=height*product.ar;
+  const Mat=lit?THREE.MeshStandardMaterial:THREE.MeshBasicMaterial;
+  const geo=mannequinBodyGeo(w,height);
+  const mf=new Mat({map:garmentTex(product.design,'front'),side:THREE.DoubleSide});
+  const mb=new Mat({map:garmentTex(product.design,'back'),side:THREE.DoubleSide});
+  if(lit){ mf.roughness=mb.roughness=.9; mf.metalness=mb.metalness=0; }
+  const fr=new THREE.Mesh(geo,mf);
+  const bk=new THREE.Mesh(geo.clone(),mb); bk.rotation.y=Math.PI;
+  g.add(fr,bk);
+  // Neutral mannequin head + neck emerging from the collar.
+  const skin=lit?new THREE.MeshStandardMaterial({color:0x241f18,roughness:.45,metalness:.2})
+                :new THREE.MeshBasicMaterial({color:0x2a251d});
+  const neck=new THREE.Mesh(new THREE.CylinderGeometry(.055,.075,.14,14),skin);
+  neck.position.y=height*.47;
+  const head=new THREE.Mesh(new THREE.SphereGeometry(.115,20,16),skin);
+  head.scale.set(1,1.28,.92); head.position.y=height*.58;
+  g.add(neck,head);
+  return g;
+}
 function heroDisplay(x,z,pi=0,h=1.7){
   const ped=new THREE.Mesh(new THREE.CylinderGeometry(.55,.65,.18,24),
     new THREE.MeshStandardMaterial({color:0x241d14,roughness:.5,metalness:.3}));
   ped.position.set(x,.09,z); ped.receiveShadow=true; G(ped);
-  heroSpinRef=buildGarment(PRODUCTS[pi],h,true);
+  heroSpinRef=buildMannequin(PRODUCTS[pi],h,true);
   heroSpinRef.position.set(x,.18+h/2,z); G(heroSpinRef);
   const hit=new THREE.Mesh(new THREE.CylinderGeometry(.65,.65,h+.3,10),
     new THREE.MeshBasicMaterial({visible:false}));
@@ -1646,7 +1695,7 @@ function moveStep(dt){
 // ==================== SHOP / PRODUCT VIEWER ====================
 const vScene=new THREE.Scene(); vScene.background=null;
 const vCam=new THREE.PerspectiveCamera(38,1,.1,50);
-vCam.position.set(0,.95,2.35); vCam.lookAt(0,.9,0);
+vCam.position.set(0,1.0,2.7); vCam.lookAt(0,.92,0);
 const vRenderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
 $('#viewerCanvasWrap').appendChild(vRenderer.domElement);
 vScene.add(new THREE.AmbientLight(0xffffff,.55));
@@ -1659,8 +1708,8 @@ let vSuit=null,vSpin=0,vDrag=false,vlx=0,vAuto=true,vTurns=0,currentProduct=0;
 function loadViewerSuit(pi){
   if(vSuit) vScene.remove(vSuit);
   const p=PRODUCTS[pi];
-  vSuit=buildGarment(p,1.6,false);
-  vSuit.position.y=.92; vScene.add(vSuit);
+  vSuit=buildMannequin(p,1.5,true);   // 3D mannequin wearing the real garment photos
+  vSuit.position.y=.83; vScene.add(vSuit);
   vSpin=0; vTurns=0; vAuto=true;
 }
 const wrap=$('#viewerCanvasWrap');
