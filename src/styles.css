@@ -262,6 +262,40 @@ src:url(data:font/woff2;base64,d09GMgABAAAAAFesABEAAAAA00QAAFdIAAEAAAAAAAAAAAAAA
   .bank-status.ok{color:var(--gold)}
   .bank-status.err{color:#c98a8a}
 
+  /* account / auth */
+  .account-panel{width:min(520px,94vw)}
+  .account-body{padding:22px 26px 26px;overflow-y:auto;display:flex;flex-direction:column;gap:16px}
+  .auth-tabs{display:flex;gap:8px;border-bottom:1px solid var(--line)}
+  .auth-tab{background:none;border:none;border-bottom:2px solid transparent;color:var(--bone-dim);
+    font-family:'Barlow Condensed';font-size:16px;letter-spacing:.2em;text-transform:uppercase;padding:8px 14px;cursor:pointer}
+  .auth-tab.active{color:var(--gold);border-bottom-color:var(--gold)}
+  .auth-form{display:flex;flex-direction:column;gap:12px}
+  .auth-form label{display:flex;flex-direction:column;gap:6px;font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--bone-dim)}
+  .auth-form input[type="text"],.auth-form input[type="email"],.auth-form input[type="tel"],.auth-form input[type="password"]{
+    background:rgba(10,9,8,.6);border:1px solid var(--line);color:var(--bone);padding:11px 12px;
+    font-family:'Barlow Condensed';font-size:15px;letter-spacing:.04em}
+  .auth-form input:focus{outline:none;border-color:var(--gold)}
+  .auth-check{flex-direction:row!important;align-items:center;gap:9px!important;text-transform:none!important;letter-spacing:.06em!important;font-size:12px!important;color:var(--bone-dim)}
+  .auth-check input{accent-color:var(--gold)}
+  .auth-submit{background:linear-gradient(180deg,#d6ad74,#a9834f);border:none;color:#171208;font-family:'Barlow Condensed';
+    font-weight:700;font-size:16px;letter-spacing:.3em;text-transform:uppercase;padding:13px;cursor:pointer;margin-top:4px}
+  .auth-submit:hover{filter:brightness(1.1)}
+  .auth-submit:disabled{filter:grayscale(1) brightness(.6);cursor:not-allowed}
+  .auth-msg{min-height:16px;font-size:12px;letter-spacing:.06em;color:var(--bone-dim)}
+  .auth-msg.err{color:#c98a8a}
+  .auth-msg.ok{color:var(--gold)}
+  .acct-row{display:flex;justify-content:space-between;align-items:baseline;padding:9px 0;border-bottom:1px solid var(--line);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--bone-dim)}
+  .acct-row b{color:var(--bone);font-family:'Barlow Condensed';font-size:16px;letter-spacing:.02em}
+  .acct-actions{display:flex;gap:10px;margin-top:6px}
+  .mini-btn.danger{border-color:#8a4b4b;color:#d29a9a}
+  .mini-btn.danger:hover{border-color:#c98a8a;background:rgba(201,138,138,.08)}
+  .twofa-setup{border:1px solid var(--gold-dim);padding:16px;display:flex;flex-direction:column;gap:12px;margin-top:6px}
+  .twofa-title{font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:var(--gold)}
+  .twofa-help{font-family:'Special Elite';font-size:12px;line-height:1.7;color:var(--bone-dim)}
+  .twofa-secret{font-family:'Barlow Condensed';font-size:19px;letter-spacing:.18em;color:var(--bone);word-break:break-all;
+    background:rgba(10,9,8,.6);border:1px solid var(--line);padding:11px 12px;user-select:all}
+  #accountChip{max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
   /* locked door modal */
   .lock-inner{padding:44px 40px;text-align:center;max-width:560px}
   .lock-inner .li-icon{font-size:44px;color:var(--gold)}

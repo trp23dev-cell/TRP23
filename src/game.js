@@ -24,6 +24,13 @@ import {
   bankDeposit,
   bankWithdraw,
   bankTransfer,
+  registerAccount,
+  loginAccount,
+  logoutAccount,
+  getMe,
+  setup2fa,
+  enable2fa,
+  disable2fa,
 } from "./data/playerStore";
 // ---- compatibility guard: fail loudly, not silently ----
 function __fatal(msg){
@@ -236,9 +243,27 @@ const state={ coins:1600, owned:[], level:0, walked:0, inspected:false,
 let playerId=getOrCreatePlayerId();
 let progressHydrated=false;
 let persistTimer=null;
+let account=null; // current player account (null/guest until signed in)
 
 function queuePlayerEvent(type,payload={}){
   trackPlayerEvent(playerId,type,payload).catch(()=>{});
+}
+
+// Map a server profile onto local game state. Resets first so switching
+// accounts (login/logout) never leaks the previous player's progress.
+function applyProfileToState(profile){
+  LEVELS.forEach(l=>l.missions.forEach(m=>{ m.done=false; }));
+  state.coins = typeof profile.wallet?.coins==='number' ? profile.wallet.coins : 1600;
+  const ownedIds = Array.isArray(profile.inventory?.ownedDropIds) ? new Set(profile.inventory.ownedDropIds) : new Set();
+  state.owned = PRODUCTS.filter(q=>ownedIds.has(q.cmsDropId||q.id)).map(q=>q.id);
+  state.level = typeof profile.progress?.currentLevel==='number' ? Math.max(0,Math.min(LEVELS.length-1,profile.progress.currentLevel)) : 0;
+  state.walked = typeof profile.progress?.walked==='number' ? profile.progress.walked : 0;
+  state.inspected = !!profile.progress?.inspected;
+  state.viewed = new Set(Array.isArray(profile.progress?.viewed) ? profile.progress.viewed : []);
+  state.codes = Array.isArray(profile.entitlements?.codes) ? profile.entitlements.codes : [];
+  state.levelsCleared = typeof profile.progress?.levelsCleared==='number' ? profile.progress.levelsCleared : 0;
+  restoreMissionProgress(profile.progress?.missionProgress);
+  account = profile.account || null;
 }
 
 async function hydrateProgress(){
@@ -249,15 +274,8 @@ async function hydrateProgress(){
     const session=await ensurePlayerSession();
     if(session?.playerId) playerId=session.playerId;
     const profile=await loadPlayerProfile(playerId);
-    if(typeof profile.wallet?.coins==='number') state.coins=profile.wallet.coins;
-    if(Array.isArray(profile.inventory?.ownedDropIds)) state.owned=profile.inventory.ownedDropIds.slice(0,PRODUCTS.length);
-    if(typeof profile.progress?.currentLevel==='number') state.level=Math.max(0,Math.min(LEVELS.length-1,profile.progress.currentLevel));
-    if(typeof profile.progress?.walked==='number') state.walked=profile.progress.walked;
-    state.inspected=!!profile.progress?.inspected;
-    if(Array.isArray(profile.progress?.viewed)) state.viewed=new Set(profile.progress.viewed);
-    if(Array.isArray(profile.entitlements?.codes)) state.codes=profile.entitlements.codes;
-    if(typeof profile.progress?.levelsCleared==='number') state.levelsCleared=profile.progress.levelsCleared;
-    restoreMissionProgress(profile.progress?.missionProgress);
+    applyProfileToState(profile);
+    refreshAccountChip();
   }catch(_e){}
 }
 
@@ -1833,6 +1851,150 @@ $('#bankTransferBtn')?.addEventListener('click',async ()=>{
   const res=await bankTransfer(to,amt);
   if(res.ok){ renderBankBalances(res.fromBalance,undefined); $('#bankTransferAmt').value=''; setBankStatus(`Sent ${fmt(amt)} coins.`,'ok'); }
   else setBankStatus(res.status===402?'Not enough coins to send.':(res.status===400?'Check the player ID and amount.':'Transfer failed.'),'err');
+});
+
+// ==================== ACCOUNT (sign up / log in / 2FA) ====================
+function refreshAccountChip(){
+  const chip=$('#accountChip');
+  if(chip) chip.textContent=account?.username ? account.username : 'Guest';
+}
+function setMsg(sel,msg,kind){ const el=$(sel); if(!el) return; el.textContent=msg||''; el.className='auth-msg'+(kind?' '+kind:''); }
+function renderAccountView(){
+  const loggedIn=!!(account&&account.username);
+  $('#accountAuthView').style.display=loggedIn?'none':'block';
+  $('#accountProfileView').style.display=loggedIn?'block':'none';
+  $('#accountTitle').textContent=loggedIn?(account.username):'Your Account';
+  if(loggedIn){
+    $('#apUsername').textContent=account.username||'—';
+    $('#apEmail').textContent=account.email||'—';
+    $('#apPhone').textContent=account.phone||'—';
+    $('#apTwofa').textContent=account.twofaEnabled?'On':'Off';
+    $('#toggle2faBtn').textContent=account.twofaEnabled?'Disable 2FA':'Enable 2FA';
+    $('#twofaSetup').style.display='none';
+    setMsg('#profileMsg','');
+  }
+}
+async function openAccountPanel(){
+  // Refresh account state from the server (in case 2FA/profile changed elsewhere).
+  const me=await getMe();
+  if(me.ok) account=me.account?.isGuest?null:me.account;
+  refreshAccountChip();
+  renderAccountView();
+  openPanel('accountPanel');
+}
+$('#openAccountBtn')?.addEventListener('click',openAccountPanel);
+
+// Reload local state for whoever is now authenticated (after login/logout/signup).
+async function reloadAfterAuthChange(){
+  const session=await ensurePlayerSession();
+  if(session?.playerId) playerId=session.playerId;
+  const profile=await loadPlayerProfile(playerId);
+  applyProfileToState(profile);
+  refreshAccountChip();
+  setCoins(state.coins);
+  loadLevel(state.level||0);
+}
+
+// Tab switching
+document.querySelectorAll('.auth-tab').forEach(t=>t.addEventListener('click',()=>{
+  document.querySelectorAll('.auth-tab').forEach(x=>x.classList.toggle('active',x===t));
+  const tab=t.dataset.tab;
+  $('#signupForm').style.display=tab==='signup'?'flex':'none';
+  $('#loginForm').style.display=tab==='login'?'flex':'none';
+}));
+
+// Sign up
+$('#signupForm')?.addEventListener('submit',async e=>{
+  e.preventDefault();
+  const btn=$('#signupBtn'); if(btn.disabled) return;
+  const payload={
+    username:$('#suUsername').value.trim(),
+    email:$('#suEmail').value.trim(),
+    phone:$('#suPhone').value.trim(),
+    password:$('#suPassword').value,
+    enable2fa:$('#suEnable2fa').checked,
+  };
+  setMsg('#signupMsg','Creating account…');
+  btn.disabled=true;
+  const res=await registerAccount(payload);
+  btn.disabled=false;
+  if(res.ok){
+    account=res.account;
+    setMsg('#signupMsg','Account created.','ok');
+    await reloadAfterAuthChange();
+    renderAccountView();
+    // If they opted into 2FA, walk them through confirming it now.
+    if(res.twofa?.secret){ showTwofaSetup(res.twofa.secret,'enable'); }
+  } else {
+    setMsg('#signupMsg',res.error||'Could not create account.','err');
+  }
+});
+
+// Log in
+$('#loginForm')?.addEventListener('submit',async e=>{
+  e.preventDefault();
+  const btn=$('#loginBtn'); if(btn.disabled) return;
+  const payload={ identifier:$('#liIdentifier').value.trim(), password:$('#liPassword').value, code:$('#liCode').value.trim() };
+  setMsg('#loginMsg','Logging in…');
+  btn.disabled=true;
+  const res=await loginAccount(payload);
+  btn.disabled=false;
+  if(res.ok){
+    account=res.account;
+    setMsg('#loginMsg','Welcome back.','ok');
+    await reloadAfterAuthChange();
+    renderAccountView();
+  } else if(res.twofaRequired){
+    $('#liCodeRow').style.display='flex';
+    setMsg('#loginMsg','Enter your 6-digit authenticator code.','');
+  } else {
+    setMsg('#loginMsg',res.error||'Login failed.','err');
+  }
+});
+
+// Log out
+$('#logoutBtn')?.addEventListener('click',async ()=>{
+  await logoutAccount();
+  account=null;
+  await reloadAfterAuthChange();
+  renderAccountView();
+  toast('LOGGED OUT — <span class="gold">PLAYING AS GUEST</span>');
+});
+
+// 2FA enable/disable toggle
+let twofaMode='enable';
+function showTwofaSetup(secret,mode){
+  twofaMode=mode;
+  $('#twofaSetup').style.display='flex';
+  $('#twofaTitle').textContent = mode==='enable' ? 'Set up two-factor authentication' : 'Disable two-factor authentication';
+  $('#twofaHelp').textContent = mode==='enable'
+    ? 'Add this key to an authenticator app (Google Authenticator, Authy…), then enter the 6-digit code to confirm.'
+    : 'Enter a current 6-digit code from your authenticator app to turn 2FA off.';
+  $('#twofaSecret').style.display = mode==='enable' ? 'block' : 'none';
+  $('#twofaSecret').textContent = secret || '';
+  $('#twofaCode').value='';
+  setMsg('#twofaMsg','');
+}
+$('#toggle2faBtn')?.addEventListener('click',async ()=>{
+  if(account?.twofaEnabled){ showTwofaSetup('','disable'); return; }
+  setMsg('#profileMsg','Preparing 2FA…');
+  const res=await setup2fa();
+  setMsg('#profileMsg','');
+  if(res.ok) showTwofaSetup(res.secret,'enable');
+  else setMsg('#profileMsg',res.error||'Could not start 2FA setup.','err');
+});
+$('#twofaConfirmBtn')?.addEventListener('click',async ()=>{
+  const code=$('#twofaCode').value.trim();
+  if(!code){ setMsg('#twofaMsg','Enter the 6-digit code.','err'); return; }
+  const res = twofaMode==='enable' ? await enable2fa(code) : await disable2fa(code);
+  if(res.ok){
+    account=res.account;
+    $('#twofaSetup').style.display='none';
+    renderAccountView();
+    setMsg('#profileMsg', twofaMode==='enable' ? 'Two-factor is now on.' : 'Two-factor turned off.','ok');
+  } else {
+    setMsg('#twofaMsg',res.error||'Invalid code.','err');
+  }
 });
 
 // ==================== LOADER ====================

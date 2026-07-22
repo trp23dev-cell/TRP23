@@ -131,7 +131,8 @@ Admin access for local testing:
 
 - Health: `/api/health` (returns `schemaVersion`)
 - Admin Auth: `/api/auth/register`, `/api/auth/login`, `/api/auth/me`
-- Player Auth: `/api/players/session` (guest), `/api/players/register`, `/api/players/login`, `/api/players/me`, `/api/players/logout`
+- Player Auth: `/api/players/session` (guest), `/api/players/register` (username + email + phone + password, optional 2FA), `/api/players/login` (username-or-email + password + TOTP code), `/api/players/2fa/setup`, `/api/players/2fa/enable`, `/api/players/2fa/disable`, `/api/players/me`, `/api/players/logout`
+  - Two-factor is TOTP (authenticator-app / RFC 6238). Enrollment returns a base32 secret + `otpauth://` URL; login requires a 6-digit code once enabled.
 - Content/CMS: `/api/content`, `/api/cms/chapters`, `/api/cms/drops`, `/api/cms/publish`
 - Player: `/api/player/:playerId`
 - Events: `/api/events`

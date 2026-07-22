@@ -42,6 +42,7 @@ You're viewing this in an email preview, which can't run the game.<br>
   <div class="hud-actions" id="hudActions">
     <button class="hud-act" id="openStoreBtn" title="Open this spot's store">🛍<span>Store</span></button>
     <button class="hud-act" id="openBankBtn" title="Open the bank">🏦<span>Bank</span></button>
+    <button class="hud-act" id="openAccountBtn" title="Your account"><span id="accountChip">Guest</span></button>
   </div>
   <div id="crosshair"></div>
   <div id="hoverTag"></div>
@@ -153,6 +154,70 @@ You're viewing this in an email preview, which can't run the game.<br>
         <div class="owned-flag" id="ownedFlag">✓ In your closet</div>
         <div class="topup">Short on coins? <a id="topupLink">Top up</a> — £10 = 1,000 Trap Coins. Every real purchase earns coins back.</div>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ACCOUNT (sign up / log in / 2FA / logout) -->
+<div class="panel-wrap" id="accountPanel">
+  <div class="panel account-panel">
+    <div class="panel-head">
+      <div class="ph-title"><span class="ph-num">ACCOUNT</span><span class="ph-name display" id="accountTitle">Your Account</span></div>
+      <button class="xbtn" data-close="accountPanel">✕</button>
+    </div>
+    <div class="account-body">
+
+      <!-- Logged-out: sign up / log in tabs -->
+      <div id="accountAuthView">
+        <div class="auth-tabs">
+          <button class="auth-tab active" data-tab="signup">Sign Up</button>
+          <button class="auth-tab" data-tab="login">Log In</button>
+        </div>
+
+        <form id="signupForm" class="auth-form" autocomplete="on">
+          <label>Username <input id="suUsername" type="text" autocomplete="username" placeholder="3-20 letters, numbers, _" /></label>
+          <label>Email <input id="suEmail" type="email" autocomplete="email" placeholder="you@example.com" /></label>
+          <label>Phone <input id="suPhone" type="tel" autocomplete="tel" placeholder="+44…" /></label>
+          <label>Password <input id="suPassword" type="password" autocomplete="new-password" placeholder="At least 8 characters" /></label>
+          <label class="auth-check"><input id="suEnable2fa" type="checkbox" /> Enable two-factor authentication (recommended)</label>
+          <button type="submit" class="auth-submit" id="signupBtn">Create Account</button>
+          <div class="auth-msg" id="signupMsg"></div>
+        </form>
+
+        <form id="loginForm" class="auth-form" style="display:none" autocomplete="on">
+          <label>Username or Email <input id="liIdentifier" type="text" autocomplete="username" placeholder="username or you@example.com" /></label>
+          <label>Password <input id="liPassword" type="password" autocomplete="current-password" placeholder="Your password" /></label>
+          <label id="liCodeRow" style="display:none">2FA Code <input id="liCode" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="6-digit code" /></label>
+          <button type="submit" class="auth-submit" id="loginBtn">Log In</button>
+          <div class="auth-msg" id="loginMsg"></div>
+        </form>
+      </div>
+
+      <!-- Logged-in: profile + 2FA + logout -->
+      <div id="accountProfileView" style="display:none">
+        <div class="acct-row"><span>Username</span><b id="apUsername">—</b></div>
+        <div class="acct-row"><span>Email</span><b id="apEmail">—</b></div>
+        <div class="acct-row"><span>Phone</span><b id="apPhone">—</b></div>
+        <div class="acct-row"><span>Two-factor</span><b id="apTwofa">Off</b></div>
+        <div class="acct-actions">
+          <button class="mini-btn" id="toggle2faBtn">Enable 2FA</button>
+          <button class="mini-btn danger" id="logoutBtn">Log Out</button>
+        </div>
+        <div class="auth-msg" id="profileMsg"></div>
+
+        <!-- 2FA enrollment / disable -->
+        <div id="twofaSetup" class="twofa-setup" style="display:none">
+          <div class="twofa-title" id="twofaTitle">Set up two-factor authentication</div>
+          <p class="twofa-help" id="twofaHelp">Add this key to an authenticator app (Google Authenticator, Authy…), then enter the 6-digit code to confirm.</p>
+          <div class="twofa-secret" id="twofaSecret"></div>
+          <div class="bank-row">
+            <input id="twofaCode" type="text" inputmode="numeric" placeholder="6-digit code" />
+            <button class="mini-btn" id="twofaConfirmBtn">Confirm</button>
+          </div>
+          <div class="auth-msg" id="twofaMsg"></div>
+        </div>
+      </div>
+
     </div>
   </div>
 </div>

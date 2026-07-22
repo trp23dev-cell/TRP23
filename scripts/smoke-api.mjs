@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { totp } from "../server/totp.js";
 
 const base = process.env.SMOKE_API_BASE || "http://localhost:8787";
 
@@ -65,17 +66,7 @@ async function run() {
   const spoof = await req(`/api/wallet/${encodeURIComponent("someone-else")}`, { headers: playerAuth });
   if (spoof.wallet == null) throw new Error("Wallet lookup should succeed and resolve to the token's player");
 
-  // Register + login roundtrip for a credentialed player account.
-  const playerEmail = `player+${runId}@trapmadeit.local`;
-  await req("/api/players/register", { method: "POST", body: JSON.stringify({ email: playerEmail, password: "player123" }) });
-  const relogin = await req("/api/players/login", { method: "POST", body: JSON.stringify({ email: playerEmail, password: "player123" }) });
-  if (!relogin.token || !relogin.playerId) throw new Error("Player login should return a token and playerId");
-  const badLogin = await fetch(`${base}/api/players/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email: playerEmail, password: "wrong" }),
-  });
-  if (badLogin.status !== 401) throw new Error(`Wrong password should be 401, got ${badLogin.status}`);
+  // (Full account register/login/2FA coverage lives at the end of this run.)
 
   const content = await req("/api/content");
   await req("/api/content", {
@@ -190,6 +181,42 @@ async function run() {
 
   await req("/api/ops/analytics", { headers: auth });
   await req("/api/ops/audit", { headers: auth });
+
+  // ---- Player accounts + TOTP 2FA ----
+  const uname = `user${String(runId).slice(-8)}`;
+  const uemail = `player+${runId}@trapmadeit.local`;
+  // Register a full account on the current guest session (with 2FA enrollment).
+  const reg = await req("/api/players/register", {
+    method: "POST",
+    headers: playerAuth,
+    body: JSON.stringify({ username: uname, email: uemail, phone: "+447700900123", password: "str0ngpass", enable2fa: true }),
+  });
+  if (reg.account?.username !== uname) throw new Error("register should return the new account");
+  if (!reg.twofa?.secret) throw new Error("2FA enrollment should return a secret");
+  const accountAuth = { Authorization: `Bearer ${reg.token}` };
+  const secret = reg.twofa.secret;
+
+  // Duplicate username / email must be rejected.
+  const dupU = await fetch(`${base}/api/players/register`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: uname, email: `x${runId}@t.co`, password: "str0ngpass" }) });
+  if (dupU.status !== 409) throw new Error(`Duplicate username should be 409, got ${dupU.status}`);
+  const dupE = await fetch(`${base}/api/players/register`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: `z${runId}`, email: uemail, password: "str0ngpass" }) });
+  if (dupE.status !== 409) throw new Error(`Duplicate email should be 409, got ${dupE.status}`);
+
+  // Enable 2FA with a valid TOTP code.
+  await req("/api/players/2fa/enable", { method: "POST", headers: accountAuth, body: JSON.stringify({ code: totp(secret) }) });
+
+  // Login without a code must be blocked with twofaRequired.
+  const noCode = await fetch(`${base}/api/players/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ identifier: uname, password: "str0ngpass" }) });
+  const noCodeData = await noCode.json();
+  if (noCode.status !== 401 || !noCodeData.twofaRequired) throw new Error("Login without 2FA code should require it");
+
+  // Login with a valid code (by username) succeeds and returns the same player.
+  const login2fa = await req("/api/players/login", { method: "POST", body: JSON.stringify({ identifier: uname, password: "str0ngpass", code: totp(secret) }) });
+  if (login2fa.playerId !== reg.playerId) throw new Error("2FA login should resolve to the same player");
+
+  // Wrong password rejected.
+  const badPw = await fetch(`${base}/api/players/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ identifier: uname, password: "nope", code: totp(secret) }) });
+  if (badPw.status !== 401) throw new Error(`Wrong password should be 401, got ${badPw.status}`);
 
   console.log("[smoke-api] all checks passed");
 }

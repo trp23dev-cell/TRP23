@@ -6,18 +6,41 @@ import { createHash, randomUUID, randomBytes, scryptSync, timingSafeEqual } from
 import { defaultContent } from "../src/data/defaultContent.js";
 import { defaultWorld } from "../src/data/defaultWorld.js";
 import { createSqliteStore, STARTING_COINS } from "./storage/sqliteStore.js";
+import { generateTotpSecret, verifyTotp, otpauthUrl } from "./totp.js";
+
+const USERNAME_RE = /^[a-zA-Z0-9_]{3,20}$/;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PHONE_RE = /^\+?[0-9][0-9\s().-]{6,19}$/;
+
+function validateSignup({ username, email, phone, password }) {
+  const errors = [];
+  if (!USERNAME_RE.test(username || "")) errors.push("username must be 3-20 letters, numbers or underscores");
+  if (!EMAIL_RE.test(email || "")) errors.push("a valid email is required");
+  if (!password || String(password).length < 8) errors.push("password must be at least 8 characters");
+  if (phone && !PHONE_RE.test(phone)) errors.push("phone number is not valid");
+  return errors;
+}
+
+function sanitizeAccount(acct) {
+  if (!acct) return null;
+  return {
+    playerId: acct.playerId,
+    username: acct.username || null,
+    email: acct.email || null,
+    phone: acct.phone || null,
+    twofaEnabled: !!acct.twofaEnabled,
+    isGuest: !acct.email,
+  };
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const storageDir = path.join(__dirname, "storage");
 const dbFile = path.join(storageDir, "trapmadeit.db");
 const contentFile = "content";
-const playersFile = "players";
-const discountsFile = "discounts";
 const refundsFile = "refunds";
 const fulfillmentsFile = "fulfillments";
 const releasesFile = "releases";
-const rewardClaimsFile = "rewardClaims";
 const moderationFile = "moderation";
 const storiesFile = "stories";
 const opportunitiesFile = "opportunities";
@@ -130,11 +153,12 @@ function sanitizeUser(user) {
 // Server-authoritative view of a player's economy, assembled from the
 // relational tables (wallet + ownership) merged with the KV progress blob.
 function buildPlayerProfile(playerId) {
-  const players = store.getJson(playersFile, {});
-  const base = players[playerId] || createDefaultPlayerProfile(playerId);
+  const base = store.getPlayerState(playerId) || createDefaultPlayerProfile(playerId);
+  const account = store.getPlayerAccount(playerId);
   return {
     ...base,
     playerId,
+    account: sanitizeAccount(account),
     wallet: { coins: store.getWalletBalance(playerId) },
     bank: { coins: store.getBankBalance(playerId) },
     inventory: { ownedDropIds: store.getOwnedDropIds(playerId) },
@@ -182,8 +206,7 @@ async function ensureStorage() {
   await fs.mkdir(storageDir, { recursive: true });
   store = createSqliteStore({ dbPath: dbFile });
   store.ensureKey(contentFile, defaultContent);
-  store.ensureKey(playersFile, {});
-  for (const file of [discountsFile, refundsFile, fulfillmentsFile, releasesFile, rewardClaimsFile, moderationFile, storiesFile, opportunitiesFile, chapterEventsFile]) {
+  for (const file of [refundsFile, fulfillmentsFile, releasesFile, moderationFile, storiesFile, opportunitiesFile, chapterEventsFile]) {
     store.ensureKey(file, []);
   }
   store.ensureKey(auditFile, []);
@@ -348,47 +371,149 @@ async function handleRequest(req, res) {
     return;
   }
 
-  // Upgrade a guest (or create a new account) with email + password.
+  // Full sign-up: username + email + phone + password. Links to the current
+  // guest player (preserving progress) or creates a fresh account. Optionally
+  // begins TOTP 2FA enrollment (returns a secret to confirm via /2fa/enable).
   if (req.method === "POST" && pathname === "/api/players/register") {
     const body = JSON.parse((await readBody(req)) || "{}");
+    const username = String(body.username || "").trim();
     const email = String(body.email || "").trim().toLowerCase();
+    const phone = String(body.phone || "").trim();
     const password = String(body.password || "");
-    if (!email || password.length < 6) {
-      sendJson(res, 400, { ok: false, error: "email and a password of at least 6 characters are required" });
+
+    const errors = validateSignup({ username, email, phone, password });
+    if (errors.length) {
+      sendJson(res, 400, { ok: false, error: errors[0], errors });
       return;
     }
     if (store.findPlayerByEmail(email)) {
-      sendJson(res, 409, { ok: false, error: "email already registered" });
+      sendJson(res, 409, { ok: false, error: "an account with this email already exists" });
       return;
     }
-    // Link to the currently authenticated guest player, or create a fresh one.
+    if (store.findPlayerByUsername(username)) {
+      sendJson(res, 409, { ok: false, error: "that username is taken" });
+      return;
+    }
+
+    // Link to the authenticated guest player, or create a fresh one.
     let playerId = pctx?.playerId;
     if (!playerId) {
       playerId = `p_${randomUUID().slice(0, 8)}${randomBytes(4).toString("hex")}`;
-      store.ensurePlayerAccount(playerId);
-      store.ensureWallet(playerId);
-    } else {
-      store.ensurePlayerAccount(playerId);
     }
-    store.setPlayerCredentials(playerId, email, hashPlayerPassword(password));
+    store.ensurePlayerAccount(playerId);
+    store.ensureWallet(playerId);
+    store.registerPlayerAccount(playerId, { username, email, phone: phone || null, passwordHash: hashPlayerPassword(password) });
+
+    // Optional 2FA enrollment: stash a secret (disabled until confirmed).
+    let twofa = null;
+    if (body.enable2fa) {
+      const secret = generateTotpSecret();
+      store.setPlayer2faSecret(playerId, secret);
+      twofa = { secret, otpauthUrl: otpauthUrl({ secret, label: username }), pending: true };
+    }
+
     const { token, expiresAt } = issuePlayerSession(playerId);
-    sendJson(res, 201, { ok: true, playerId, token, expiresAt });
+    await logAudit("players.register", null, { playerId, username });
+    sendJson(res, 201, {
+      ok: true,
+      playerId,
+      token,
+      expiresAt,
+      account: sanitizeAccount(store.getPlayerAccount(playerId)),
+      twofa,
+    });
     return;
   }
 
-  // Log in to an existing credentialed player account.
+  // Log in with username OR email + password. If 2FA is enabled a valid TOTP
+  // `code` is required; when missing we reply 401 with twofaRequired so the
+  // client can prompt for it.
   if (req.method === "POST" && pathname === "/api/players/login") {
     const body = JSON.parse((await readBody(req)) || "{}");
-    const email = String(body.email || "").trim().toLowerCase();
+    const identifier = String(body.identifier || body.email || body.username || "").trim().toLowerCase();
     const password = String(body.password || "");
-    const account = store.findPlayerByEmail(email);
-    if (!account || !verifyPlayerPassword(password, account.passwordHash)) {
+    const account = store.findPlayerByIdentifier(identifier);
+    if (!account || !account.passwordHash || !verifyPlayerPassword(password, account.passwordHash)) {
       sendJson(res, 401, { ok: false, error: "invalid credentials" });
       return;
     }
+    if (account.twofaEnabled) {
+      const code = String(body.code || "").trim();
+      if (!code) {
+        sendJson(res, 401, { ok: false, error: "two-factor code required", twofaRequired: true });
+        return;
+      }
+      if (!verifyTotp(account.twofaSecret, code)) {
+        sendJson(res, 401, { ok: false, error: "invalid two-factor code", twofaRequired: true });
+        return;
+      }
+    }
     store.markPlayerSeen(account.playerId);
     const { token, expiresAt } = issuePlayerSession(account.playerId);
-    sendJson(res, 200, { ok: true, playerId: account.playerId, token, expiresAt });
+    await logAudit("players.login", null, { playerId: account.playerId });
+    sendJson(res, 200, { ok: true, playerId: account.playerId, token, expiresAt, account: sanitizeAccount(account) });
+    return;
+  }
+
+  // Begin 2FA enrollment for the logged-in player: returns a fresh secret to
+  // add to an authenticator app, then confirm with /2fa/enable.
+  if (req.method === "POST" && pathname === "/api/players/2fa/setup") {
+    if (!pctx) {
+      sendJson(res, 401, { ok: false, error: "player authentication required" });
+      return;
+    }
+    const account = store.getPlayerAccount(pctx.playerId);
+    if (!account?.email) {
+      sendJson(res, 400, { ok: false, error: "create an account before enabling 2FA" });
+      return;
+    }
+    const secret = generateTotpSecret();
+    store.setPlayer2faSecret(pctx.playerId, secret);
+    sendJson(res, 200, { ok: true, secret, otpauthUrl: otpauthUrl({ secret, label: account.username || account.email }) });
+    return;
+  }
+
+  // Confirm + activate 2FA by proving a current code from the stashed secret.
+  if (req.method === "POST" && pathname === "/api/players/2fa/enable") {
+    if (!pctx) {
+      sendJson(res, 401, { ok: false, error: "player authentication required" });
+      return;
+    }
+    const body = JSON.parse((await readBody(req)) || "{}");
+    const account = store.getPlayerAccount(pctx.playerId);
+    if (!account?.twofaSecret) {
+      sendJson(res, 400, { ok: false, error: "start 2FA setup first" });
+      return;
+    }
+    if (!verifyTotp(account.twofaSecret, String(body.code || "").trim())) {
+      sendJson(res, 400, { ok: false, error: "invalid code — check your authenticator app" });
+      return;
+    }
+    store.setPlayer2faEnabled(pctx.playerId, true);
+    await logAudit("players.2fa.enable", null, { playerId: pctx.playerId });
+    sendJson(res, 200, { ok: true, account: sanitizeAccount(store.getPlayerAccount(pctx.playerId)) });
+    return;
+  }
+
+  // Disable 2FA (requires a current code to prove ownership).
+  if (req.method === "POST" && pathname === "/api/players/2fa/disable") {
+    if (!pctx) {
+      sendJson(res, 401, { ok: false, error: "player authentication required" });
+      return;
+    }
+    const body = JSON.parse((await readBody(req)) || "{}");
+    const account = store.getPlayerAccount(pctx.playerId);
+    if (!account?.twofaEnabled) {
+      sendJson(res, 400, { ok: false, error: "2FA is not enabled" });
+      return;
+    }
+    if (!verifyTotp(account.twofaSecret, String(body.code || "").trim())) {
+      sendJson(res, 400, { ok: false, error: "invalid code" });
+      return;
+    }
+    store.setPlayer2faEnabled(pctx.playerId, false);
+    await logAudit("players.2fa.disable", null, { playerId: pctx.playerId });
+    sendJson(res, 200, { ok: true, account: sanitizeAccount(store.getPlayerAccount(pctx.playerId)) });
     return;
   }
 
@@ -397,13 +522,7 @@ async function handleRequest(req, res) {
       sendJson(res, 401, { ok: false, error: "unauthorized" });
       return;
     }
-    const account = store.getPlayerAccount(pctx.playerId);
-    sendJson(res, 200, {
-      ok: true,
-      playerId: pctx.playerId,
-      email: account?.email || null,
-      isGuest: !account?.email,
-    });
+    sendJson(res, 200, { ok: true, ...sanitizeAccount(store.getPlayerAccount(pctx.playerId)) });
     return;
   }
 
@@ -463,8 +582,7 @@ async function handleRequest(req, res) {
     try {
       const body = JSON.parse(await readBody(req) || "{}");
       const incoming = body?.profile || body;
-      const players = await readJson(playersFile, {});
-      const existing = players[playerId] || createDefaultPlayerProfile(playerId);
+      const existing = store.getPlayerState(playerId) || createDefaultPlayerProfile(playerId);
       // Wallet, bank and inventory are server-authoritative — they live in the
       // relational tables and are NEVER accepted from the client. Only narrative
       // progress and cosmetic entitlements are client-writable.
@@ -480,8 +598,7 @@ async function handleRequest(req, res) {
         playerId,
         updatedAt: new Date().toISOString(),
       };
-      players[playerId] = merged;
-      await writeJson(playersFile, players);
+      store.setPlayerState(playerId, merged);
       sendJson(res, 200, { ok: true, profile: buildPlayerProfile(playerId) });
       return;
     } catch {
@@ -619,7 +736,7 @@ async function handleRequest(req, res) {
   }
 
   if (pathname === "/api/commerce/discounts" && req.method === "GET") {
-    sendJson(res, 200, { ok: true, discounts: await readJson(discountsFile, []) });
+    sendJson(res, 200, { ok: true, discounts: store.listDiscounts() });
     return;
   }
 
@@ -629,25 +746,27 @@ async function handleRequest(req, res) {
       return;
     }
     const body = JSON.parse((await readBody(req)) || "{}");
-    const discount = {
-      id: `disc_${randomUUID().slice(0, 8)}`,
-      code: String(body.code || "").trim().toUpperCase(),
-      type: body.type === "fixed" ? "fixed" : "percent",
-      value: Number(body.value || 0),
-      active: body.active !== false,
-      startsAt: body.startsAt || null,
-      endsAt: body.endsAt || null,
-      maxUses: Number.isFinite(body.maxUses) ? Number(body.maxUses) : null,
-      used: 0,
-      createdAt: nowIso(),
-    };
-    if (!discount.code || discount.value <= 0) {
+    const code = String(body.code || "").trim().toUpperCase();
+    const value = Number(body.value || 0);
+    if (!code || value <= 0) {
       sendJson(res, 400, { ok: false, error: "invalid discount payload" });
       return;
     }
-    const discounts = await readJson(discountsFile, []);
-    discounts.push(discount);
-    await writeJson(discountsFile, discounts);
+    if (store.findDiscountByCode(code)) {
+      sendJson(res, 409, { ok: false, error: "discount code already exists" });
+      return;
+    }
+    const discount = store.createDiscount({
+      id: `disc_${randomUUID().slice(0, 8)}`,
+      code,
+      type: body.type === "fixed" ? "fixed" : "percent",
+      value,
+      active: body.active === false ? 0 : 1,
+      startsAt: body.startsAt || null,
+      endsAt: body.endsAt || null,
+      maxUses: Number.isFinite(body.maxUses) ? Number(body.maxUses) : null,
+      createdAt: nowIso(),
+    });
     await logAudit("commerce.discount.create", ctx, { discountId: discount.id, code: discount.code });
     sendJson(res, 201, { ok: true, discount });
     return;
@@ -691,11 +810,10 @@ async function handleRequest(req, res) {
 
     // Resolve + validate a discount code before entering the transaction.
     let discount = null;
-    const discounts = await readJson(discountsFile, []);
     if (body.discountCode) {
       const code = String(body.discountCode).trim().toUpperCase();
-      const found = discounts.find((d) => d.code === code && d.active !== false);
-      if (found) {
+      const found = store.findDiscountByCode(code);
+      if (found && found.active) {
         const now = new Date();
         const starts = found.startsAt ? new Date(found.startsAt) : null;
         const ends = found.endsAt ? new Date(found.endsAt) : null;
@@ -722,11 +840,8 @@ async function handleRequest(req, res) {
       return;
     }
 
-    // Order succeeded — record discount usage now that funds cleared.
-    if (discount) {
-      discount.used = Number(discount.used || 0) + 1;
-      await writeJson(discountsFile, discounts);
-    }
+    // Order succeeded — record discount usage now that funds cleared (atomic).
+    if (discount) store.consumeDiscount(discount.id);
 
     await logAudit("commerce.checkout", ctx, { orderId, playerId: playerIdInput, total: result.order.total });
     store.appendEvent({ playerId: playerIdInput, type: "checkout", payload: { orderId, total: result.order.total }, at: nowIso() });
@@ -825,56 +940,40 @@ async function handleRequest(req, res) {
       sendJson(res, 400, { ok: false, error: "levelId and missionId are required" });
       return;
     }
-    const claims = await readJson(rewardClaimsFile, []);
     const claimKey = `${playerIdInput}:${body.levelId}:${body.missionId}`;
-    if (claims.some((c) => c.claimKey === claimKey)) {
-      sendJson(res, 409, { ok: false, error: "reward already claimed for this mission" });
-      return;
-    }
-
-    const todayCount = claims.filter((c) => c.playerId === playerIdInput && c.at.startsWith(nowIso().slice(0, 10))).length;
-    if (todayCount > 100) {
+    // Anti-abuse: cap daily claims per player (dedupe is enforced atomically below).
+    const dayStart = `${nowIso().slice(0, 10)}T00:00:00.000Z`;
+    if (store.countRewardClaimsSince(playerIdInput, dayStart) >= 200) {
       sendJson(res, 429, { ok: false, error: "daily reward claim limit exceeded" });
       return;
     }
 
-    const players = await readJson(playersFile, {});
-    const player = players[playerIdInput] || createDefaultPlayerProfile(playerIdInput);
     const rewardCoins = Math.max(0, Number(body.rewardCoins || 0));
-    // Credit the reward through the ledger so the wallet stays authoritative.
-    let walletBalance = store.getWalletBalance(playerIdInput);
-    if (rewardCoins > 0) {
-      walletBalance = store.postTransaction({
-        playerId: playerIdInput,
-        account: "cash",
-        delta: rewardCoins,
-        reason: "rewards.claim",
-        refType: "mission",
-        refId: `${body.levelId}:${body.missionId}`,
-      }).balance;
-    }
-    if (body.discountCode) {
-      const codes = new Set(player.entitlements?.codes || []);
-      codes.add(String(body.discountCode));
-      player.entitlements = { ...(player.entitlements || {}), codes: [...codes] };
-      players[playerIdInput] = player;
-      await writeJson(playersFile, players);
-    }
-
-    const claim = {
-      id: `clm_${randomUUID().slice(0, 8)}`,
+    // Atomic: dedupe on claimKey and credit the ledger in one transaction.
+    const outcome = store.claimReward({
       claimKey,
       playerId: playerIdInput,
       levelId: body.levelId,
       missionId: body.missionId,
       rewardCoins,
       discountCode: body.discountCode || null,
-      at: nowIso(),
-    };
-    claims.push(claim);
-    await writeJson(rewardClaimsFile, claims);
-    await logAudit("rewards.claim", ctx, { claimId: claim.id, playerId: playerIdInput, missionId: claim.missionId });
-    sendJson(res, 201, { ok: true, claim, walletCoins: walletBalance });
+    });
+    if (!outcome.claimed) {
+      sendJson(res, 409, { ok: false, error: "reward already claimed for this mission", walletCoins: outcome.walletBalance });
+      return;
+    }
+
+    // Record the earned discount code on the player's entitlements.
+    if (body.discountCode) {
+      const state = store.getPlayerState(playerIdInput) || createDefaultPlayerProfile(playerIdInput);
+      const codes = new Set(state.entitlements?.codes || []);
+      codes.add(String(body.discountCode));
+      state.entitlements = { ...(state.entitlements || {}), codes: [...codes] };
+      store.setPlayerState(playerIdInput, state);
+    }
+
+    await logAudit("rewards.claim", ctx, { claimKey, playerId: playerIdInput, missionId: body.missionId });
+    sendJson(res, 201, { ok: true, walletCoins: outcome.walletBalance });
     return;
   }
 
@@ -897,7 +996,7 @@ async function handleRequest(req, res) {
     }
     const events = await readEvents();
     const orders = store.getOrders();
-    const players = Object.values(await readJson(playersFile, {}));
+    const players = store.listStatePlayerIds().map((id) => store.getPlayerState(id) || {});
     const uniqueVisitors = new Set(events.map((e) => e.playerId)).size;
     const purchasers = new Set(orders.map((o) => o.playerId)).size;
     const conversionRate = uniqueVisitors > 0 ? Number(((purchasers / uniqueVisitors) * 100).toFixed(2)) : 0;
@@ -1054,15 +1153,14 @@ async function handleRequest(req, res) {
   }
 
   if (pathname === "/api/community/leaderboard" && req.method === "GET") {
-    const progressBlob = await readJson(playersFile, {});
-    const ids = store.listPlayerIds();
-    // Include any legacy players that only exist in the KV progress blob.
-    for (const id of Object.keys(progressBlob)) if (!ids.includes(id)) ids.push(id);
-    const leaderboard = ids
+    const ids = new Set([...store.listPlayerIds(), ...store.listStatePlayerIds()]);
+    const leaderboard = [...ids]
       .map((id) => {
-        const p = progressBlob[id] || {};
+        const p = store.getPlayerState(id) || {};
+        const account = store.getPlayerAccount(id);
         return {
           playerId: id,
+          username: account?.username || null,
           levelsCleared: Number(p.progress?.levelsCleared || 0),
           coins: store.getWalletBalance(id),
           trustStatus: p.trustStatus || "standard",

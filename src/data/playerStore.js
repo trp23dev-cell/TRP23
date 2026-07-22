@@ -197,6 +197,79 @@ function currentPlayerId() {
   return (typeof localStorage !== "undefined" && localStorage.getItem(PLAYER_KEY)) || "me";
 }
 
+// ---------------- ACCOUNTS (register / login / logout / 2FA) ----------------
+
+export async function registerAccount({ username, email, phone, password, enable2fa }) {
+  try {
+    const data = await fetchApi("/players/register", {
+      method: "POST",
+      body: JSON.stringify({ username, email, phone, password, enable2fa: !!enable2fa }),
+    });
+    localStorage.setItem(PLAYER_KEY, data.playerId);
+    setPlayerToken(data.token);
+    return { ok: true, playerId: data.playerId, account: data.account, twofa: data.twofa };
+  } catch (error) {
+    return { ok: false, status: error.status || 0, error: error.message, errors: error.data?.errors };
+  }
+}
+
+export async function loginAccount({ identifier, password, code }) {
+  try {
+    const data = await fetchApi("/players/login", {
+      method: "POST",
+      body: JSON.stringify({ identifier, password, code }),
+    });
+    localStorage.setItem(PLAYER_KEY, data.playerId);
+    setPlayerToken(data.token);
+    return { ok: true, playerId: data.playerId, account: data.account };
+  } catch (error) {
+    return { ok: false, status: error.status || 0, error: error.message, twofaRequired: !!error.data?.twofaRequired };
+  }
+}
+
+export async function logoutAccount() {
+  try { await fetchApi("/players/logout", { method: "POST" }); } catch { /* best effort */ }
+  setPlayerToken(null);
+  if (typeof localStorage !== "undefined") localStorage.removeItem(PLAYER_KEY);
+  return { ok: true };
+}
+
+export async function getMe() {
+  try {
+    const account = await fetchApi("/players/me");
+    return { ok: true, account };
+  } catch (error) {
+    return { ok: false, status: error.status || 0 };
+  }
+}
+
+export async function setup2fa() {
+  try {
+    const data = await fetchApi("/players/2fa/setup", { method: "POST" });
+    return { ok: true, secret: data.secret, otpauthUrl: data.otpauthUrl };
+  } catch (error) {
+    return { ok: false, status: error.status || 0, error: error.message };
+  }
+}
+
+export async function enable2fa(code) {
+  try {
+    const data = await fetchApi("/players/2fa/enable", { method: "POST", body: JSON.stringify({ code }) });
+    return { ok: true, account: data.account };
+  } catch (error) {
+    return { ok: false, status: error.status || 0, error: error.message };
+  }
+}
+
+export async function disable2fa(code) {
+  try {
+    const data = await fetchApi("/players/2fa/disable", { method: "POST", body: JSON.stringify({ code }) });
+    return { ok: true, account: data.account };
+  } catch (error) {
+    return { ok: false, status: error.status || 0, error: error.message };
+  }
+}
+
 // ---------------- WORLD ----------------
 export async function getWorldLocations() {
   try {

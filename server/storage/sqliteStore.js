@@ -166,6 +166,85 @@ const MIGRATIONS = [
     // Retire the migrated blobs so they can't drift out of sync with the tables.
     db.prepare("DELETE FROM kv WHERE k IN ('users','sessions')").run();
   },
+
+  // v3 — real player accounts (username/phone/2FA) + move the hot-path economy
+  // blobs (player progress, reward claims, discounts) into per-row tables.
+  (db) => {
+    db.exec(`
+      ALTER TABLE player_accounts ADD COLUMN username TEXT;
+      ALTER TABLE player_accounts ADD COLUMN phone TEXT;
+      ALTER TABLE player_accounts ADD COLUMN twofaSecret TEXT;
+      ALTER TABLE player_accounts ADD COLUMN twofaEnabled INTEGER NOT NULL DEFAULT 0;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_player_username ON player_accounts(username);
+
+      -- Per-player progress/entitlements (JSON per row — no whole-blob rewrites).
+      CREATE TABLE IF NOT EXISTS player_state (
+        playerId TEXT PRIMARY KEY,
+        state TEXT NOT NULL,
+        updatedAt TEXT NOT NULL
+      );
+
+      -- Reward claims with a UNIQUE key for atomic, race-free dedupe.
+      CREATE TABLE IF NOT EXISTS reward_claims (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        claimKey TEXT UNIQUE NOT NULL,
+        playerId TEXT NOT NULL,
+        levelId TEXT,
+        missionId TEXT,
+        rewardCoins INTEGER NOT NULL DEFAULT 0,
+        discountCode TEXT,
+        at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_reward_claims_player ON reward_claims(playerId, at);
+
+      CREATE TABLE IF NOT EXISTS discounts (
+        id TEXT PRIMARY KEY,
+        code TEXT UNIQUE NOT NULL,
+        type TEXT NOT NULL,
+        value INTEGER NOT NULL,
+        active INTEGER NOT NULL DEFAULT 1,
+        startsAt TEXT,
+        endsAt TEXT,
+        maxUses INTEGER,
+        used INTEGER NOT NULL DEFAULT 0,
+        createdAt TEXT NOT NULL
+      );
+    `);
+
+    const playersRow = db.prepare("SELECT v FROM kv WHERE k = 'players'").get();
+    if (playersRow) {
+      let players = {};
+      try { players = JSON.parse(playersRow.v) || {}; } catch { players = {}; }
+      const insert = db.prepare("INSERT OR IGNORE INTO player_state(playerId, state, updatedAt) VALUES(?, ?, ?)");
+      for (const [pid, profile] of Object.entries(players)) {
+        insert.run(pid, JSON.stringify(profile), new Date().toISOString());
+      }
+    }
+
+    const claimsRow = db.prepare("SELECT v FROM kv WHERE k = 'rewardClaims'").get();
+    if (claimsRow) {
+      let claims = [];
+      try { claims = JSON.parse(claimsRow.v) || []; } catch { claims = []; }
+      const insert = db.prepare("INSERT OR IGNORE INTO reward_claims(claimKey, playerId, levelId, missionId, rewardCoins, discountCode, at) VALUES(?, ?, ?, ?, ?, ?, ?)");
+      for (const c of claims) {
+        if (!c || !c.claimKey) continue;
+        insert.run(c.claimKey, c.playerId, c.levelId || null, c.missionId || null, Number(c.rewardCoins || 0), c.discountCode || null, c.at || new Date().toISOString());
+      }
+    }
+
+    const discRow = db.prepare("SELECT v FROM kv WHERE k = 'discounts'").get();
+    if (discRow) {
+      let discounts = [];
+      try { discounts = JSON.parse(discRow.v) || []; } catch { discounts = []; }
+      const insert = db.prepare("INSERT OR IGNORE INTO discounts(id, code, type, value, active, startsAt, endsAt, maxUses, used, createdAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+      for (const d of discounts) {
+        if (!d || !d.id || !d.code) continue;
+        insert.run(d.id, d.code, d.type || "percent", Number(d.value || 0), d.active === false ? 0 : 1, d.startsAt || null, d.endsAt || null, d.maxUses ?? null, Number(d.used || 0), d.createdAt || new Date().toISOString());
+      }
+    }
+
+    db.prepare("DELETE FROM kv WHERE k IN ('players','rewardClaims','discounts')").run();
+  },
 ];
 
 // Apply any migrations the DB has not yet seen, each in its own transaction.
@@ -571,12 +650,17 @@ export function createSqliteStore({ dbPath }) {
 
   // ---------------- PLAYER ACCOUNTS + SESSIONS ----------------
 
+  const ACCOUNT_COLS = "playerId, username, email, phone, passwordHash, twofaSecret, twofaEnabled, createdAt, lastSeenAt";
   const insertPlayerAccount = db.prepare(
     "INSERT OR IGNORE INTO player_accounts(playerId, createdAt, lastSeenAt) VALUES(?, ?, ?)",
   );
-  const selectPlayerAccount = db.prepare("SELECT playerId, email, passwordHash, createdAt, lastSeenAt FROM player_accounts WHERE playerId = ?");
-  const selectPlayerByEmail = db.prepare("SELECT playerId, email, passwordHash, createdAt, lastSeenAt FROM player_accounts WHERE email = ?");
+  const selectPlayerAccount = db.prepare(`SELECT ${ACCOUNT_COLS} FROM player_accounts WHERE playerId = ?`);
+  const selectPlayerByEmail = db.prepare(`SELECT ${ACCOUNT_COLS} FROM player_accounts WHERE email = ?`);
+  const selectPlayerByUsername = db.prepare(`SELECT ${ACCOUNT_COLS} FROM player_accounts WHERE username = ? COLLATE NOCASE`);
+  const selectPlayerByIdentifier = db.prepare(`SELECT ${ACCOUNT_COLS} FROM player_accounts WHERE email = ? OR username = ? COLLATE NOCASE`);
   const setCredentials = db.prepare("UPDATE player_accounts SET email = ?, passwordHash = ? WHERE playerId = ?");
+  const registerAccountStmt = db.prepare("UPDATE player_accounts SET username = ?, email = ?, phone = ?, passwordHash = ? WHERE playerId = ?");
+  const set2faSecretStmt = db.prepare("UPDATE player_accounts SET twofaSecret = ?, twofaEnabled = ? WHERE playerId = ?");
   const touchPlayer = db.prepare("UPDATE player_accounts SET lastSeenAt = ? WHERE playerId = ?");
   const insertPlayerSession = db.prepare("INSERT INTO player_sessions(token, playerId, createdAt, expiresAt) VALUES(?, ?, ?, ?)");
   const selectPlayerSession = db.prepare("SELECT token, playerId, createdAt, expiresAt FROM player_sessions WHERE token = ?");
@@ -600,8 +684,33 @@ export function createSqliteStore({ dbPath }) {
     return selectPlayerByEmail.get(email) || null;
   }
 
+  function findPlayerByUsername(username) {
+    return selectPlayerByUsername.get(username) || null;
+  }
+
+  function findPlayerByIdentifier(identifier) {
+    return selectPlayerByIdentifier.get(identifier, identifier) || null;
+  }
+
   function setPlayerCredentials(playerId, email, passwordHash) {
     setCredentials.run(email, passwordHash, playerId);
+    return selectPlayerAccount.get(playerId);
+  }
+
+  // Full account registration (username + email + phone + password).
+  function registerPlayerAccount(playerId, { username, email, phone, passwordHash }) {
+    registerAccountStmt.run(username, email, phone || null, passwordHash, playerId);
+    return selectPlayerAccount.get(playerId);
+  }
+
+  function setPlayer2faSecret(playerId, secret) {
+    set2faSecretStmt.run(secret, 0, playerId); // store secret, not yet enabled
+    return selectPlayerAccount.get(playerId);
+  }
+
+  function setPlayer2faEnabled(playerId, enabled) {
+    const acct = selectPlayerAccount.get(playerId);
+    set2faSecretStmt.run(enabled ? acct?.twofaSecret : null, enabled ? 1 : 0, playerId);
     return selectPlayerAccount.get(playerId);
   }
 
@@ -624,6 +733,78 @@ export function createSqliteStore({ dbPath }) {
 
   function listPlayerIds() {
     return db.prepare("SELECT playerId FROM player_accounts ORDER BY createdAt").all().map((r) => r.playerId);
+  }
+
+  // ---------------- PLAYER STATE (progress/entitlements) ----------------
+
+  const selectState = db.prepare("SELECT state FROM player_state WHERE playerId = ?");
+  const upsertState = db.prepare(`
+    INSERT INTO player_state(playerId, state, updatedAt) VALUES(?, ?, ?)
+    ON CONFLICT(playerId) DO UPDATE SET state = excluded.state, updatedAt = excluded.updatedAt
+  `);
+
+  function getPlayerState(playerId, fallback = null) {
+    const row = selectState.get(playerId);
+    if (!row) return fallback;
+    try { return JSON.parse(row.state); } catch { return fallback; }
+  }
+
+  function setPlayerState(playerId, state) {
+    upsertState.run(playerId, JSON.stringify(state), nowIso());
+    return state;
+  }
+
+  function listStatePlayerIds() {
+    return db.prepare("SELECT playerId FROM player_state").all().map((r) => r.playerId);
+  }
+
+  // ---------------- REWARD CLAIMS ----------------
+
+  const insertClaim = db.prepare(`
+    INSERT OR IGNORE INTO reward_claims(claimKey, playerId, levelId, missionId, rewardCoins, discountCode, at)
+    VALUES(@claimKey, @playerId, @levelId, @missionId, @rewardCoins, @discountCode, @at)
+  `);
+  const countClaimsSince = db.prepare("SELECT COUNT(*) AS n FROM reward_claims WHERE playerId = ? AND at >= ?");
+
+  // Atomically record a claim + credit the reward. Returns { claimed, walletBalance }.
+  // Dedupe is enforced by the UNIQUE claimKey, so concurrent duplicates credit once.
+  const claimReward = db.transaction(({ claimKey, playerId, levelId, missionId, rewardCoins, discountCode }) => {
+    const at = nowIso();
+    const info = insertClaim.run({ claimKey, playerId, levelId, missionId, rewardCoins, discountCode, at });
+    if (info.changes === 0) return { claimed: false, walletBalance: ensureWallet(playerId) };
+    let walletBalance = ensureWallet(playerId);
+    if (rewardCoins > 0) {
+      walletBalance = applyBalance(playerId, "cash", rewardCoins, "rewards.claim", "mission", `${levelId}:${missionId}`, at);
+    }
+    return { claimed: true, walletBalance, at };
+  });
+
+  function countRewardClaimsSince(playerId, sinceIso) {
+    return countClaimsSince.get(playerId, sinceIso).n;
+  }
+
+  // ---------------- DISCOUNTS ----------------
+
+  const insertDiscount = db.prepare(`
+    INSERT INTO discounts(id, code, type, value, active, startsAt, endsAt, maxUses, used, createdAt)
+    VALUES(@id, @code, @type, @value, @active, @startsAt, @endsAt, @maxUses, 0, @createdAt)
+  `);
+  const selectDiscountByCode = db.prepare("SELECT * FROM discounts WHERE code = ?");
+  const consumeDiscountStmt = db.prepare("UPDATE discounts SET used = used + 1 WHERE id = ? AND (maxUses IS NULL OR used < maxUses)");
+
+  function createDiscount(discount) {
+    insertDiscount.run(discount);
+    return selectDiscountByCode.get(discount.code);
+  }
+  function listDiscounts() {
+    return db.prepare("SELECT * FROM discounts ORDER BY createdAt DESC").all();
+  }
+  function findDiscountByCode(code) {
+    return selectDiscountByCode.get(code) || null;
+  }
+  // Atomically consume one use if within maxUses. Returns true if consumed.
+  function consumeDiscount(id) {
+    return consumeDiscountStmt.run(id).changes > 0;
   }
 
   // ---------------- ADMIN USERS + SESSIONS ----------------
@@ -719,12 +900,29 @@ export function createSqliteStore({ dbPath }) {
     playerAccountExists,
     getPlayerAccount,
     findPlayerByEmail,
+    findPlayerByUsername,
+    findPlayerByIdentifier,
     setPlayerCredentials,
+    registerPlayerAccount,
+    setPlayer2faSecret,
+    setPlayer2faEnabled,
     markPlayerSeen,
     createPlayerSession,
     getPlayerSession,
     deletePlayerSession,
     listPlayerIds,
+    // player state (progress)
+    getPlayerState,
+    setPlayerState,
+    listStatePlayerIds,
+    // reward claims
+    claimReward,
+    countRewardClaimsSince,
+    // discounts
+    createDiscount,
+    listDiscounts,
+    findDiscountByCode,
+    consumeDiscount,
     // admin users + sessions
     createAdminUser,
     findAdminUserByEmail,
