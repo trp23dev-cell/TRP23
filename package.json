@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "start": "node server/mockApiServer.js",
     "dev": "vite",
     "dev:api": "node server/mockApiServer.js",
     "dev:full": "node server/dev-full.js",
