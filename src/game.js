@@ -816,17 +816,20 @@ function dustSprite(){
   if(_dustTex) return _dustTex;
   const c=document.createElement('canvas'); c.width=c.height=32;
   const g=c.getContext('2d');
+  // Very soft, low-contrast falloff so motes read as haze, not hard dots.
   const grd=g.createRadialGradient(16,16,0,16,16,16);
-  grd.addColorStop(0,'rgba(255,255,255,0.9)');
-  grd.addColorStop(.4,'rgba(255,255,255,0.35)');
+  grd.addColorStop(0,'rgba(255,255,255,0.55)');
+  grd.addColorStop(.5,'rgba(255,255,255,0.16)');
   grd.addColorStop(1,'rgba(255,255,255,0)');
   g.fillStyle=grd; g.fillRect(0,0,32,32);
   _dustTex=new THREE.CanvasTexture(c);
   return _dustTex;
 }
 function dustMotes(color=0xc9b58a,op=.5){
-  // Two overlaid clouds: many tiny fine motes + a few larger, softer ones.
-  // Both drift organically instead of falling, so they read as airborne dust.
+  // Fine airborne dust. Deliberately uses NORMAL blending (not additive) and
+  // small, faint sprites so the UnrealBloom pass doesn't turn motes into glowing
+  // orbs. Two overlaid clouds — a dense fine haze plus a few slightly larger,
+  // even fainter motes — both drift organically instead of falling.
   dustRef=new THREE.Group();
   const layer=(count,size,mul)=>{
     const geo=new THREE.BufferGeometry();
@@ -843,14 +846,14 @@ function dustMotes(color=0xc9b58a,op=.5){
     const mat=new THREE.PointsMaterial({
       color, size, map:dustSprite(),
       transparent:true, opacity:op*mul,
-      depthWrite:false, blending:THREE.AdditiveBlending, sizeAttenuation:true
+      depthWrite:false, blending:THREE.NormalBlending, sizeAttenuation:true
     });
     const pts=new THREE.Points(geo,mat);
     pts.userData={base,seed,spd,amp};
     dustRef.add(pts);
   };
-  layer(230,.028,.5);   // fine haze
-  layer(60,.07,.7);     // larger, brighter motes
+  layer(260,.014,.45);  // fine haze — tiny, faint
+  layer(40,.03,.3);     // a few larger motes — still very subtle
   G(dustRef);
 }
 function cashScatter(n=20){
