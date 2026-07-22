@@ -14,6 +14,16 @@ import {
   loadPlayerProfile,
   savePlayerProfile,
   trackPlayerEvent,
+  purchaseDrop,
+  claimMissionReward,
+  topUpWallet,
+  ensurePlayerSession,
+  getWorldLocations,
+  getLocationDetail,
+  getBankAccount,
+  bankDeposit,
+  bankWithdraw,
+  bankTransfer,
 } from "./data/playerStore";
 // ---- compatibility guard: fail loudly, not silently ----
 function __fatal(msg){
@@ -186,6 +196,7 @@ function buildRuntimeLevels(content){
 
     return {
       ...base,
+      chapterId: chapter.id || `lvl-${chapter.number || base.num}`,
       num: chapter.number || base.num,
       name: chapter.name || base.name,
       sub: chapter.subtitle || base.sub,
@@ -222,7 +233,7 @@ function missionProgressSnapshot(){
 const state={ coins:1600, owned:[], level:0, walked:0, inspected:false,
   viewed:new Set(), codes:[], levelsCleared:0 };
 
-const playerId=getOrCreatePlayerId();
+let playerId=getOrCreatePlayerId();
 let progressHydrated=false;
 let persistTimer=null;
 
@@ -234,6 +245,9 @@ async function hydrateProgress(){
   if(progressHydrated) return;
   progressHydrated=true;
   try{
+    // Authenticate the player first so the wallet/economy calls act as them.
+    const session=await ensurePlayerSession();
+    if(session?.playerId) playerId=session.playerId;
     const profile=await loadPlayerProfile(playerId);
     if(typeof profile.wallet?.coins==='number') state.coins=profile.wallet.coins;
     if(Array.isArray(profile.inventory?.ownedDropIds)) state.owned=profile.inventory.ownedDropIds.slice(0,PRODUCTS.length);
@@ -379,12 +393,20 @@ function progress(){
   $('#stashLine').innerHTML='STASH: '+(found?'<span class="fnd">FOUND ✓</span>':'<span class="hid">STILL HIDDEN</span>');
 }
 function clearMission(id){
-  const m=LV().missions.find(m=>m.id===id);
+  const lv=LV();
+  const m=lv.missions.find(m=>m.id===id);
   if(!m||m.done) return;
   m.done=true;
-  queuePlayerEvent('mission_cleared',{ level: LV().num, missionId: id, missionTitle: m.title });
-  if(m.coins) setCoins(state.coins+m.coins);
-  toast(`MISSION CLEARED — <span class="gold">${m.title.toUpperCase()}</span>${m.coins?` &nbsp;+${m.coins} COINS`:''}`);
+  queuePlayerEvent('mission_cleared',{ level: lv.num, missionId: id, missionTitle: m.title });
+  // Reward is credited by the server (authoritative wallet + dedupe). Optimistically
+  // reflect it locally, then reconcile with the server's returned balance.
+  const rewardCoins=m.coins||0;
+  const stashCode=id==='stash'?lv.code:null;
+  if(rewardCoins) setCoins(state.coins+rewardCoins);
+  claimMissionReward(playerId,{ levelId: lv.chapterId, missionId: id, rewardCoins, discountCode: stashCode })
+    .then(res=>{ if(res.ok && typeof res.walletCoins==='number') setCoins(res.walletCoins); })
+    .catch(()=>{});
+  toast(`MISSION CLEARED — <span class="gold">${m.title.toUpperCase()}</span>${rewardCoins?` &nbsp;+${rewardCoins} COINS`:''}`);
   renderMissions(); progress();
   if(missionsDone()){
     if(state.level<LEVELS.length-1){
@@ -771,12 +793,46 @@ function bulb(x,y,z,intensity=1.4){
   bulbRef={light:l,mesh:b,base:l.intensity};
   return l;
 }
+let _dustTex=null;
+function dustSprite(){
+  if(_dustTex) return _dustTex;
+  const c=document.createElement('canvas'); c.width=c.height=32;
+  const g=c.getContext('2d');
+  const grd=g.createRadialGradient(16,16,0,16,16,16);
+  grd.addColorStop(0,'rgba(255,255,255,0.9)');
+  grd.addColorStop(.4,'rgba(255,255,255,0.35)');
+  grd.addColorStop(1,'rgba(255,255,255,0)');
+  g.fillStyle=grd; g.fillRect(0,0,32,32);
+  _dustTex=new THREE.CanvasTexture(c);
+  return _dustTex;
+}
 function dustMotes(color=0xc9b58a,op=.5){
-  const geo=new THREE.BufferGeometry();
-  const pos=new Float32Array(380*3);
-  for(let i=0;i<380;i++){ pos[i*3]=(Math.random()-.5)*ROOM.w; pos[i*3+1]=Math.random()*ROOM.h; pos[i*3+2]=(Math.random()-.5)*ROOM.d; }
-  geo.setAttribute('position',new THREE.BufferAttribute(pos,3));
-  dustRef=new THREE.Points(geo,new THREE.PointsMaterial({color,size:.014,transparent:true,opacity:op}));
+  // Two overlaid clouds: many tiny fine motes + a few larger, softer ones.
+  // Both drift organically instead of falling, so they read as airborne dust.
+  dustRef=new THREE.Group();
+  const layer=(count,size,mul)=>{
+    const geo=new THREE.BufferGeometry();
+    const pos=new Float32Array(count*3), base=new Float32Array(count*3);
+    const seed=new Float32Array(count), spd=new Float32Array(count), amp=new Float32Array(count);
+    for(let i=0;i<count;i++){
+      const x=(Math.random()-.5)*ROOM.w, y=Math.random()*ROOM.h, z=(Math.random()-.5)*ROOM.d;
+      pos[i*3]=base[i*3]=x; pos[i*3+1]=base[i*3+1]=y; pos[i*3+2]=base[i*3+2]=z;
+      seed[i]=Math.random()*Math.PI*2;
+      spd[i]=.2+Math.random()*.6;                 // slow, varied drift
+      amp[i]=.03+Math.random()*.09;               // small drift radius
+    }
+    geo.setAttribute('position',new THREE.BufferAttribute(pos,3));
+    const mat=new THREE.PointsMaterial({
+      color, size, map:dustSprite(),
+      transparent:true, opacity:op*mul,
+      depthWrite:false, blending:THREE.AdditiveBlending, sizeAttenuation:true
+    });
+    const pts=new THREE.Points(geo,mat);
+    pts.userData={base,seed,spd,amp};
+    dustRef.add(pts);
+  };
+  layer(230,.028,.5);   // fine haze
+  layer(60,.07,.7);     // larger, brighter motes
   G(dustRef);
 }
 function cashScatter(n=20){
@@ -878,9 +934,10 @@ function stash(x,y,z,ry=0){
   hit.position.set(x,y,z); G(hit);
   tagInteract(hit,'???',()=>{
     if(LV().missions.find(m=>m.id==='stash')?.done) return;
-    setCoins(state.coins+500);
-    state.codes.push(LV().code);
-    $('#stashText').textContent=`Tucked away exactly where the board said it'd be. Inside: 500 Trap Coins and a one-time deal for this level — ${LV().deal.toLowerCase()}.`;
+    // Coins are credited server-side via clearMission('stash'); just record the code locally for display.
+    if(!state.codes.includes(LV().code)) state.codes.push(LV().code);
+    const stashCoins=LV().missions.find(m=>m.id==='stash')?.coins||500;
+    $('#stashText').textContent=`Tucked away exactly where the board said it'd be. Inside: ${stashCoins} Trap Coins and a one-time deal for this level — ${LV().deal.toLowerCase()}.`;
     $('#stashCode').textContent='CODE: '+LV().code+' — '+LV().deal;
     openPanel('stashPanel');
     clearMission('stash');
@@ -1621,21 +1678,161 @@ function openShop(pi){
   openPanel('shopPanel');
   requestAnimationFrame(sizeViewer);
 }
-$('#buyBtn').addEventListener('click',()=>{
+// Shared server-authoritative purchase used by both the 3D viewer and the storefront.
+async function securePurchase(product){
+  if(!product||state.owned.includes(product.id)) return { ok:false, reason:'owned' };
+  const dropId=product.cmsDropId||product.id;
+  if(state.coins<product.price){ toast('NOT ENOUGH COINS — <span class="gold">SECURE MORE FIRST</span>'); return { ok:false, reason:'funds' }; }
+  const res=await purchaseDrop(playerId,{ dropId });
+  if(res.ok){
+    if(typeof res.walletCoins==='number') setCoins(res.walletCoins);
+    // Reconcile the closet from the server's authoritative owned list.
+    if(Array.isArray(res.ownedDropIds)){
+      const ownedSet=new Set(res.ownedDropIds);
+      state.owned=PRODUCTS.filter(q=>ownedSet.has(q.cmsDropId||q.id)).map(q=>q.id);
+    } else if(!state.owned.includes(product.id)){
+      state.owned.push(product.id);
+    }
+    persistProgress();
+    queuePlayerEvent('drop_purchased',{ dropId, priceCoins: product.price, sku: product.sku || null });
+    toast(`<span class="gold">${product.name.toUpperCase()}</span> SECURED — ADDED TO YOUR CLOSET`);
+    afterPurchase();
+  } else if(res.status===402){
+    if(typeof res.walletCoins==='number') setCoins(res.walletCoins);
+    toast('NOT ENOUGH COINS — <span class="gold">SECURE MORE FIRST</span>');
+  } else if(res.status===409){
+    toast('SOLD OUT — <span class="gold">TRY ANOTHER DROP</span>');
+  } else {
+    toast('PURCHASE FAILED — <span class="gold">CHECK YOUR CONNECTION</span>');
+  }
+  return res;
+}
+$('#buyBtn').addEventListener('click',async ()=>{
   const p=PRODUCTS[currentProduct];
-  if(state.coins<p.price||state.owned.includes(p.id)) return;
-  setCoins(state.coins-p.price);
-  state.owned.push(p.id);
-  queuePlayerEvent('drop_purchased',{ dropId: p.cmsDropId || p.id, priceCoins: p.price, sku: p.sku || null });
-  toast(`<span class="gold">${p.name.toUpperCase()}</span> SECURED — ADDED TO YOUR CLOSET`);
-  afterPurchase();
+  const btn=$('#buyBtn');
+  if(btn.disabled) return;
+  btn.disabled=true; btn.textContent='Securing…';
+  await securePurchase(p);
+  btn.disabled=false;
   openShop(currentProduct);
 });
-$('#topupLink').addEventListener('click',()=>{
-  setCoins(state.coins+1000);
-  queuePlayerEvent('coins_topup',{ amount: 1000 });
-  toast('TOP-UP COMPLETE — <span class="gold">+1,000 TRAP COINS</span>');
+$('#topupLink').addEventListener('click',async ()=>{
+  const res=await topUpWallet(playerId,1000);
+  if(res.ok && typeof res.walletCoins==='number'){
+    setCoins(res.walletCoins);
+    toast('TOP-UP COMPLETE — <span class="gold">+1,000 TRAP COINS</span>');
+  } else {
+    toast('TOP-UP FAILED — <span class="gold">TRY AGAIN</span>');
+  }
   openShop(currentProduct);
+});
+
+// ==================== STOREFRONT (per-shop catalog) ====================
+let worldLocations=null;
+async function loadWorldLocations(){
+  if(worldLocations) return worldLocations;
+  const res=await getWorldLocations();
+  if(res.ok) worldLocations=res.locations;
+  return worldLocations||[];
+}
+function productForDropId(dropId){
+  return PRODUCTS.find(q=>(q.cmsDropId||q.id)===dropId)||null;
+}
+async function shopForCurrentLevel(){
+  const locs=await loadWorldLocations();
+  const chapterId=LV().chapterId;
+  return locs.find(l=>l.kind==='shop'&&l.chapterId===chapterId)
+      || locs.find(l=>l.kind==='shop')||null;
+}
+function renderStore(location){
+  $('#storeTitle').textContent=location.name||'Store';
+  $('#storeDesc').textContent=location.description||'';
+  const products=Array.isArray(location.products)?location.products:[];
+  const grid=$('#storeGrid'); const empty=$('#storeEmpty');
+  if(!products.length){ grid.innerHTML=''; empty.style.display='block'; return; }
+  empty.style.display='none';
+  grid.innerHTML=products.map(drop=>{
+    const local=productForDropId(drop.id);
+    const swatch=local?local.swatch:'#2a231a';
+    const price=typeof drop.priceCoins==='number'?drop.priceCoins:(local?local.price:0);
+    const stock=drop.inventory?.stock??0;
+    const owned=local?state.owned.includes(local.id):false;
+    const affordable=state.coins>=price;
+    const btn=owned
+      ? `<div class="sc-owned">✓ In closet</div>`
+      : `<button class="sc-buy" data-drop="${drop.id}" ${(!stock||!affordable)?'disabled':''}>${stock?(affordable?'Buy':'Need coins'):'Sold out'}</button>`;
+    return `<div class="store-card">
+      <div class="sc-swatch" style="background:${swatch}"></div>
+      <div class="sc-name">${(drop.name||'').toUpperCase()}</div>
+      <div class="sc-color">${drop.color||''}</div>
+      <div class="sc-meta">
+        <div class="sc-price">${fmt(price)}<small>coins</small></div>
+        <div class="sc-stock ${stock?'':'out'}">${stock?stock+' in stock':'sold out'}</div>
+      </div>
+      ${btn}
+    </div>`;
+  }).join('');
+  grid.querySelectorAll('.sc-buy').forEach(b=>b.addEventListener('click',async ()=>{
+    const drop=products.find(d=>d.id===b.dataset.drop);
+    const local=productForDropId(b.dataset.drop);
+    if(!local){ toast('THIS DROP ISN\'T AVAILABLE YET'); return; }
+    b.disabled=true; b.textContent='Securing…';
+    const res=await securePurchase(local);
+    // Refresh the catalog so stock + owned state reflect the server.
+    if(res.ok) await openStorefront(currentStoreLocationId); else b.disabled=false;
+  }));
+}
+let currentStoreLocationId=null;
+async function openStorefront(locationId){
+  let loc;
+  if(locationId){
+    const res=await getLocationDetail(locationId);
+    loc=res.ok?res.location:null;
+  } else {
+    const shop=await shopForCurrentLevel();
+    if(shop){ const res=await getLocationDetail(shop.id); loc=res.ok?res.location:null; }
+  }
+  if(!loc){ toast('STORE UNAVAILABLE — <span class="gold">CHECK CONNECTION</span>'); return; }
+  currentStoreLocationId=loc.id;
+  renderStore(loc);
+  openPanel('storePanel');
+}
+$('#openStoreBtn')?.addEventListener('click',()=>openStorefront());
+
+// ==================== BANK ====================
+function setBankStatus(msg,kind){ const el=$('#bankStatus'); el.textContent=msg||''; el.className='bank-status'+(kind?' '+kind:''); }
+function renderBankBalances(cash,bank){
+  if(typeof cash==='number'){ $('#bankCash').textContent=fmt(cash); setCoins(cash); }
+  if(typeof bank==='number') $('#bankSaved').textContent=fmt(bank);
+}
+async function openBankPanel(){
+  setBankStatus('Loading…');
+  openPanel('bankPanel');
+  const res=await getBankAccount();
+  if(res.ok){ renderBankBalances(res.cash,res.bank); setBankStatus(''); }
+  else setBankStatus('Could not reach the bank.','err');
+}
+$('#openBankBtn')?.addEventListener('click',openBankPanel);
+function readAmt(sel){ const v=Math.floor(Number($(sel).value)); return Number.isFinite(v)&&v>0?v:0; }
+$('#bankDepositBtn')?.addEventListener('click',async ()=>{
+  const amt=readAmt('#bankDepositAmt'); if(!amt){ setBankStatus('Enter a valid amount.','err'); return; }
+  const res=await bankDeposit(amt);
+  if(res.ok){ renderBankBalances(res.cash,res.bank); $('#bankDepositAmt').value=''; setBankStatus(`Deposited ${fmt(amt)} coins.`,'ok'); }
+  else setBankStatus(res.status===402?'Not enough cash to deposit.':'Deposit failed.','err');
+});
+$('#bankWithdrawBtn')?.addEventListener('click',async ()=>{
+  const amt=readAmt('#bankWithdrawAmt'); if(!amt){ setBankStatus('Enter a valid amount.','err'); return; }
+  const res=await bankWithdraw(amt);
+  if(res.ok){ renderBankBalances(res.cash,res.bank); $('#bankWithdrawAmt').value=''; setBankStatus(`Withdrew ${fmt(amt)} coins.`,'ok'); }
+  else setBankStatus(res.status===402?'Not enough in the bank.':'Withdrawal failed.','err');
+});
+$('#bankTransferBtn')?.addEventListener('click',async ()=>{
+  const to=$('#bankTransferTo').value.trim(); const amt=readAmt('#bankTransferAmt');
+  if(!to){ setBankStatus('Enter a player ID to send to.','err'); return; }
+  if(!amt){ setBankStatus('Enter a valid amount.','err'); return; }
+  const res=await bankTransfer(to,amt);
+  if(res.ok){ renderBankBalances(res.fromBalance,undefined); $('#bankTransferAmt').value=''; setBankStatus(`Sent ${fmt(amt)} coins.`,'ok'); }
+  else setBankStatus(res.status===402?'Not enough coins to send.':(res.status===400?'Check the player ID and amount.':'Transfer failed.'),'err');
 });
 
 // ==================== LOADER ====================
@@ -1698,7 +1895,19 @@ function loop(now){
     tvTexRef._light.intensity=(1.0+Math.random()*.5)*LEGACY_POINT_SPOT_LIGHT_MULTIPLIER*(tvTexRef._flickerScale||1);
   }
   if(doorGlowRef&&!doorLocked) doorGlowRef.material.emissiveIntensity=1.0+Math.sin(now*.004)*.45;
-  if(dustRef) dustRef.rotation.y+=dt*.012;
+  if(dustRef){                          // airborne dust: gentle multi-frequency swirl, no falling
+    const t=now*.001;
+    for(const pts of dustRef.children){
+      const u=pts.userData, p=pts.geometry.attributes.position, a=p.array, b=u.base;
+      for(let i=0;i<u.seed.length;i++){
+        const s=u.seed[i], sp=u.spd[i], am=u.amp[i], j=i*3;
+        a[j]  =b[j]  +Math.sin(t*sp+s)*am        +Math.sin(t*sp*.37+s*2.1)*am*.5;
+        a[j+1]=b[j+1]+Math.sin(t*sp*.5+s*1.7)*am*.8;
+        a[j+2]=b[j+2]+Math.cos(t*sp*.8+s*.7)*am  +Math.cos(t*sp*.29+s*1.3)*am*.5;
+      }
+      p.needsUpdate=true;
+    }
+  }
   if(heroSpinRef) heroSpinRef.rotation.y+=dt*.25;
   if(controls.enabled&&!dragging){
     const o=castCenter();

@@ -129,12 +129,16 @@ Admin access for local testing:
 
 ## API Groups
 
-- Health: `/api/health`
-- Auth: `/api/auth/register`, `/api/auth/login`, `/api/auth/me`
+- Health: `/api/health` (returns `schemaVersion`)
+- Admin Auth: `/api/auth/register`, `/api/auth/login`, `/api/auth/me`
+- Player Auth: `/api/players/session` (guest), `/api/players/register`, `/api/players/login`, `/api/players/me`, `/api/players/logout`
 - Content/CMS: `/api/content`, `/api/cms/chapters`, `/api/cms/drops`, `/api/cms/publish`
 - Player: `/api/player/:playerId`
 - Events: `/api/events`
 - Commerce: `/api/commerce/products`, `/api/commerce/discounts`, `/api/commerce/checkout`, `/api/commerce/orders`, `/api/commerce/refunds`, `/api/commerce/fulfillments`
+- Wallet: `/api/wallet/:playerId` (balances + ledger), `/api/wallet/topup`
+- Bank: `/api/bank/:playerId`, `/api/bank/deposit`, `/api/bank/withdraw`, `/api/bank/transfer`
+- World: `/api/world/locations`, `/api/world/locations/:id`
 - Rewards: `/api/rewards/claim`
 - Ops: `/api/ops/analytics`, `/api/ops/moderation`
 - Community: `/api/community/stories`, `/api/community/opportunities`, `/api/community/chapter-events`, `/api/community/leaderboard`

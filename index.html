@@ -39,6 +39,10 @@ You're viewing this in an email preview, which can't run the game.<br>
       <div><div class="amt" id="coinAmt">1,600</div><div class="lbl">Trap Coins</div></div>
     </div>
   </div>
+  <div class="hud-actions" id="hudActions">
+    <button class="hud-act" id="openStoreBtn" title="Open this spot's store">🛍<span>Store</span></button>
+    <button class="hud-act" id="openBankBtn" title="Open the bank">🏦<span>Bank</span></button>
+  </div>
   <div id="crosshair"></div>
   <div id="hoverTag"></div>
   <div id="toast"></div>
@@ -149,6 +153,62 @@ You're viewing this in an email preview, which can't run the game.<br>
         <div class="owned-flag" id="ownedFlag">✓ In your closet</div>
         <div class="topup">Short on coins? <a id="topupLink">Top up</a> — £10 = 1,000 Trap Coins. Every real purchase earns coins back.</div>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- STOREFRONT (per-shop catalog, backed by /api/world/locations) -->
+<div class="panel-wrap" id="storePanel">
+  <div class="panel">
+    <div class="panel-head">
+      <div class="ph-title"><span class="ph-num">SHOP</span><span class="ph-name display" id="storeTitle">Store</span></div>
+      <button class="xbtn" data-close="storePanel">✕</button>
+    </div>
+    <div class="store-body">
+      <div class="store-desc" id="storeDesc"></div>
+      <div class="store-grid" id="storeGrid"></div>
+      <div class="store-empty" id="storeEmpty" style="display:none">This spot isn't stocked yet.</div>
+    </div>
+  </div>
+</div>
+
+<!-- BANK (deposit / withdraw / transfer, backed by /api/bank) -->
+<div class="panel-wrap" id="bankPanel">
+  <div class="panel bank-panel">
+    <div class="panel-head">
+      <div class="ph-title"><span class="ph-num">BANK</span><span class="ph-name display">Trap Central Bank</span></div>
+      <button class="xbtn" data-close="bankPanel">✕</button>
+    </div>
+    <div class="bank-body">
+      <div class="bank-balances">
+        <div class="bank-bal"><div class="bb-lbl">Wallet · cash on hand</div><div class="bb-amt" id="bankCash">0</div></div>
+        <div class="bank-bal saved"><div class="bb-lbl">Bank · kept safe</div><div class="bb-amt" id="bankSaved">0</div></div>
+      </div>
+      <div class="bank-actions">
+        <div class="bank-act">
+          <label for="bankDepositAmt">Deposit to bank</label>
+          <div class="bank-row">
+            <input id="bankDepositAmt" type="number" min="1" step="1" placeholder="Amount" />
+            <button class="mini-btn" id="bankDepositBtn">Deposit</button>
+          </div>
+        </div>
+        <div class="bank-act">
+          <label for="bankWithdrawAmt">Withdraw to wallet</label>
+          <div class="bank-row">
+            <input id="bankWithdrawAmt" type="number" min="1" step="1" placeholder="Amount" />
+            <button class="mini-btn" id="bankWithdrawBtn">Withdraw</button>
+          </div>
+        </div>
+        <div class="bank-act">
+          <label for="bankTransferTo">Send coins to another player</label>
+          <div class="bank-row">
+            <input id="bankTransferTo" type="text" placeholder="Player ID" />
+            <input id="bankTransferAmt" type="number" min="1" step="1" placeholder="Amount" style="max-width:120px" />
+            <button class="mini-btn" id="bankTransferBtn">Send</button>
+          </div>
+        </div>
+      </div>
+      <div class="bank-status" id="bankStatus"></div>
     </div>
   </div>
 </div>

@@ -2,9 +2,10 @@ import { createServer } from "node:http";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomUUID, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { defaultContent } from "../src/data/defaultContent.js";
-import { createSqliteStore } from "./storage/sqliteStore.js";
+import { defaultWorld } from "../src/data/defaultWorld.js";
+import { createSqliteStore, STARTING_COINS } from "./storage/sqliteStore.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -12,10 +13,6 @@ const storageDir = path.join(__dirname, "storage");
 const dbFile = path.join(storageDir, "trapmadeit.db");
 const contentFile = "content";
 const playersFile = "players";
-const usersFile = "users";
-const sessionsFile = "sessions";
-const inventoryFile = "inventory";
-const ordersFile = "orders";
 const discountsFile = "discounts";
 const refundsFile = "refunds";
 const fulfillmentsFile = "fulfillments";
@@ -35,7 +32,7 @@ function createDefaultPlayerProfile(playerId) {
   return {
     playerId,
     trustStatus: "standard",
-    wallet: { coins: 1600 },
+    wallet: { coins: STARTING_COINS },
     progress: {
       currentLevel: 0,
       levelsCleared: 0,
@@ -59,8 +56,66 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-function hashPassword(password) {
-  return createHash("sha256").update(password).digest("hex");
+// Verify an admin password against a stored hash. Supports the new salted
+// scrypt format and the legacy unsalted SHA-256 (so existing accounts keep
+// working); callers re-hash legacy accounts to scrypt on successful login.
+function verifyAdminPassword(password, stored) {
+  if (!stored) return false;
+  if (stored.startsWith("scrypt$")) return verifyPlayerPassword(password, stored);
+  const legacy = createHash("sha256").update(String(password)).digest("hex");
+  const a = Buffer.from(stored);
+  const b = Buffer.from(legacy);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+const PLAYER_SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30; // 30 days for guest players
+
+// Salted scrypt hashing for PLAYER credentials (stronger than the legacy admin
+// SHA-256). Stored as "scrypt$<saltHex>$<hashHex>".
+function hashPlayerPassword(password) {
+  const salt = randomBytes(16);
+  const hash = scryptSync(String(password), salt, 64);
+  return `scrypt$${salt.toString("hex")}$${hash.toString("hex")}`;
+}
+
+function verifyPlayerPassword(password, stored) {
+  if (!stored || !stored.startsWith("scrypt$")) return false;
+  const [, saltHex, hashHex] = stored.split("$");
+  const salt = Buffer.from(saltHex, "hex");
+  const expected = Buffer.from(hashHex, "hex");
+  const actual = scryptSync(String(password), salt, expected.length);
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
+}
+
+// Resolve a player Bearer token to { token, playerId }, or null. Expired
+// sessions are cleaned up on access.
+function playerAuthContext(req) {
+  const token = parseBearerToken(req);
+  if (!token) return null;
+  const session = store.getPlayerSession(token);
+  if (!session) return null;
+  if (session.expiresAt && new Date(session.expiresAt) < new Date()) {
+    store.deletePlayerSession(token);
+    return null;
+  }
+  return { token, playerId: session.playerId };
+}
+
+// Determine which player an economy request is allowed to act as.
+// - Admin/ops may act on any player (support tooling): honour requestedId.
+// - A logged-in player may ONLY act as themselves — requestedId is ignored.
+// - Otherwise the request is unauthenticated (null).
+function resolveActingPlayer(ctx, pctx, requestedId) {
+  if (requiresRole(ctx, ["admin", "ops"])) return requestedId || pctx?.playerId || null;
+  if (pctx) return pctx.playerId;
+  return null;
+}
+
+function issuePlayerSession(playerId) {
+  const token = `pt_${randomUUID().replace(/-/g, "")}${randomBytes(8).toString("hex")}`;
+  const expiresAt = new Date(Date.now() + PLAYER_SESSION_TTL_MS).toISOString();
+  store.createPlayerSession(token, playerId, expiresAt);
+  return { token, expiresAt };
 }
 
 function sanitizeUser(user) {
@@ -72,18 +127,18 @@ function sanitizeUser(user) {
   };
 }
 
-function buildDefaultInventory(content) {
-  const inv = {};
-  for (const drop of content.drops || []) {
-    inv[drop.id] = {
-      dropId: drop.id,
-      sku: drop.sku || null,
-      stock: 50,
-      reserved: 0,
-      updatedAt: nowIso(),
-    };
-  }
-  return inv;
+// Server-authoritative view of a player's economy, assembled from the
+// relational tables (wallet + ownership) merged with the KV progress blob.
+function buildPlayerProfile(playerId) {
+  const players = store.getJson(playersFile, {});
+  const base = players[playerId] || createDefaultPlayerProfile(playerId);
+  return {
+    ...base,
+    playerId,
+    wallet: { coins: store.getWalletBalance(playerId) },
+    bank: { coins: store.getBankBalance(playerId) },
+    inventory: { ownedDropIds: store.getOwnedDropIds(playerId) },
+  };
 }
 
 function parseBearerToken(req) {
@@ -92,19 +147,16 @@ function parseBearerToken(req) {
   return auth.slice(7).trim();
 }
 
-async function authContext(req) {
+function authContext(req) {
   const token = parseBearerToken(req);
   if (!token) return null;
-  const sessions = await readJson(sessionsFile, {});
-  const users = await readJson(usersFile, []);
-  const session = sessions[token];
+  const session = store.getAdminSession(token);
   if (!session) return null;
   if (session.expiresAt && new Date(session.expiresAt) < new Date()) {
-    delete sessions[token];
-    await writeJson(sessionsFile, sessions);
+    store.deleteAdminSession(token);
     return null;
   }
-  const user = users.find((u) => u.id === session.userId);
+  const user = store.findAdminUserById(session.userId);
   if (!user) return null;
   return { token, session, user };
 }
@@ -131,27 +183,19 @@ async function ensureStorage() {
   store = createSqliteStore({ dbPath: dbFile });
   store.ensureKey(contentFile, defaultContent);
   store.ensureKey(playersFile, {});
-  store.ensureKey(usersFile, []);
-  store.ensureKey(sessionsFile, {});
-  store.ensureKey(inventoryFile, buildDefaultInventory(defaultContent));
-  for (const file of [ordersFile, discountsFile, refundsFile, fulfillmentsFile, releasesFile, rewardClaimsFile, moderationFile, storiesFile, opportunitiesFile, chapterEventsFile]) {
+  for (const file of [discountsFile, refundsFile, fulfillmentsFile, releasesFile, rewardClaimsFile, moderationFile, storiesFile, opportunitiesFile, chapterEventsFile]) {
     store.ensureKey(file, []);
   }
   store.ensureKey(auditFile, []);
 
+  // Seed the relational economy + world tables (non-destructive).
+  const seededContent = await readJson(contentFile, defaultContent);
+  store.seedInventory(seededContent.drops || defaultContent.drops || []);
+  store.seedLocations(defaultWorld.locations || []);
+
   // Safety valve for hosted deployments that may re-use an older local DB snapshot.
   if (process.env.NODE_ENV === "production") {
-    const users = await readJson(usersFile, []);
-    const filteredUsers = users.filter((u) => u.email !== LEGACY_DEFAULT_ADMIN_EMAIL);
-    if (filteredUsers.length !== users.length) {
-      await writeJson(usersFile, filteredUsers);
-      const removedIds = new Set(users.filter((u) => u.email === LEGACY_DEFAULT_ADMIN_EMAIL).map((u) => u.id));
-      const sessions = await readJson(sessionsFile, {});
-      for (const [token, session] of Object.entries(sessions)) {
-        if (removedIds.has(session.userId)) delete sessions[token];
-      }
-      await writeJson(sessionsFile, sessions);
-    }
+    store.removeAdminByEmail(LEGACY_DEFAULT_ADMIN_EMAIL);
   }
 }
 
@@ -204,9 +248,10 @@ async function handleRequest(req, res) {
   const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
   const { pathname } = url;
   const ctx = await authContext(req);
+  const pctx = playerAuthContext(req);
 
   if (req.method === "GET" && pathname === "/api/health") {
-    sendJson(res, 200, { ok: true, service: "mock-api" });
+    sendJson(res, 200, { ok: true, service: "mock-api", schemaVersion: store.getSchemaVersion() });
     return;
   }
 
@@ -221,20 +266,18 @@ async function handleRequest(req, res) {
         sendJson(res, 400, { ok: false, error: "email and password are required" });
         return;
       }
-      const users = await readJson(usersFile, []);
-      if (users.some((u) => u.email === email)) {
+      if (store.findAdminUserByEmail(email)) {
         sendJson(res, 409, { ok: false, error: "email already exists" });
         return;
       }
       const user = {
         id: `u_${randomUUID().slice(0, 8)}`,
         email,
-        passwordHash: hashPassword(password),
+        passwordHash: hashPlayerPassword(password),
         role,
         createdAt: nowIso(),
       };
-      users.push(user);
-      await writeJson(usersFile, users);
+      store.createAdminUser(user);
       await logAudit("auth.register", null, { email, role });
       sendJson(res, 201, { ok: true, user: sanitizeUser(user) });
       return;
@@ -249,20 +292,18 @@ async function handleRequest(req, res) {
       const body = JSON.parse((await readBody(req)) || "{}");
       const email = String(body.email || "").trim().toLowerCase();
       const password = String(body.password || "");
-      const users = await readJson(usersFile, []);
-      const user = users.find((u) => u.email === email && u.passwordHash === hashPassword(password));
-      if (!user) {
+      const user = store.findAdminUserByEmail(email);
+      if (!user || !verifyAdminPassword(password, user.passwordHash)) {
         sendJson(res, 401, { ok: false, error: "invalid credentials" });
         return;
       }
+      // Transparently upgrade legacy SHA-256 accounts to scrypt on login.
+      if (!user.passwordHash.startsWith("scrypt$")) {
+        store.updateAdminPasswordHash(user.id, hashPlayerPassword(password));
+      }
       const token = `t_${randomUUID().replace(/-/g, "")}`;
-      const sessions = await readJson(sessionsFile, {});
-      sessions[token] = {
-        userId: user.id,
-        createdAt: nowIso(),
-        expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7).toISOString(),
-      };
-      await writeJson(sessionsFile, sessions);
+      const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * 7).toISOString();
+      store.createAdminSession(token, user.id, expiresAt);
       await logAudit("auth.login", { user }, { userId: user.id });
       sendJson(res, 200, { ok: true, token, user: sanitizeUser(user) });
       return;
@@ -278,6 +319,97 @@ async function handleRequest(req, res) {
       return;
     }
     sendJson(res, 200, { ok: true, user: sanitizeUser(ctx.user) });
+    return;
+  }
+
+  // ---------------- PLAYER AUTH ----------------
+  // Start (or refresh) a player session. This is how the game authenticates.
+  // - Valid player token present  -> refresh, keep the same playerId.
+  // - Proposed playerId that is unclaimed -> adopt it (preserves guest progress).
+  // - Otherwise -> mint a brand-new server-owned playerId.
+  if (req.method === "POST" && pathname === "/api/players/session") {
+    const body = JSON.parse((await readBody(req)) || "{}");
+    let playerId;
+    if (pctx) {
+      playerId = pctx.playerId;
+    } else {
+      const proposed = String(body.playerId || "").trim();
+      if (proposed && !store.playerAccountExists(proposed)) {
+        playerId = proposed; // adopt an unclaimed id (first-claim-wins)
+      } else {
+        playerId = `p_${randomUUID().slice(0, 8)}${randomBytes(4).toString("hex")}`;
+      }
+    }
+    store.ensurePlayerAccount(playerId);
+    store.ensureWallet(playerId);
+    store.markPlayerSeen(playerId);
+    const { token, expiresAt } = issuePlayerSession(playerId);
+    sendJson(res, 200, { ok: true, playerId, token, expiresAt });
+    return;
+  }
+
+  // Upgrade a guest (or create a new account) with email + password.
+  if (req.method === "POST" && pathname === "/api/players/register") {
+    const body = JSON.parse((await readBody(req)) || "{}");
+    const email = String(body.email || "").trim().toLowerCase();
+    const password = String(body.password || "");
+    if (!email || password.length < 6) {
+      sendJson(res, 400, { ok: false, error: "email and a password of at least 6 characters are required" });
+      return;
+    }
+    if (store.findPlayerByEmail(email)) {
+      sendJson(res, 409, { ok: false, error: "email already registered" });
+      return;
+    }
+    // Link to the currently authenticated guest player, or create a fresh one.
+    let playerId = pctx?.playerId;
+    if (!playerId) {
+      playerId = `p_${randomUUID().slice(0, 8)}${randomBytes(4).toString("hex")}`;
+      store.ensurePlayerAccount(playerId);
+      store.ensureWallet(playerId);
+    } else {
+      store.ensurePlayerAccount(playerId);
+    }
+    store.setPlayerCredentials(playerId, email, hashPlayerPassword(password));
+    const { token, expiresAt } = issuePlayerSession(playerId);
+    sendJson(res, 201, { ok: true, playerId, token, expiresAt });
+    return;
+  }
+
+  // Log in to an existing credentialed player account.
+  if (req.method === "POST" && pathname === "/api/players/login") {
+    const body = JSON.parse((await readBody(req)) || "{}");
+    const email = String(body.email || "").trim().toLowerCase();
+    const password = String(body.password || "");
+    const account = store.findPlayerByEmail(email);
+    if (!account || !verifyPlayerPassword(password, account.passwordHash)) {
+      sendJson(res, 401, { ok: false, error: "invalid credentials" });
+      return;
+    }
+    store.markPlayerSeen(account.playerId);
+    const { token, expiresAt } = issuePlayerSession(account.playerId);
+    sendJson(res, 200, { ok: true, playerId: account.playerId, token, expiresAt });
+    return;
+  }
+
+  if (req.method === "GET" && pathname === "/api/players/me") {
+    if (!pctx) {
+      sendJson(res, 401, { ok: false, error: "unauthorized" });
+      return;
+    }
+    const account = store.getPlayerAccount(pctx.playerId);
+    sendJson(res, 200, {
+      ok: true,
+      playerId: pctx.playerId,
+      email: account?.email || null,
+      isGuest: !account?.email,
+    });
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/api/players/logout") {
+    if (pctx) store.deletePlayerSession(pctx.token);
+    sendJson(res, 200, { ok: true });
     return;
   }
 
@@ -300,7 +432,7 @@ async function handleRequest(req, res) {
         return;
       }
       await writeJson(contentFile, content);
-      await writeJson(inventoryFile, { ...(await readJson(inventoryFile, {})), ...buildDefaultInventory(content) });
+      store.seedInventory(content.drops || []); // add inventory rows for any new drops
       await logAudit("cms.content.update", ctx, { chapters: content.chapters.length, drops: content.drops.length });
       sendJson(res, 200, { ok: true });
       return;
@@ -310,32 +442,47 @@ async function handleRequest(req, res) {
     }
   }
 
-  const playerId = parsePlayerId(pathname);
-  if (playerId && req.method === "GET") {
-    const players = await readJson(playersFile, {});
-    if (!players[playerId]) {
-      players[playerId] = createDefaultPlayerProfile(playerId);
-      await writeJson(playersFile, players);
+  const requestedPlayerId = parsePlayerId(pathname);
+  if (requestedPlayerId && req.method === "GET") {
+    const playerId = resolveActingPlayer(ctx, pctx, requestedPlayerId);
+    if (!playerId) {
+      sendJson(res, 401, { ok: false, error: "player authentication required" });
+      return;
     }
-    sendJson(res, 200, { ok: true, profile: players[playerId] });
+    store.ensureWallet(playerId); // seed starting coins on first touch
+    sendJson(res, 200, { ok: true, profile: buildPlayerProfile(playerId) });
     return;
   }
 
-  if (playerId && req.method === "PUT") {
+  if (requestedPlayerId && req.method === "PUT") {
+    const playerId = resolveActingPlayer(ctx, pctx, requestedPlayerId);
+    if (!playerId) {
+      sendJson(res, 401, { ok: false, error: "player authentication required" });
+      return;
+    }
     try {
       const body = JSON.parse(await readBody(req) || "{}");
       const incoming = body?.profile || body;
       const players = await readJson(playersFile, {});
       const existing = players[playerId] || createDefaultPlayerProfile(playerId);
+      // Wallet, bank and inventory are server-authoritative — they live in the
+      // relational tables and are NEVER accepted from the client. Only narrative
+      // progress and cosmetic entitlements are client-writable.
       const merged = {
         ...existing,
-        ...incoming,
+        trustStatus: existing.trustStatus, // guard against self-promotion
+        progress: incoming.progress ?? existing.progress,
+        entitlements: {
+          codes: Array.isArray(incoming.entitlements?.codes) ? incoming.entitlements.codes : existing.entitlements?.codes || [],
+          badges: existing.entitlements?.badges || [],
+          earlyAccessFlags: existing.entitlements?.earlyAccessFlags || [],
+        },
         playerId,
         updatedAt: new Date().toISOString(),
       };
       players[playerId] = merged;
       await writeJson(playersFile, players);
-      sendJson(res, 200, { ok: true, profile: merged });
+      sendJson(res, 200, { ok: true, profile: buildPlayerProfile(playerId) });
       return;
     } catch {
       sendJson(res, 400, { ok: false, error: "Invalid JSON payload." });
@@ -445,7 +592,7 @@ async function handleRequest(req, res) {
   // ---------------- COMMERCE ----------------
   if (pathname === "/api/commerce/products" && req.method === "GET") {
     const content = await readJson(contentFile, defaultContent);
-    const inventory = await readJson(inventoryFile, {});
+    const inventory = store.getInventoryMap();
     const products = (content.drops || []).map((drop) => ({
       ...drop,
       inventory: inventory[drop.id] || { stock: 0, reserved: 0 },
@@ -461,17 +608,13 @@ async function handleRequest(req, res) {
     }
     const dropId = decodeURIComponent(pathname.split("/").pop() || "");
     const payload = JSON.parse((await readBody(req)) || "{}");
-    const inventory = await readJson(inventoryFile, {});
-    const prev = inventory[dropId] || { dropId, stock: 0, reserved: 0 };
-    inventory[dropId] = {
-      ...prev,
-      stock: typeof payload.stock === "number" ? payload.stock : prev.stock,
-      reserved: typeof payload.reserved === "number" ? payload.reserved : prev.reserved,
-      updatedAt: nowIso(),
-    };
-    await writeJson(inventoryFile, inventory);
-    await logAudit("commerce.inventory.update", ctx, { dropId, stock: inventory[dropId].stock, reserved: inventory[dropId].reserved });
-    sendJson(res, 200, { ok: true, productInventory: inventory[dropId] });
+    const row = store.setInventory(dropId, {
+      sku: payload.sku,
+      stock: payload.stock,
+      reserved: payload.reserved,
+    });
+    await logAudit("commerce.inventory.update", ctx, { dropId, stock: row.stock, reserved: row.reserved });
+    sendJson(res, 200, { ok: true, productInventory: row });
     return;
   }
 
@@ -512,96 +655,93 @@ async function handleRequest(req, res) {
 
   if (pathname === "/api/commerce/checkout" && req.method === "POST") {
     const body = JSON.parse((await readBody(req)) || "{}");
-    const playerIdInput = String(body.playerId || "").trim();
+    const playerIdInput = resolveActingPlayer(ctx, pctx, String(body.playerId || "").trim());
     const items = Array.isArray(body.items) ? body.items : [];
-    if (!playerIdInput || items.length === 0) {
-      sendJson(res, 400, { ok: false, error: "playerId and items are required" });
+    if (!playerIdInput) {
+      sendJson(res, 401, { ok: false, error: "player authentication required" });
+      return;
+    }
+    if (items.length === 0) {
+      sendJson(res, 400, { ok: false, error: "items are required" });
       return;
     }
     const content = await readJson(contentFile, defaultContent);
-    const inventory = await readJson(inventoryFile, {});
-    const discounts = await readJson(discountsFile, []);
-    const orders = await readJson(ordersFile, []);
-    const players = await readJson(playersFile, {});
-    const player = players[playerIdInput] || createDefaultPlayerProfile(playerIdInput);
+    const dropsById = new Map((content.drops || []).map((d) => [d.id, d]));
+    const priceLookup = (dropId) => {
+      const drop = dropsById.get(dropId);
+      return drop ? { name: drop.name, unitPrice: Number(drop.priceCoins || 0) } : null;
+    };
 
-    let subtotal = 0;
-    const lines = [];
-    for (const item of items) {
-      const drop = (content.drops || []).find((d) => d.id === item.dropId);
-      const qty = Math.max(1, Number(item.qty || 1));
-      if (!drop) {
-        sendJson(res, 400, { ok: false, error: `unknown drop ${item.dropId}` });
+    // Optional store location — validated so purchases can be tied to a place.
+    let locationId = null;
+    if (body.locationId) {
+      const loc = store.getLocation(String(body.locationId));
+      if (!loc) {
+        sendJson(res, 404, { ok: false, error: "unknown location" });
         return;
       }
-      const inv = inventory[drop.id] || { stock: 0, reserved: 0 };
-      if (inv.stock < qty) {
-        sendJson(res, 409, { ok: false, error: `insufficient stock for ${drop.name}` });
-        return;
-      }
-      const lineTotal = Number(drop.priceCoins || 0) * qty;
-      subtotal += lineTotal;
-      lines.push({ dropId: drop.id, name: drop.name, qty, unitPrice: drop.priceCoins, lineTotal });
-    }
-
-    let discountAmount = 0;
-    let appliedDiscountCode = null;
-    if (body.discountCode) {
-      const code = String(body.discountCode).trim().toUpperCase();
-      const discount = discounts.find((d) => d.code === code && d.active !== false);
-      if (discount) {
-        const now = new Date();
-        const starts = discount.startsAt ? new Date(discount.startsAt) : null;
-        const ends = discount.endsAt ? new Date(discount.endsAt) : null;
-        const withinWindow = (!starts || starts <= now) && (!ends || now <= ends);
-        const underUsage = discount.maxUses == null || discount.used < discount.maxUses;
-        if (withinWindow && underUsage) {
-          appliedDiscountCode = code;
-          discountAmount = discount.type === "fixed"
-            ? Math.min(subtotal, discount.value)
-            : Math.round((subtotal * discount.value) / 100);
-          discount.used += 1;
-          await writeJson(discountsFile, discounts);
+      locationId = loc.id;
+      for (const item of items) {
+        if (!loc.dropIds.includes(item.dropId)) {
+          sendJson(res, 409, { ok: false, error: `${loc.name} does not sell ${item.dropId}` });
+          return;
         }
       }
     }
 
-    const total = Math.max(0, subtotal - discountAmount);
-    const order = {
-      id: `ord_${randomUUID().slice(0, 8)}`,
-      playerId: playerIdInput,
-      lines,
-      subtotal,
-      discountAmount,
-      discountCode: appliedDiscountCode,
-      total,
-      status: "paid",
-      createdAt: nowIso(),
-    };
-    orders.push(order);
-    await writeJson(ordersFile, orders);
-    await logAudit("commerce.checkout", ctx, { orderId: order.id, playerId: playerIdInput, total });
-
-    for (const line of lines) {
-      inventory[line.dropId].stock -= line.qty;
-      inventory[line.dropId].updatedAt = nowIso();
+    // Resolve + validate a discount code before entering the transaction.
+    let discount = null;
+    const discounts = await readJson(discountsFile, []);
+    if (body.discountCode) {
+      const code = String(body.discountCode).trim().toUpperCase();
+      const found = discounts.find((d) => d.code === code && d.active !== false);
+      if (found) {
+        const now = new Date();
+        const starts = found.startsAt ? new Date(found.startsAt) : null;
+        const ends = found.endsAt ? new Date(found.endsAt) : null;
+        const withinWindow = (!starts || starts <= now) && (!ends || now <= ends);
+        const underUsage = found.maxUses == null || found.used < found.maxUses;
+        if (withinWindow && underUsage) discount = found;
+      }
     }
-    await writeJson(inventoryFile, inventory);
 
-    player.inventory.ownedDropIds = Array.from(new Set([...(player.inventory.ownedDropIds || []), ...lines.map((l) => l.dropId)]));
-    players[playerIdInput] = player;
-    await writeJson(playersFile, players);
+    const orderId = `ord_${randomUUID().slice(0, 8)}`;
+    let result;
+    try {
+      result = store.createOrder({ id: orderId, playerId: playerIdInput, items, discount, priceLookup, locationId });
+    } catch (error) {
+      if (error.code === "UNKNOWN_DROP") {
+        sendJson(res, 400, { ok: false, error: error.message });
+      } else if (error.code === "OUT_OF_STOCK") {
+        sendJson(res, 409, { ok: false, error: error.message });
+      } else if (error.code === "INSUFFICIENT_FUNDS") {
+        sendJson(res, 402, { ok: false, error: "not enough coins", walletCoins: error.balance });
+      } else {
+        sendJson(res, 400, { ok: false, error: error.message || "checkout failed" });
+      }
+      return;
+    }
 
-    store.appendEvent({ playerId: playerIdInput, type: "checkout", payload: { orderId: order.id, total }, at: nowIso() });
-    sendJson(res, 201, { ok: true, order });
+    // Order succeeded — record discount usage now that funds cleared.
+    if (discount) {
+      discount.used = Number(discount.used || 0) + 1;
+      await writeJson(discountsFile, discounts);
+    }
+
+    await logAudit("commerce.checkout", ctx, { orderId, playerId: playerIdInput, total: result.order.total });
+    store.appendEvent({ playerId: playerIdInput, type: "checkout", payload: { orderId, total: result.order.total }, at: nowIso() });
+    sendJson(res, 201, {
+      ok: true,
+      order: result.order,
+      walletCoins: result.walletBalance,
+      ownedDropIds: store.getOwnedDropIds(playerIdInput),
+    });
     return;
   }
 
   if (pathname === "/api/commerce/orders" && req.method === "GET") {
-    const orders = await readJson(ordersFile, []);
     const playerFilter = url.searchParams.get("playerId");
-    const filtered = playerFilter ? orders.filter((o) => o.playerId === playerFilter) : orders;
-    sendJson(res, 200, { ok: true, orders: filtered });
+    sendJson(res, 200, { ok: true, orders: store.getOrders(playerFilter || null) });
     return;
   }
 
@@ -611,10 +751,20 @@ async function handleRequest(req, res) {
       return;
     }
     const body = JSON.parse((await readBody(req)) || "{}");
-    const orders = await readJson(ordersFile, []);
-    const order = orders.find((o) => o.id === body.orderId);
+    const order = store.getOrder(body.orderId);
     if (!order) {
       sendJson(res, 404, { ok: false, error: "order not found" });
+      return;
+    }
+    let outcome;
+    try {
+      outcome = store.refundOrder({
+        orderId: order.id,
+        amount: body.amount != null ? Number(body.amount) : undefined,
+        reason: body.reason || "manual refund",
+      });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: error.message || "refund failed" });
       return;
     }
     const refunds = await readJson(refundsFile, []);
@@ -622,9 +772,10 @@ async function handleRequest(req, res) {
       id: `ref_${randomUUID().slice(0, 8)}`,
       orderId: order.id,
       playerId: order.playerId,
-      amount: Number(body.amount || order.total),
+      amount: outcome.amount,
       reason: body.reason || "manual refund",
       status: "approved",
+      walletCoins: outcome.walletBalance,
       createdAt: nowIso(),
     };
     refunds.push(refund);
@@ -640,8 +791,7 @@ async function handleRequest(req, res) {
       return;
     }
     const body = JSON.parse((await readBody(req)) || "{}");
-    const orders = await readJson(ordersFile, []);
-    const order = orders.find((o) => o.id === body.orderId);
+    const order = store.getOrder(body.orderId);
     if (!order) {
       sendJson(res, 404, { ok: false, error: "order not found" });
       return;
@@ -666,9 +816,13 @@ async function handleRequest(req, res) {
   // ---------------- REWARDS / ANTI-ABUSE ----------------
   if (pathname === "/api/rewards/claim" && req.method === "POST") {
     const body = JSON.parse((await readBody(req)) || "{}");
-    const playerIdInput = String(body.playerId || "").trim();
-    if (!playerIdInput || !body.levelId || !body.missionId) {
-      sendJson(res, 400, { ok: false, error: "playerId, levelId and missionId are required" });
+    const playerIdInput = resolveActingPlayer(ctx, pctx, String(body.playerId || "").trim());
+    if (!playerIdInput) {
+      sendJson(res, 401, { ok: false, error: "player authentication required" });
+      return;
+    }
+    if (!body.levelId || !body.missionId) {
+      sendJson(res, 400, { ok: false, error: "levelId and missionId are required" });
       return;
     }
     const claims = await readJson(rewardClaimsFile, []);
@@ -686,15 +840,26 @@ async function handleRequest(req, res) {
 
     const players = await readJson(playersFile, {});
     const player = players[playerIdInput] || createDefaultPlayerProfile(playerIdInput);
-    const rewardCoins = Number(body.rewardCoins || 0);
-    if (rewardCoins > 0) player.wallet.coins = Number(player.wallet.coins || 0) + rewardCoins;
+    const rewardCoins = Math.max(0, Number(body.rewardCoins || 0));
+    // Credit the reward through the ledger so the wallet stays authoritative.
+    let walletBalance = store.getWalletBalance(playerIdInput);
+    if (rewardCoins > 0) {
+      walletBalance = store.postTransaction({
+        playerId: playerIdInput,
+        account: "cash",
+        delta: rewardCoins,
+        reason: "rewards.claim",
+        refType: "mission",
+        refId: `${body.levelId}:${body.missionId}`,
+      }).balance;
+    }
     if (body.discountCode) {
       const codes = new Set(player.entitlements?.codes || []);
       codes.add(String(body.discountCode));
-      player.entitlements.codes = [...codes];
+      player.entitlements = { ...(player.entitlements || {}), codes: [...codes] };
+      players[playerIdInput] = player;
+      await writeJson(playersFile, players);
     }
-    players[playerIdInput] = player;
-    await writeJson(playersFile, players);
 
     const claim = {
       id: `clm_${randomUUID().slice(0, 8)}`,
@@ -709,7 +874,7 @@ async function handleRequest(req, res) {
     claims.push(claim);
     await writeJson(rewardClaimsFile, claims);
     await logAudit("rewards.claim", ctx, { claimId: claim.id, playerId: playerIdInput, missionId: claim.missionId });
-    sendJson(res, 201, { ok: true, claim, walletCoins: player.wallet.coins });
+    sendJson(res, 201, { ok: true, claim, walletCoins: walletBalance });
     return;
   }
 
@@ -731,7 +896,7 @@ async function handleRequest(req, res) {
       return;
     }
     const events = await readEvents();
-    const orders = await readJson(ordersFile, []);
+    const orders = store.getOrders();
     const players = Object.values(await readJson(playersFile, {}));
     const uniqueVisitors = new Set(events.map((e) => e.playerId)).size;
     const purchasers = new Set(orders.map((o) => o.playerId)).size;
@@ -889,17 +1054,170 @@ async function handleRequest(req, res) {
   }
 
   if (pathname === "/api/community/leaderboard" && req.method === "GET") {
-    const players = Object.values(await readJson(playersFile, {}));
-    const leaderboard = players
-      .map((p) => ({
-        playerId: p.playerId,
-        levelsCleared: Number(p.progress?.levelsCleared || 0),
-        coins: Number(p.wallet?.coins || 0),
-        trustStatus: p.trustStatus || "standard",
-      }))
+    const progressBlob = await readJson(playersFile, {});
+    const ids = store.listPlayerIds();
+    // Include any legacy players that only exist in the KV progress blob.
+    for (const id of Object.keys(progressBlob)) if (!ids.includes(id)) ids.push(id);
+    const leaderboard = ids
+      .map((id) => {
+        const p = progressBlob[id] || {};
+        return {
+          playerId: id,
+          levelsCleared: Number(p.progress?.levelsCleared || 0),
+          coins: store.getWalletBalance(id),
+          trustStatus: p.trustStatus || "standard",
+        };
+      })
       .sort((a, b) => (b.levelsCleared - a.levelsCleared) || (b.coins - a.coins))
       .slice(0, 100);
     sendJson(res, 200, { ok: true, leaderboard });
+    return;
+  }
+
+  // ---------------- WALLET ----------------
+  // GET /api/wallet/:playerId — authoritative balances + recent ledger.
+  const walletMatch = pathname.match(/^\/api\/wallet\/([^/]+)$/);
+  if (walletMatch && req.method === "GET") {
+    const pid = resolveActingPlayer(ctx, pctx, decodeURIComponent(walletMatch[1]));
+    if (!pid) {
+      sendJson(res, 401, { ok: false, error: "player authentication required" });
+      return;
+    }
+    store.ensureWallet(pid);
+    sendJson(res, 200, {
+      ok: true,
+      wallet: { coins: store.getWalletBalance(pid) },
+      bank: { coins: store.getBankBalance(pid) },
+      ledger: store.getLedger(pid, Number(url.searchParams.get("limit") || 50)),
+    });
+    return;
+  }
+
+  // POST /api/wallet/topup — credit coins. Dev/testing affordance (the old
+  // client "top-up" button). Gate/replace with real payments before launch.
+  if (pathname === "/api/wallet/topup" && req.method === "POST") {
+    const body = JSON.parse((await readBody(req)) || "{}");
+    const pid = resolveActingPlayer(ctx, pctx, String(body.playerId || "").trim());
+    const amount = Math.max(1, Math.min(1_000_000, Number(body.amount || 0)));
+    if (!pid) {
+      sendJson(res, 401, { ok: false, error: "player authentication required" });
+      return;
+    }
+    const out = store.postTransaction({ playerId: pid, account: "cash", delta: amount, reason: "wallet.topup", refType: "topup" });
+    store.appendEvent({ playerId: pid, type: "coins_topup", payload: { amount }, at: nowIso() });
+    sendJson(res, 200, { ok: true, walletCoins: out.balance });
+    return;
+  }
+
+  // ---------------- WORLD / LOCATIONS ----------------
+  if (pathname === "/api/world/locations" && req.method === "GET") {
+    sendJson(res, 200, { ok: true, locations: store.getLocations() });
+    return;
+  }
+
+  const locationMatch = pathname.match(/^\/api\/world\/locations\/([^/]+)$/);
+  if (locationMatch && req.method === "GET") {
+    const loc = store.getLocation(decodeURIComponent(locationMatch[1]));
+    if (!loc) {
+      sendJson(res, 404, { ok: false, error: "location not found" });
+      return;
+    }
+    // For shops, hydrate the products (with live stock) they sell.
+    let products = [];
+    if (loc.dropIds.length) {
+      const content = await readJson(contentFile, defaultContent);
+      const dropsById = new Map((content.drops || []).map((d) => [d.id, d]));
+      const inventory = store.getInventoryMap();
+      products = loc.dropIds
+        .map((id) => dropsById.get(id))
+        .filter(Boolean)
+        .map((drop) => ({ ...drop, inventory: inventory[drop.id] || { stock: 0, reserved: 0 } }));
+    }
+    sendJson(res, 200, { ok: true, location: { ...loc, products } });
+    return;
+  }
+
+  // ---------------- BANK ----------------
+  const bankMatch = pathname.match(/^\/api\/bank\/([^/]+)$/);
+  if (bankMatch && req.method === "GET") {
+    const pid = resolveActingPlayer(ctx, pctx, decodeURIComponent(bankMatch[1]));
+    if (!pid) {
+      sendJson(res, 401, { ok: false, error: "player authentication required" });
+      return;
+    }
+    store.ensureWallet(pid);
+    sendJson(res, 200, {
+      ok: true,
+      account: {
+        playerId: pid,
+        cash: store.getWalletBalance(pid),
+        bank: store.getBankBalance(pid),
+      },
+    });
+    return;
+  }
+
+  if ((pathname === "/api/bank/deposit" || pathname === "/api/bank/withdraw") && req.method === "POST") {
+    const body = JSON.parse((await readBody(req)) || "{}");
+    const pid = resolveActingPlayer(ctx, pctx, String(body.playerId || "").trim());
+    const amount = Number(body.amount || 0);
+    if (!pid) {
+      sendJson(res, 401, { ok: false, error: "player authentication required" });
+      return;
+    }
+    if (!Number.isFinite(amount) || amount <= 0) {
+      sendJson(res, 400, { ok: false, error: "a positive amount is required" });
+      return;
+    }
+    const isDeposit = pathname.endsWith("deposit");
+    try {
+      const out = store.transferInternal({
+        playerId: pid,
+        from: isDeposit ? "cash" : "bank",
+        to: isDeposit ? "bank" : "cash",
+        amount,
+        reason: isDeposit ? "bank.deposit" : "bank.withdraw",
+      });
+      store.appendEvent({ playerId: pid, type: isDeposit ? "bank_deposit" : "bank_withdraw", payload: { amount }, at: nowIso() });
+      sendJson(res, 200, { ok: true, cash: out.cash, bank: out.bank });
+    } catch (error) {
+      if (error.code === "INSUFFICIENT_FUNDS") {
+        sendJson(res, 402, { ok: false, error: `insufficient ${error.account} balance`, balance: error.balance });
+      } else {
+        sendJson(res, 400, { ok: false, error: error.message || "bank operation failed" });
+      }
+    }
+    return;
+  }
+
+  // POST /api/bank/transfer — send cash from one player to another.
+  if (pathname === "/api/bank/transfer" && req.method === "POST") {
+    const body = JSON.parse((await readBody(req)) || "{}");
+    // The sender is always the authenticated player — never taken from the body.
+    const fromPlayerId = resolveActingPlayer(ctx, pctx, String(body.fromPlayerId || body.playerId || "").trim());
+    const toPlayerId = String(body.toPlayerId || "").trim();
+    const amount = Number(body.amount || 0);
+    if (!fromPlayerId) {
+      sendJson(res, 401, { ok: false, error: "player authentication required" });
+      return;
+    }
+    if (!toPlayerId || fromPlayerId === toPlayerId || !Number.isFinite(amount) || amount <= 0) {
+      sendJson(res, 400, { ok: false, error: "a different toPlayerId and a positive amount are required" });
+      return;
+    }
+    store.ensureWallet(toPlayerId);
+    const transferId = `xfr_${randomUUID().slice(0, 8)}`;
+    try {
+      const out = store.transferBetweenPlayers({ fromPlayerId, toPlayerId, amount, reason: "bank.transfer", refId: transferId });
+      store.appendEvent({ playerId: fromPlayerId, type: "transfer_sent", payload: { toPlayerId, amount, transferId }, at: nowIso() });
+      sendJson(res, 200, { ok: true, transferId, fromBalance: out.fromBalance, toBalance: out.toBalance });
+    } catch (error) {
+      if (error.code === "INSUFFICIENT_FUNDS") {
+        sendJson(res, 402, { ok: false, error: "insufficient balance", balance: error.balance });
+      } else {
+        sendJson(res, 400, { ok: false, error: error.message || "transfer failed" });
+      }
+    }
     return;
   }
 
