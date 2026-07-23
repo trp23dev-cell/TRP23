@@ -21,3 +21,21 @@ server/storage/*.db-shm
 # OS / editor cruft
 .DS_Store
 *.log
+
+# Unity generated folders (matches Unity/... and nested Unity/<project>/...)
+Unity/**/[Ll]ibrary/
+Unity/**/[Tt]emp/
+Unity/**/[Oo]bj/
+Unity/**/[Bb]uild/
+Unity/**/[Bb]uilds/
+Unity/**/[Ll]ogs/
+Unity/**/[Uu]ser[Ss]ettings/
+Unity/**/[Mm]emoryCaptures/
+Unity/**/[Rr]ecordings/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
