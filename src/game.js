@@ -575,23 +575,66 @@ const wallTex=canvasTex(512,512,(g,w,h)=>{
 });
 wallTex.wrapS=wallTex.wrapT=THREE.RepeatWrapping; wallTex.repeat.set(2.5,1); setTextureQuality(wallTex);
 
-function makeTagTex(){
-  const t=canvasTex(1024,512,(g,w,h)=>{
-    g.fillStyle='#1d1913'; g.fillRect(0,0,w,h);
-    for(let i=0;i<3000;i++){ g.fillStyle=`rgba(30,24,16,${Math.random()*.5})`;
-      g.fillRect(Math.random()*w,Math.random()*h,Math.random()*30,Math.random()*3);}
+// Wall "TRAP MADE IT" sign, drawn onto a grungy dark texture. If the brand
+// logo file (public/trap-logo.png — white artwork on black) is present it is
+// used; its black background is keyed out so only the white mark shows on the
+// wall. Until the file is added, the old gold "TRAP" text is drawn as a fallback.
+const TAG_W=1024, TAG_H=512;
+const tagCanvas=document.createElement('canvas'); tagCanvas.width=TAG_W; tagCanvas.height=TAG_H;
+const tagCtx=tagCanvas.getContext('2d');
+let _tagLogo=null;
+function drawTag(){
+  const g=tagCtx, w=TAG_W, h=TAG_H;
+  g.clearRect(0,0,w,h);
+  g.fillStyle='#1d1913'; g.fillRect(0,0,w,h);
+  for(let i=0;i<3000;i++){ g.fillStyle=`rgba(30,24,16,${Math.random()*.5})`;
+    g.fillRect(Math.random()*w,Math.random()*h,Math.random()*30,Math.random()*3); }
+  if(_tagLogo){
+    // Fit the real logo, preserving aspect ratio, with margin.
+    const pad=0.84, ar=_tagLogo.width/_tagLogo.height;
+    let dw=w*pad, dh=dw/ar; if(dh>h*pad){ dh=h*pad; dw=dh*ar; }
+    g.drawImage(_tagLogo,(w-dw)/2,(h-dh)/2,dw,dh);
+  } else {
     g.save(); g.translate(w/2,h/2); g.rotate(-.05);
     g.font='200px "Pirata One", serif'; g.textAlign='center'; g.textBaseline='middle';
     g.strokeStyle='rgba(0,0,0,.6)'; g.lineWidth=18; g.strokeText('TRAP',0,-20);
     g.fillStyle='#c9a06a'; g.fillText('TRAP',0,-20);
     g.font='46px "Barlow Condensed"'; g.fillStyle='#8f887a';
     g.fillText('R E S P E C T   I S   E A R N E D',0,130); g.restore();
-  });
-  return t;
+  }
 }
-const tagTex=makeTagTex();
-if(document.fonts&&document.fonts.ready) document.fonts.ready.then(()=>{
-  const f=makeTagTex(); tagTex.image=f.image; tagTex.needsUpdate=true; });
+drawTag();
+const tagTex=new THREE.CanvasTexture(tagCanvas);
+if(document.fonts&&document.fonts.ready) document.fonts.ready.then(()=>{ drawTag(); tagTex.needsUpdate=true; });
+(function loadBrandLogo(){
+  const img=new Image();
+  img.onload=()=>{
+    const lc=document.createElement('canvas'); lc.width=img.width; lc.height=img.height;
+    const lg=lc.getContext('2d',{willReadFrequently:true}); lg.drawImage(img,0,0);
+    try{
+      const idat=lg.getImageData(0,0,lc.width,lc.height), d=idat.data;
+      // white-on-black -> warm gold on transparent (alpha follows luminance).
+      for(let i=0;i<d.length;i+=4){
+        const lum=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
+        d[i]=201; d[i+1]=160; d[i+2]=106;                  // brand gold #c9a06a
+        d[i+3]=Math.min(255,Math.round(lum*1.18));
+      }
+      lg.putImageData(idat,0,0);
+    }catch(_e){ /* cross-origin taint: use as-is */ }
+    _tagLogo=lc; drawTag(); tagTex.needsUpdate=true;
+    // Reuse the same gold logo for the HTML brand marks (HUD + loader).
+    let url=null; try{ url=lc.toDataURL('image/png'); }catch(_e){}
+    if(url){
+      const swap=(imgId,textId)=>{ const im=document.getElementById(imgId); if(!im)return;
+        im.src=url; im.style.display=imgId==='brandLogo'?'inline-block':'block';
+        const t=document.getElementById(textId); if(t) t.style.display='none'; };
+      swap('brandLogo','brandMark');
+      swap('loaderLogo','loaderMark');
+    }
+  };
+  img.onerror=()=>{}; // no file yet -> keep the fallback text
+  img.src=`${import.meta.env.BASE_URL||'/'}trap-logo.png`;
+})();
 setTextureQuality(tagTex);
 
 const plasterTex=canvasTex(512,512,(g,w,h)=>{
