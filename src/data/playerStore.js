@@ -4,15 +4,23 @@ const PLAYER_TOKEN_KEY = "trapmadeit.playerToken.v1";
 const PLAYER_PROFILE_PREFIX = "trapmadeit.playerProfile.";
 
 let playerToken = typeof localStorage !== "undefined" ? localStorage.getItem(PLAYER_TOKEN_KEY) : null;
+let activePlayerId = typeof localStorage !== "undefined" ? localStorage.getItem(PLAYER_KEY) : null;
+let activeIsGuest = false; // guests are ephemeral: in-memory only, no saves, fresh each refresh
 
 export function getPlayerToken() {
   return playerToken;
 }
 
-function setPlayerToken(token) {
+export function isGuest() {
+  return activeIsGuest;
+}
+
+// persist=false keeps the token in memory only (used for guests, so a refresh
+// starts a brand-new guest with no saved state).
+function setPlayerToken(token, persist = true) {
   playerToken = token || null;
   if (typeof localStorage === "undefined") return;
-  if (token) localStorage.setItem(PLAYER_TOKEN_KEY, token);
+  if (persist && token) localStorage.setItem(PLAYER_TOKEN_KEY, token);
   else localStorage.removeItem(PLAYER_TOKEN_KEY);
 }
 
@@ -130,7 +138,7 @@ export async function loadPlayerProfile(playerId) {
   try {
     const data = await fetchApi(`/player/${encodeURIComponent(playerId)}`);
     const profile = data?.profile ? data.profile : fallback;
-    writeLocalProfile(profile);
+    if (!activeIsGuest) writeLocalProfile(profile); // guests keep nothing locally
     return profile;
   } catch (_error) {
     return fallback;
@@ -138,6 +146,7 @@ export async function loadPlayerProfile(playerId) {
 }
 
 export async function savePlayerProfile(profile) {
+  if (activeIsGuest) return { ok: true, remoteSynced: false, guest: true }; // no saves for guests
   const next = clone(profile);
   next.updatedAt = nowIso();
   writeLocalProfile(next);
@@ -194,7 +203,28 @@ export async function claimMissionReward(playerId, { levelId, missionId, rewardC
 }
 
 function currentPlayerId() {
-  return (typeof localStorage !== "undefined" && localStorage.getItem(PLAYER_KEY)) || "me";
+  return activePlayerId || (typeof localStorage !== "undefined" && localStorage.getItem(PLAYER_KEY)) || "me";
+}
+
+// Ephemeral guest: mint a FRESH server session every time (no proposed id), keep
+// the token in memory only. On refresh there is no stored token, so the player
+// starts brand new with no saved progress. For testing; remove later.
+export async function startGuestSession() {
+  try {
+    const res = await fetch(`${API_BASE}/players/session`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const data = await res.json();
+    if (!res.ok || !data?.token || !data?.playerId) throw new Error("guest session failed");
+    setPlayerToken(data.token, false); // in-memory only
+    activePlayerId = data.playerId;
+    activeIsGuest = true;
+    return { ok: true, playerId: data.playerId };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
 }
 
 // ---------------- ACCOUNTS (register / login / logout / 2FA) ----------------
@@ -207,6 +237,7 @@ export async function registerAccount({ username, email, phone, password, enable
     });
     localStorage.setItem(PLAYER_KEY, data.playerId);
     setPlayerToken(data.token);
+    activePlayerId = data.playerId; activeIsGuest = false;
     return { ok: true, playerId: data.playerId, account: data.account, twofa: data.twofa };
   } catch (error) {
     return { ok: false, status: error.status || 0, error: error.message, errors: error.data?.errors };
@@ -221,6 +252,7 @@ export async function loginAccount({ identifier, password, code }) {
     });
     localStorage.setItem(PLAYER_KEY, data.playerId);
     setPlayerToken(data.token);
+    activePlayerId = data.playerId; activeIsGuest = false;
     return { ok: true, playerId: data.playerId, account: data.account };
   } catch (error) {
     return { ok: false, status: error.status || 0, error: error.message, twofaRequired: !!error.data?.twofaRequired };
@@ -230,6 +262,7 @@ export async function loginAccount({ identifier, password, code }) {
 export async function logoutAccount() {
   try { await fetchApi("/players/logout", { method: "POST" }); } catch { /* best effort */ }
   setPlayerToken(null);
+  activePlayerId = null; activeIsGuest = false;
   if (typeof localStorage !== "undefined") localStorage.removeItem(PLAYER_KEY);
   return { ok: true };
 }

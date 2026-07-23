@@ -13,27 +13,61 @@ You're viewing this in an email preview, which can't run the game.<br>
 <!-- LOADING -->
 <div id="loader">
   <div class="bg"></div><div class="shade"></div><div class="grain"></div>
-  <div class="l-top">
-    <div class="chap">Chapter 1</div>
-    <span id="loaderMark"><div class="logo display">TRAP</div><div class="sub">Made It</div></span>
-    <img id="loaderLogo" class="loader-logo" alt="TRAP MADE IT" />
-  </div>
-  <div class="l-bottom">
-    <div class="headline" id="loadHeadline">Build Your Empire</div>
-    <div class="tag" id="loadTag">Hustle. Upgrade. Take over.<br>Every choice shapes your path.</div>
-    <div class="barwrap">
-      <div class="bartrack"><div class="barfill" id="loadBar"></div></div>
-      <div class="barmeta"><span>LOADING...</span><span id="loadPct">0%</span></div>
-    </div>
-    <button id="enterBtn">Enter the Trap</button>
-    <div class="l-mono display">T</div>
+  <div class="l-stage">
+
+    <!-- HOME: big logo + Enter -->
+    <section id="landingHome" class="landing-screen">
+      <div class="chap">Chapter 1</div>
+      <span id="loaderMark" style="display:none"><div class="logo display">TRAP</div><div class="sub">Made It</div></span>
+      <img id="loaderLogo" class="loader-logo" alt="TRAP MADE IT" />
+      <div class="home-tag">Build your empire. Hustle. Upgrade. Take over.</div>
+      <button id="homeEnterBtn" class="big-enter">Enter</button>
+    </section>
+
+    <!-- AUTH: mandatory sign up / log in -->
+    <section id="landingAuth" class="landing-screen landing-panel" style="display:none">
+      <div class="headline">Claim Your Name</div>
+      <div class="tag">Create your account to start the come-up. Your coins, closet and progress are saved to it.</div>
+      <div class="auth-tabs landing-tabs">
+        <button class="auth-tab active" data-ltab="signup">Sign Up</button>
+        <button class="auth-tab" data-ltab="login">Log In</button>
+      </div>
+      <form id="laSignup" class="auth-form landing-form" autocomplete="on">
+        <label>Username <input id="laUsername" type="text" autocomplete="username" placeholder="3–20 letters, numbers or _" /></label>
+        <label>Email <input id="laEmail" type="email" autocomplete="email" placeholder="you@example.com" /></label>
+        <label>Phone <input id="laPhone" type="tel" autocomplete="tel" placeholder="+44…" /></label>
+        <label>Password <input id="laPassword" type="password" autocomplete="new-password" placeholder="At least 8 characters" /></label>
+        <label class="auth-check"><input id="laEnable2fa" type="checkbox" /> Enable two-factor authentication (recommended)</label>
+        <button type="submit" class="auth-submit" id="laSignupBtn">Create Account &amp; Play</button>
+      </form>
+      <form id="laLogin" class="auth-form landing-form" style="display:none" autocomplete="on">
+        <label>Username or Email <input id="laIdentifier" type="text" autocomplete="username" placeholder="username or you@example.com" /></label>
+        <label>Password <input id="laLoginPassword" type="password" autocomplete="current-password" placeholder="Your password" /></label>
+        <label id="laCodeRow" style="display:none">2FA Code <input id="laCode" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="6-digit code" /></label>
+        <button type="submit" class="auth-submit" id="laLoginBtn">Log In &amp; Play</button>
+      </form>
+      <div class="auth-msg" id="laMsg"></div>
+      <button id="laGuestBtn" class="linklike guest-link">Just testing? Continue as guest — no saves</button>
+      <button id="laBackHome" class="linklike">← Back</button>
+    </section>
+
+    <!-- 2FA enrolment (shown after signup if enabled) -->
+    <section id="landing2fa" class="landing-screen landing-panel" style="display:none">
+      <div class="headline">Secure Your Account</div>
+      <div class="tag">Add this key to an authenticator app (Google Authenticator, Authy…), then enter the 6-digit code.</div>
+      <div class="twofa-secret" id="laTwofaSecret"></div>
+      <div class="bank-row"><input id="laTwofaCode" type="text" inputmode="numeric" placeholder="6-digit code" /><button class="mini-btn" id="laTwofaConfirm">Confirm</button></div>
+      <div class="auth-msg" id="laTwofaMsg"></div>
+      <button id="laTwofaSkip" class="linklike">Skip for now</button>
+    </section>
+
   </div>
 </div>
 
 <!-- HUD -->
 <div id="hud">
   <div class="hud-top">
-    <div class="brand display"><span id="brandMark"><div class="b1">TRAP<span>.</span></div></span><img id="brandLogo" class="brand-logo" alt="TRAP MADE IT" /><div class="b2" id="levelLabel" style="font-family:'Barlow Condensed'">Made It</div></div>
+    <div class="brand display"><span id="brandMark" style="display:none"><div class="b1">TRAP<span>.</span></div></span><img id="brandLogo" class="brand-logo" alt="TRAP MADE IT" /><div class="b2" id="levelLabel" style="font-family:'Barlow Condensed'">Made It</div></div>
     <div class="coins">
       <div class="coin-ico">T</div>
       <div><div class="amt" id="coinAmt">1,600</div><div class="lbl">Trap Coins</div></div>

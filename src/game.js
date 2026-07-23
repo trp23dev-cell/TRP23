@@ -27,6 +27,7 @@ import {
   registerAccount,
   loginAccount,
   logoutAccount,
+  startGuestSession,
   getMe,
   setup2fa,
   enable2fa,
@@ -42,6 +43,7 @@ function __fatal(msg){
     var pc=document.getElementById('loadPct'); if(pc) pc.textContent='!';
     var bar=document.getElementById('loadBar'); if(bar){bar.style.width='100%';bar.style.background='#8a2323';}
     var eb=document.getElementById('enterBtn'); if(eb) eb.style.display='none';
+    var lm=document.getElementById('laMsg'); if(lm){ lm.innerHTML=msg; lm.className='auth-msg err'; }
   }catch(e){}
 }
 window.addEventListener('error',function(){
@@ -270,9 +272,8 @@ async function hydrateProgress(){
   if(progressHydrated) return;
   progressHydrated=true;
   try{
-    // Authenticate the player first so the wallet/economy calls act as them.
-    const session=await ensurePlayerSession();
-    if(session?.playerId) playerId=session.playerId;
+    // Session is already established by the landing flow (login/register/guest);
+    // playerId is set before startGame() is called.
     const profile=await loadPlayerProfile(playerId);
     applyProfileToState(profile);
     refreshAccountChip();
@@ -635,7 +636,13 @@ if(document.fonts&&document.fonts.ready) document.fonts.ready.then(()=>{ drawTag
   const base=import.meta.env.BASE_URL||'/';
   const srcs=[`${base}trap-logo.png`,`${base}trap-logo.jpg`];
   let bi=0;
-  img.onerror=()=>{ bi++; if(bi<srcs.length) img.src=srcs[bi]; }; // else keep fallback text
+  img.onerror=()=>{
+    bi++;
+    if(bi<srcs.length){ img.src=srcs[bi]; return; }
+    // No logo image at all -> reveal the text marks as a fallback.
+    const lm=document.getElementById('loaderMark'); if(lm) lm.style.display='block';
+    const bm=document.getElementById('brandMark'); if(bm) bm.style.display='block';
+  };
   img.src=srcs[0];
 })();
 setTextureQuality(tagTex);
@@ -2001,13 +2008,10 @@ $('#loginForm')?.addEventListener('submit',async e=>{
   }
 });
 
-// Log out
+// Log out -> back to the mandatory landing gate
 $('#logoutBtn')?.addEventListener('click',async ()=>{
   await logoutAccount();
-  account=null;
-  await reloadAfterAuthChange();
-  renderAccountView();
-  toast('LOGGED OUT — <span class="gold">PLAYING AS GUEST</span>');
+  location.reload();
 });
 
 // 2FA enable/disable toggle
@@ -2046,23 +2050,18 @@ $('#twofaConfirmBtn')?.addEventListener('click',async ()=>{
   }
 });
 
-// ==================== LOADER ====================
-const PHASES=[
-  ['WELCOME TO TRAP','A new world. A new story.<br>Your legacy starts now.'],
-  ['BUILD YOUR EMPIRE','Hustle. Upgrade. Take over.<br>Every choice shapes your path.'],
-  ["TAKE WHAT'S YOURS",'Respect is earned.<br>The streets are watching.'],
-];
-let lp=0;
-const li2=setInterval(()=>{
-  lp=Math.min(100,lp+Math.random()*14+6);
-  $('#loadBar').style.width=lp+'%';
-  $('#loadPct').textContent=Math.floor(lp)+'%';
-  const ph=PHASES[Math.min(2,Math.floor(lp/34))];
-  $('#loadHeadline').textContent=ph[0];
-  $('#loadTag').innerHTML=ph[1];
-  if(lp>=100){ clearInterval(li2); $('#enterBtn').classList.add('show'); }
-},260);
-$('#enterBtn').addEventListener('click',async ()=>{
+// ==================== LANDING: Home -> (Sign up / Log in / Guest) -> Game ====================
+function landingShow(which){
+  $('#landingHome').style.display = which==='home' ? 'flex' : 'none';
+  $('#landingAuth').style.display = which==='auth' ? 'flex' : 'none';
+  $('#landing2fa').style.display  = which==='2fa'  ? 'flex' : 'none';
+}
+landingShow('home');   // always open on the home screen
+
+// Start the 3D game (session already established: login/register/guest).
+let gameStarted=false;
+async function startGame(){
+  if(gameStarted) return; gameStarted=true;
   await hydrateProgress();
   $('#loader').classList.add('done');
   $('#hud').classList.add('on');
@@ -2071,12 +2070,78 @@ $('#enterBtn').addEventListener('click',async ()=>{
   initDisplaySettings();
   loadLevel(state.level||0);
   queuePlayerEvent('session_start',{ levelIndex: state.level||0 });
-  if(isTouchDevice)
-    setTimeout(()=>toast(platform.hint.lockHint(),3000),1200);
+  if(isTouchDevice) setTimeout(()=>toast(platform.hint.lockHint(),3000),1200);
   refreshDesktopControlHint();
   setTimeout(()=>toast('SIX LEVELS BETWEEN YOU AND THE WAREHOUSE — <span class="gold">FIND THE DRAWING BOARD</span>',4600),2800);
   persistProgress();
+}
+
+// Home "Enter": already signed in -> play; otherwise -> auth screen.
+$('#homeEnterBtn')?.addEventListener('click',async ()=>{
+  const btn=$('#homeEnterBtn'); btn.disabled=true;
+  let me=null; try{ me=await getMe(); }catch(_e){}
+  btn.disabled=false;
+  if(me?.ok && me.account && !me.account.isGuest && me.account.username){
+    account=me.account; playerId=me.account.playerId; startGame();
+  } else {
+    landingShow('auth');
+  }
 });
+$('#laBackHome')?.addEventListener('click',()=>{ landingShow('home'); setMsg('#laMsg',''); });
+
+// Tab switching (Sign Up / Log In)
+document.querySelectorAll('.landing-tabs .auth-tab').forEach(t=>t.addEventListener('click',()=>{
+  document.querySelectorAll('.landing-tabs .auth-tab').forEach(x=>x.classList.toggle('active',x===t));
+  const tab=t.dataset.ltab;
+  $('#laSignup').style.display=tab==='signup'?'flex':'none';
+  $('#laLogin').style.display=tab==='login'?'flex':'none';
+  setMsg('#laMsg','');
+}));
+
+// Sign up (username + email + phone + password, optional 2FA)
+$('#laSignup')?.addEventListener('submit',async e=>{
+  e.preventDefault();
+  const btn=$('#laSignupBtn'); if(btn.disabled) return;
+  const payload={ username:$('#laUsername').value.trim(), email:$('#laEmail').value.trim(),
+    phone:$('#laPhone').value.trim(), password:$('#laPassword').value, enable2fa:$('#laEnable2fa').checked };
+  setMsg('#laMsg','Creating account…'); btn.disabled=true;
+  const res=await registerAccount(payload); btn.disabled=false;
+  if(res.ok){
+    account=res.account; playerId=res.playerId;
+    if(res.twofa?.secret){ $('#laTwofaSecret').textContent=res.twofa.secret; landingShow('2fa'); }
+    else startGame();
+  } else setMsg('#laMsg',res.error||'Could not create account.','err');
+});
+
+// Log in (username or email + password, + 2FA code if enabled)
+$('#laLogin')?.addEventListener('submit',async e=>{
+  e.preventDefault();
+  const btn=$('#laLoginBtn'); if(btn.disabled) return;
+  const payload={ identifier:$('#laIdentifier').value.trim(), password:$('#laLoginPassword').value, code:$('#laCode').value.trim() };
+  setMsg('#laMsg','Logging in…'); btn.disabled=true;
+  const res=await loginAccount(payload); btn.disabled=false;
+  if(res.ok){ account=res.account; playerId=res.playerId; startGame(); }
+  else if(res.twofaRequired){ $('#laCodeRow').style.display='flex'; setMsg('#laMsg','Enter your 6-digit authenticator code.'); }
+  else setMsg('#laMsg',res.error||'Login failed.','err');
+});
+
+// Guest (temporary, for testing): fresh every refresh, no saves.
+$('#laGuestBtn')?.addEventListener('click',async ()=>{
+  const btn=$('#laGuestBtn'); btn.disabled=true; setMsg('#laMsg','Starting guest session…');
+  const res=await startGuestSession(); btn.disabled=false;
+  if(res.ok){ account=null; playerId=res.playerId; startGame(); }
+  else setMsg('#laMsg','Could not start guest session.','err');
+});
+
+// 2FA confirm / skip
+$('#laTwofaConfirm')?.addEventListener('click',async ()=>{
+  const code=$('#laTwofaCode').value.trim();
+  if(!code){ setMsg('#laTwofaMsg','Enter the 6-digit code.','err'); return; }
+  const res=await enable2fa(code);
+  if(res.ok){ account=res.account; startGame(); }
+  else setMsg('#laTwofaMsg',res.error||'Invalid code.','err');
+});
+$('#laTwofaSkip')?.addEventListener('click',()=>startGame());
 
 // ==================== LOOP ====================
 addEventListener('resize',()=>{
