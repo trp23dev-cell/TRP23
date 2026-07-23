@@ -922,29 +922,38 @@ function garmentTex(design,side){
     // Estimate the background from the four corners.
     const corners=[px(2,2),px(W-3,2),px(2,H-3),px(W-3,H-3)];
     const bg=[0,1,2].map(c=>corners.reduce((s,p)=>s+p[c],0)/corners.length);
-    // Measure how different the garment (centre torso) is from the background.
-    // Low contrast = a dark garment on a dark bg -> cut conservatively so we
-    // don't erase the garment; high contrast -> cut cleanly.
-    let contrast=0, n=0;
-    for(const [fx,fy] of [[.5,.35],[.4,.5],[.6,.5],[.5,.6]]){ contrast+=dist2(px(Math.floor(W*fx),Math.floor(H*fy)),bg); n++; }
-    contrast/=n;
-    const lowContrast=contrast<80;
-    const inner=lowContrast?9:24, outer=inner+(lowContrast?12:30);
-    // Build a soft alpha mask...
-    const A=new Float32Array(W*H);
-    for(let y=0;y<H;y++)for(let x=0;x<W;x++){
-      const dist=dist2(px(x,y),bg);
-      A[y*W+x]=dist<=inner?0:dist>=outer?1:(dist-inner)/(outer-inner);
+    const N=W*H;
+    // Flood-fill the background inward from the image border: only pixels that
+    // are background-coloured AND connected to the edge are removed, so the
+    // garment interior stays solid rather than being punched through.
+    const thr=14;                                   // tight: "looks like background"
+    const bgLike=new Uint8Array(N);
+    for(let p=0;p<N;p++){ const i=p*4; bgLike[p]=dist2([d[i],d[i+1],d[i+2]],bg)<=thr?1:0; }
+    const isBg=new Uint8Array(N);
+    const stack=[];
+    const seed=(x,y)=>{ const p=y*W+x; if(bgLike[p]&&!isBg[p]){ isBg[p]=1; stack.push(p); } };
+    for(let x=0;x<W;x++){ seed(x,0); seed(x,H-1); }
+    for(let y=0;y<H;y++){ seed(0,y); seed(W-1,y); }
+    while(stack.length){ const p=stack.pop(), x=p%W, y=(p-x)/W;
+      if(x>0)seed(x-1,y); if(x<W-1)seed(x+1,y);
+      if(y>0)seed(x,y-1); if(y<H-1)seed(x,y+1);
     }
-    // ...then blur it (two 3x3 box passes) so cut silhouettes aren't jagged.
-    const blur=(src)=>{ const o=new Float32Array(W*H);
-      for(let y=0;y<H;y++)for(let x=0;x<W;x++){ let s=0,c=0;
-        for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){ const xx=x+dx,yy=y+dy;
-          if(xx<0||yy<0||xx>=W||yy>=H)continue; s+=src[yy*W+xx]; c++; }
-        o[y*W+x]=s/c; }
-      return o; };
-    const M=blur(blur(A));
-    for(let p=0;p<W*H;p++) d[p*4+3]=Math.round(M[p]*255);
+    // Self-check: how much of the torso survived the cut? If the garment is a
+    // dark set on a black bg (chain/star), colour can't tell them apart and the
+    // cut eats the garment -> keep the ORIGINAL opaque photo (its black bg blends
+    // into the dark scene anyway). Otherwise apply the cut.
+    let kept=0, tot=0;
+    for(let y=(H*0.3)|0;y<(H*0.7)|0;y++)for(let x=(W*0.35)|0;x<(W*0.65)|0;x++){ tot++; if(!isBg[y*W+x]) kept++; }
+    if(kept/tot < 0.7){ tex.image=cv; tex.needsUpdate=true; return; }   // leave uncut
+    // Binary mask (garment=1, bg=0) + one light blur for a soft silhouette edge.
+    const A=new Float32Array(N);
+    for(let p=0;p<N;p++) A[p]=isBg[p]?0:1;
+    const M=new Float32Array(N);
+    for(let y=0;y<H;y++)for(let x=0;x<W;x++){ let s=0,c=0;
+      for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){ const xx=x+dx,yy=y+dy;
+        if(xx<0||yy<0||xx>=W||yy>=H)continue; s+=A[yy*W+xx]; c++; }
+      M[y*W+x]=s/c; }
+    for(let p=0;p<N;p++) d[p*4+3]=Math.round(M[p]*255);
     g.putImageData(id,0,0);
     tex.image=cv; tex.needsUpdate=true;
   };
@@ -960,8 +969,8 @@ function curvedPlane(w,h){
 function buildGarment(product,height=1.5,lit=true){
   const g=new THREE.Group(); const w=height*product.ar;
   const Mat=lit?THREE.MeshStandardMaterial:THREE.MeshBasicMaterial;
-  const mf=new Mat({map:garmentTex(product.design,'front'),transparent:true,alphaTest:.2});
-  const mb=new Mat({map:garmentTex(product.design,'back'),transparent:true,alphaTest:.2});
+  const mf=new Mat({map:garmentTex(product.design,'front'),transparent:true,alphaTest:.45});
+  const mb=new Mat({map:garmentTex(product.design,'back'),transparent:true,alphaTest:.45});
   if(lit){ mf.roughness=mb.roughness=.92; }
   const fr=new THREE.Mesh(curvedPlane(w,height),mf);
   const bk=new THREE.Mesh(curvedPlane(w,height),mb);
@@ -1003,8 +1012,8 @@ function buildMannequin(product,height=1.4,lit=true){
   const w=height*product.ar*.82;                    // slimmer than the flat card
   const Mat=lit?THREE.MeshStandardMaterial:THREE.MeshBasicMaterial;
   const geo=mannequinBodyGeo(w,height);
-  const mf=new Mat({map:garmentTex(product.design,'front'),side:THREE.DoubleSide,transparent:true,alphaTest:.2});
-  const mb=new Mat({map:garmentTex(product.design,'back'),side:THREE.DoubleSide,transparent:true,alphaTest:.2});
+  const mf=new Mat({map:garmentTex(product.design,'front'),side:THREE.DoubleSide,transparent:true,alphaTest:.45});
+  const mb=new Mat({map:garmentTex(product.design,'back'),side:THREE.DoubleSide,transparent:true,alphaTest:.45});
   if(lit){ mf.roughness=mb.roughness=.9; mf.metalness=mb.metalness=0; }
   const fr=new THREE.Mesh(geo,mf);
   const bk=new THREE.Mesh(geo.clone(),mb); bk.rotation.y=Math.PI;
