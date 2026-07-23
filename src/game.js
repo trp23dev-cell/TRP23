@@ -915,10 +915,21 @@ function garmentTex(design,side){
     contrast/=n;
     const lowContrast=contrast<80;
     const inner=lowContrast?9:24, outer=inner+(lowContrast?12:30);
-    for(let i=0;i<d.length;i+=4){
-      const dist=dist2([d[i],d[i+1],d[i+2]],bg);
-      d[i+3]=dist<=inner?0:dist>=outer?255:Math.round(((dist-inner)/(outer-inner))*255);
+    // Build a soft alpha mask...
+    const A=new Float32Array(W*H);
+    for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+      const dist=dist2(px(x,y),bg);
+      A[y*W+x]=dist<=inner?0:dist>=outer?1:(dist-inner)/(outer-inner);
     }
+    // ...then blur it (two 3x3 box passes) so cut silhouettes aren't jagged.
+    const blur=(src)=>{ const o=new Float32Array(W*H);
+      for(let y=0;y<H;y++)for(let x=0;x<W;x++){ let s=0,c=0;
+        for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){ const xx=x+dx,yy=y+dy;
+          if(xx<0||yy<0||xx>=W||yy>=H)continue; s+=src[yy*W+xx]; c++; }
+        o[y*W+x]=s/c; }
+      return o; };
+    const M=blur(blur(A));
+    for(let p=0;p<W*H;p++) d[p*4+3]=Math.round(M[p]*255);
     g.putImageData(id,0,0);
     tex.image=cv; tex.needsUpdate=true;
   };
@@ -934,8 +945,8 @@ function curvedPlane(w,h){
 function buildGarment(product,height=1.5,lit=true){
   const g=new THREE.Group(); const w=height*product.ar;
   const Mat=lit?THREE.MeshStandardMaterial:THREE.MeshBasicMaterial;
-  const mf=new Mat({map:garmentTex(product.design,'front'),transparent:true,alphaTest:.3});
-  const mb=new Mat({map:garmentTex(product.design,'back'),transparent:true,alphaTest:.3});
+  const mf=new Mat({map:garmentTex(product.design,'front'),transparent:true,alphaTest:.2});
+  const mb=new Mat({map:garmentTex(product.design,'back'),transparent:true,alphaTest:.2});
   if(lit){ mf.roughness=mb.roughness=.92; }
   const fr=new THREE.Mesh(curvedPlane(w,height),mf);
   const bk=new THREE.Mesh(curvedPlane(w,height),mb);
@@ -977,8 +988,8 @@ function buildMannequin(product,height=1.4,lit=true){
   const w=height*product.ar*.82;                    // slimmer than the flat card
   const Mat=lit?THREE.MeshStandardMaterial:THREE.MeshBasicMaterial;
   const geo=mannequinBodyGeo(w,height);
-  const mf=new Mat({map:garmentTex(product.design,'front'),side:THREE.DoubleSide,transparent:true,alphaTest:.3});
-  const mb=new Mat({map:garmentTex(product.design,'back'),side:THREE.DoubleSide,transparent:true,alphaTest:.3});
+  const mf=new Mat({map:garmentTex(product.design,'front'),side:THREE.DoubleSide,transparent:true,alphaTest:.2});
+  const mb=new Mat({map:garmentTex(product.design,'back'),side:THREE.DoubleSide,transparent:true,alphaTest:.2});
   if(lit){ mf.roughness=mb.roughness=.9; mf.metalness=mb.metalness=0; }
   const fr=new THREE.Mesh(geo,mf);
   const bk=new THREE.Mesh(geo.clone(),mb); bk.rotation.y=Math.PI;
