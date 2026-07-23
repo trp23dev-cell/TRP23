@@ -888,6 +888,11 @@ function evidenceBoard(x,y,z,ry){
 // garment photos — loaded and background-cut so only the garment shows.
 // The product shots sit on a near-black background; we sample the corners for
 // that background colour and key it out to transparency (soft feathered edge).
+// Prefer real high-res product files if present (drop them into
+// public/garments/<design>_<front|back>.png or .jpg). Otherwise fall back to
+// the low-res images embedded in this file. Already-transparent PNGs are used
+// as-is; opaque photos get their near-black background keyed out.
+const GARMENT_IMG_BASE=`${import.meta.env.BASE_URL||'/'}garments/`;
 const texCache={};
 function garmentTex(design,side){
   const k=design+side;
@@ -897,11 +902,21 @@ function garmentTex(design,side){
   tex.anisotropy=8;
   texCache[k]=tex;
   const img=new Image();
+  const sources=[
+    `${GARMENT_IMG_BASE}${design}_${side}.png`,
+    `${GARMENT_IMG_BASE}${design}_${side}.jpg`,
+    GARMENT_ASSETS[design][side],
+  ];
+  let si=0;
+  img.onerror=()=>{ si++; if(si<sources.length) img.src=sources[si]; };
   img.onload=()=>{
     const cv=document.createElement('canvas'); cv.width=img.width; cv.height=img.height;
     const g=cv.getContext('2d',{willReadFrequently:true}); g.drawImage(img,0,0);
     let id; try{ id=g.getImageData(0,0,cv.width,cv.height); }catch(_e){ tex.image=cv; tex.needsUpdate=true; return; }
     const d=id.data, W=cv.width, H=cv.height;
+    // If the supplied image is already cut out (transparent corners), use as-is.
+    const cornerA=(d[3]+d[(W-1)*4+3]+d[(H-1)*W*4+3]+d[(H*W-1)*4+3])/4;
+    if(cornerA<40){ tex.image=cv; tex.needsUpdate=true; return; }
     const px=(x,y)=>{const i=(y*W+x)*4; return [d[i],d[i+1],d[i+2]];};
     const dist2=(p,q)=>{const a=p[0]-q[0],b=p[1]-q[1],c=p[2]-q[2];return Math.sqrt(a*a+b*b+c*c);};
     // Estimate the background from the four corners.
