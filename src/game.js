@@ -885,81 +885,11 @@ function evidenceBoard(x,y,z,ry){
   G(lamp);
   return b;
 }
-// garment photos — loaded and background-cut so only the garment shows.
-// The product shots sit on a near-black background; we sample the corners for
-// that background colour and key it out to transparency (soft feathered edge).
-// Prefer real high-res product files if present (drop them into
-// public/garments/<design>_<front|back>.png or .jpg). Otherwise fall back to
-// the low-res images embedded in this file. Already-transparent PNGs are used
-// as-is; opaque photos get their near-black background keyed out.
-const GARMENT_IMG_BASE=`${import.meta.env.BASE_URL||'/'}garments/`;
-const texCache={};
-function garmentTex(design,side){
-  const k=design+side;
-  if(texCache[k]) return texCache[k];
-  const tex=new THREE.Texture();
-  tex.colorSpace=THREE.SRGBColorSpace;
-  tex.anisotropy=8;
-  texCache[k]=tex;
-  const img=new Image();
-  const sources=[
-    `${GARMENT_IMG_BASE}${design}_${side}.png`,
-    `${GARMENT_IMG_BASE}${design}_${side}.jpg`,
-    GARMENT_ASSETS[design][side],
-  ];
-  let si=0;
-  img.onerror=()=>{ si++; if(si<sources.length) img.src=sources[si]; };
-  img.onload=()=>{
-    const cv=document.createElement('canvas'); cv.width=img.width; cv.height=img.height;
-    const g=cv.getContext('2d',{willReadFrequently:true}); g.drawImage(img,0,0);
-    let id; try{ id=g.getImageData(0,0,cv.width,cv.height); }catch(_e){ tex.image=cv; tex.needsUpdate=true; return; }
-    const d=id.data, W=cv.width, H=cv.height;
-    // If the supplied image is already cut out (transparent corners), use as-is.
-    const cornerA=(d[3]+d[(W-1)*4+3]+d[(H-1)*W*4+3]+d[(H*W-1)*4+3])/4;
-    if(cornerA<40){ tex.image=cv; tex.needsUpdate=true; return; }
-    const px=(x,y)=>{const i=(y*W+x)*4; return [d[i],d[i+1],d[i+2]];};
-    const dist2=(p,q)=>{const a=p[0]-q[0],b=p[1]-q[1],c=p[2]-q[2];return Math.sqrt(a*a+b*b+c*c);};
-    // Estimate the background from the four corners.
-    const corners=[px(2,2),px(W-3,2),px(2,H-3),px(W-3,H-3)];
-    const bg=[0,1,2].map(c=>corners.reduce((s,p)=>s+p[c],0)/corners.length);
-    const N=W*H;
-    // Flood-fill the background inward from the image border: only pixels that
-    // are background-coloured AND connected to the edge are removed, so the
-    // garment interior stays solid rather than being punched through.
-    const thr=14;                                   // tight: "looks like background"
-    const bgLike=new Uint8Array(N);
-    for(let p=0;p<N;p++){ const i=p*4; bgLike[p]=dist2([d[i],d[i+1],d[i+2]],bg)<=thr?1:0; }
-    const isBg=new Uint8Array(N);
-    const stack=[];
-    const seed=(x,y)=>{ const p=y*W+x; if(bgLike[p]&&!isBg[p]){ isBg[p]=1; stack.push(p); } };
-    for(let x=0;x<W;x++){ seed(x,0); seed(x,H-1); }
-    for(let y=0;y<H;y++){ seed(0,y); seed(W-1,y); }
-    while(stack.length){ const p=stack.pop(), x=p%W, y=(p-x)/W;
-      if(x>0)seed(x-1,y); if(x<W-1)seed(x+1,y);
-      if(y>0)seed(x,y-1); if(y<H-1)seed(x,y+1);
-    }
-    // Self-check: how much of the torso survived the cut? If the garment is a
-    // dark set on a black bg (chain/star), colour can't tell them apart and the
-    // cut eats the garment -> keep the ORIGINAL opaque photo (its black bg blends
-    // into the dark scene anyway). Otherwise apply the cut.
-    let kept=0, tot=0;
-    for(let y=(H*0.3)|0;y<(H*0.7)|0;y++)for(let x=(W*0.35)|0;x<(W*0.65)|0;x++){ tot++; if(!isBg[y*W+x]) kept++; }
-    if(kept/tot < 0.7){ tex.image=cv; tex.needsUpdate=true; return; }   // leave uncut
-    // Binary mask (garment=1, bg=0) + one light blur for a soft silhouette edge.
-    const A=new Float32Array(N);
-    for(let p=0;p<N;p++) A[p]=isBg[p]?0:1;
-    const M=new Float32Array(N);
-    for(let y=0;y<H;y++)for(let x=0;x<W;x++){ let s=0,c=0;
-      for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){ const xx=x+dx,yy=y+dy;
-        if(xx<0||yy<0||xx>=W||yy>=H)continue; s+=A[yy*W+xx]; c++; }
-      M[y*W+x]=s/c; }
-    for(let p=0;p<N;p++) d[p*4+3]=Math.round(M[p]*255);
-    g.putImageData(id,0,0);
-    tex.image=cv; tex.needsUpdate=true;
-  };
-  img.src=GARMENT_ASSETS[design][side];
-  return tex;
-}
+// garment photo cards
+const texLoader=new THREE.TextureLoader(); const texCache={};
+function garmentTex(design,side){ const k=design+side;
+  if(!texCache[k]){ const t=texLoader.load(GARMENT_ASSETS[design][side]); t.anisotropy=8; texCache[k]=t; }
+  return texCache[k]; }
 function curvedPlane(w,h){
   const geo=new THREE.PlaneGeometry(w,h,12,1);
   const pos=geo.attributes.position;
@@ -969,70 +899,19 @@ function curvedPlane(w,h){
 function buildGarment(product,height=1.5,lit=true){
   const g=new THREE.Group(); const w=height*product.ar;
   const Mat=lit?THREE.MeshStandardMaterial:THREE.MeshBasicMaterial;
-  const mf=new Mat({map:garmentTex(product.design,'front'),transparent:true,alphaTest:.45});
-  const mb=new Mat({map:garmentTex(product.design,'back'),transparent:true,alphaTest:.45});
+  const mf=new Mat({map:garmentTex(product.design,'front')});
+  const mb=new Mat({map:garmentTex(product.design,'back')});
   if(lit){ mf.roughness=mb.roughness=.92; }
   const fr=new THREE.Mesh(curvedPlane(w,height),mf);
   const bk=new THREE.Mesh(curvedPlane(w,height),mb);
   bk.rotation.y=Math.PI; bk.position.z=-.015; fr.position.z=.015;
   g.add(fr,bk); return g;
 }
-// ---- 3D mannequin: drapes the real garment photos over a body-shaped form ----
-// Vertical profile of a standing body, t=0 feet .. t=1 collar. Front + back
-// shells share this contour so a flat product photo reads as a fitted garment.
-function _profile(stops,t){
-  if(t<=stops[0][0]) return stops[0][1];
-  for(let i=1;i<stops.length;i++){
-    if(t<=stops[i][0]){
-      const [t0,v0]=stops[i-1],[t1,v1]=stops[i];
-      return v0+(v1-v0)*((t-t0)/((t1-t0)||1));
-    }
-  }
-  return stops[stops.length-1][1];
-}
-// Slim silhouette (width multipliers) and a shallow depth so it reads as a
-// dress-form, not a balloon. Keep the photo only lightly distorted.
-const _bodyWidth=[[0,.34],[.12,.32],[.30,.44],[.42,.62],[.50,.66],[.58,.56],[.70,.76],[.82,.82],[.90,.46],[1,.26]];
-const _bodyDepth=[[0,.09],[.30,.13],[.50,.16],[.66,.17],[.82,.14],[.92,.09],[1,.06]];
-function mannequinBodyGeo(w,h){
-  const geo=new THREE.PlaneGeometry(w,h,18,32);
-  const pos=geo.attributes.position;
-  for(let i=0;i<pos.count;i++){
-    const x=pos.getX(i), y=pos.getY(i);
-    const t=(y/h)+.5;                 // 0 bottom .. 1 top
-    const u=(x/w)+.5;                 // 0..1 across
-    pos.setX(i, x*_profile(_bodyWidth,t));                       // body silhouette
-    pos.setZ(i, _profile(_bodyDepth,t)*w*Math.cos((u-.5)*Math.PI)); // rounded chest/belly
-  }
-  geo.computeVertexNormals();
-  return geo;
-}
-function buildMannequin(product,height=1.4,lit=true){
-  const g=new THREE.Group();
-  const w=height*product.ar*.82;                    // slimmer than the flat card
-  const Mat=lit?THREE.MeshStandardMaterial:THREE.MeshBasicMaterial;
-  const geo=mannequinBodyGeo(w,height);
-  const mf=new Mat({map:garmentTex(product.design,'front'),side:THREE.DoubleSide,transparent:true,alphaTest:.45});
-  const mb=new Mat({map:garmentTex(product.design,'back'),side:THREE.DoubleSide,transparent:true,alphaTest:.45});
-  if(lit){ mf.roughness=mb.roughness=.9; mf.metalness=mb.metalness=0; }
-  const fr=new THREE.Mesh(geo,mf);
-  const bk=new THREE.Mesh(geo.clone(),mb); bk.rotation.y=Math.PI;
-  g.add(fr,bk);
-  // Neutral mannequin head + neck emerging from the collar.
-  const skin=lit?new THREE.MeshStandardMaterial({color:0x241f18,roughness:.45,metalness:.2})
-                :new THREE.MeshBasicMaterial({color:0x2a251d});
-  const neck=new THREE.Mesh(new THREE.CylinderGeometry(.045,.06,.12,14),skin);
-  neck.position.y=height*.47;
-  const head=new THREE.Mesh(new THREE.SphereGeometry(.092,18,14),skin);
-  head.scale.set(1,1.25,.9); head.position.y=height*.56;
-  g.add(neck,head);
-  return g;
-}
-function heroDisplay(x,z,pi=0,h=1.4){
+function heroDisplay(x,z,pi=0,h=1.7){
   const ped=new THREE.Mesh(new THREE.CylinderGeometry(.55,.65,.18,24),
     new THREE.MeshStandardMaterial({color:0x241d14,roughness:.5,metalness:.3}));
   ped.position.set(x,.09,z); ped.receiveShadow=true; G(ped);
-  heroSpinRef=buildMannequin(PRODUCTS[pi],h,true);
+  heroSpinRef=buildGarment(PRODUCTS[pi],h,true);
   heroSpinRef.position.set(x,.18+h/2,z); G(heroSpinRef);
   const hit=new THREE.Mesh(new THREE.CylinderGeometry(.65,.65,h+.3,10),
     new THREE.MeshBasicMaterial({visible:false}));
@@ -1289,7 +1168,7 @@ function(){
   G(new THREE.HemisphereLight(0x3a4258,0x14100c,.5));
   bulb(-1.5,2.6,1.5,1.0);
   evidenceBoard(4.98,1.7,1.2,-Math.PI/2);
-  heroDisplay(-1.6,-.6,0,1.4);
+  heroDisplay(-1.6,-.6,0,1.6);
   clothingRack(-3.4,.6,Math.PI/2-.2,[1,2,3,4,5],1.05);
   stash(2.38,.71,-3.62,.35);                 // tucked beside the TV on the stand
   levelDoor(0,4.19,Math.PI,'THE WAY UP — '+LEVELS[3].name);
@@ -1357,7 +1236,7 @@ function(){
     const tr=new THREE.SpotLight(0xf6ead2,1.1,10,.6,.5,1.4);
     tr.position.set(x,3.2,z); tr.target.position.set(x,-0,z-1); G(tr); G(tr.target);});
   evidenceBoard(5.48,1.7,-1.2,-Math.PI/2);
-  heroDisplay(-2.2,-2.2,0,1.4);
+  heroDisplay(-2.2,-2.2,0,1.7);
   clothingRack(0,1.8,0,[1,2,3,4,5],1.2);
   stash(3.4,.11,-3.78,.1);                  // on the floor behind the counter
   levelDoor(-1.6,4.42,Math.PI,'THE WAY UP — '+LEVELS[4].name);
@@ -1406,7 +1285,7 @@ function(){
   const warm=new THREE.SpotLight(0xf2dcb2,1.3,12,.7,.5,1.4);
   warm.position.set(0,3.15,1); warm.target.position.set(0,0,0); G(warm); G(warm.target);
   evidenceBoard(-5.48,1.7,-1.0,Math.PI/2);
-  heroDisplay(2.6,1.4,0,1.4);
+  heroDisplay(2.6,1.4,0,1.7);
   clothingRack(-1.2,-3.4,0,[1,2,3,4,5],1.15);
   stash(5.22,.1,1.4,-Math.PI/2);             // on the floor under the big picture
   levelDoor(1.8,4.42,Math.PI,'THE WAY UP — '+LEVELS[5].name);
@@ -1767,7 +1646,7 @@ function moveStep(dt){
 // ==================== SHOP / PRODUCT VIEWER ====================
 const vScene=new THREE.Scene(); vScene.background=null;
 const vCam=new THREE.PerspectiveCamera(38,1,.1,50);
-vCam.position.set(0,.92,2.55); vCam.lookAt(0,.82,0);
+vCam.position.set(0,.95,2.35); vCam.lookAt(0,.9,0);
 const vRenderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
 $('#viewerCanvasWrap').appendChild(vRenderer.domElement);
 vScene.add(new THREE.AmbientLight(0xffffff,.55));
@@ -1780,8 +1659,8 @@ let vSuit=null,vSpin=0,vDrag=false,vlx=0,vAuto=true,vTurns=0,currentProduct=0;
 function loadViewerSuit(pi){
   if(vSuit) vScene.remove(vSuit);
   const p=PRODUCTS[pi];
-  vSuit=buildMannequin(p,1.4,true);   // 3D mannequin wearing the real garment photos
-  vSuit.position.y=.75; vScene.add(vSuit);
+  vSuit=buildGarment(p,1.6,false);
+  vSuit.position.y=.92; vScene.add(vSuit);
   vSpin=0; vTurns=0; vAuto=true;
 }
 const wrap=$('#viewerCanvasWrap');
