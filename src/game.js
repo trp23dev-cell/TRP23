@@ -632,8 +632,11 @@ if(document.fonts&&document.fonts.ready) document.fonts.ready.then(()=>{ drawTag
       swap('loaderLogo','loaderMark');
     }
   };
-  img.onerror=()=>{}; // no file yet -> keep the fallback text
-  img.src=`${import.meta.env.BASE_URL||'/'}trap-logo.png`;
+  const base=import.meta.env.BASE_URL||'/';
+  const srcs=[`${base}trap-logo.png`,`${base}trap-logo.jpg`];
+  let bi=0;
+  img.onerror=()=>{ bi++; if(bi<srcs.length) img.src=srcs[bi]; }; // else keep fallback text
+  img.src=srcs[0];
 })();
 setTextureQuality(tagTex);
 
