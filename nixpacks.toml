@@ -1,0 +1,4 @@
+# Force the Node provider. The repo also contains a Unity project whose
+# generated .csproj/.slnx files otherwise make Nixpacks detect .NET and run
+# `dotnet restore`, which fails the build. This app is Node-only.
+providers = ["node"]
