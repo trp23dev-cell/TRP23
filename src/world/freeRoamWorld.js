@@ -13,6 +13,9 @@
 export const PLAYER_RADIUS = 0.6;
 export const WORLD_BOUND = 150;
 export const ENTER_DISTANCE = 4.6;
+// How far past the door the player is placed when leaving a place. Must exceed
+// ENTER_DISTANCE or stepping out instantly re-offers the door you just came through.
+const EXIT_STEP = 5;
 
 // Hub-and-spoke layout: the bank sits behind you at spawn, the chapters fan out.
 const PLACE_LAYOUT = [
@@ -181,6 +184,14 @@ export function buildFreeRoamWorld({ THREE, group, chapters, cleared = 0, canvas
       // stand just outside the door
       x: px,
       z: pz + faceZ * (d / 2 + 1.6),
+      // Where the player is put when they walk back OUT of this place. Sits far
+      // enough past the door that the "enter" prompt does not immediately fire
+      // again, and faces away from the building so the door is behind them.
+      exit: {
+        x: px,
+        z: pz + faceZ * (d / 2 + 1.6 + EXIT_STEP),
+        yaw: faceZ > 0 ? Math.PI : 0,
+      },
     });
   }
 

@@ -20,9 +20,76 @@ src:url(data:font/woff2;base64,d09GMgABAAAAAFesABEAAAAA00QAAFdIAAEAAAAAAAAAAAAAA
     --blood:#8a2323; --line:rgba(201,160,106,.22);
   }
   *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  /* touch-action:none stops the browser claiming touches for pinch-zoom, double-tap
+     zoom and pull-to-refresh. Without it two fingers zoom the page instead of
+     playing the game. overscroll-behavior kills the rubber-band. */
   html,body{height:100%;overflow:hidden;background:var(--ink);color:var(--bone);
-    font-family:'Barlow Condensed',sans-serif;user-select:none}
-  canvas{display:block}
+    font-family:'Barlow Condensed',sans-serif;user-select:none;
+    touch-action:none;overscroll-behavior:none;-webkit-user-select:none;
+    -webkit-touch-callout:none}
+  canvas{display:block;touch-action:none}
+
+  /* ---------- MOBILE JOYSTICK ---------- */
+  /* Bottom-left thumb rest. Everything outside this pad pans the camera. */
+  #joystick-container{position:absolute;left:26px;bottom:26px;width:150px;height:150px;
+    pointer-events:auto;touch-action:none;z-index:26;display:flex;
+    align-items:center;justify-content:center;opacity:.55;transition:opacity .18s ease}
+  #joystick-container.active{opacity:.95}
+  #joystick-container .js-ring{position:relative;width:132px;height:132px;border-radius:50%;
+    border:1px solid rgba(201,160,106,.28);background:rgba(10,9,8,.22);
+    box-shadow:inset 0 0 22px rgba(0,0,0,.5);backdrop-filter:blur(2px)}
+  #joystick-container .js-thumb{position:absolute;left:50%;top:50%;width:58px;height:58px;
+    border-radius:50%;background:rgba(201,160,106,.28);border:1px solid rgba(201,160,106,.5);
+    transform:translate(-50%,-50%);box-shadow:0 0 14px rgba(201,160,106,.25)}
+  /* Short landscape phones: keep the pad clear of the objective card. */
+  @media (max-height:460px){
+    #joystick-container{width:118px;height:118px;left:16px;bottom:14px}
+    #joystick-container .js-ring{width:104px;height:104px}
+    #joystick-container .js-thumb{width:46px;height:46px}
+  }
+
+  /* ---------- MOBILE ACTION PAD (sprint / jump) ---------- */
+  /* Right thumb, opposite the stick. Jump sits outermost where the thumb rests. */
+  #touch-actions{position:absolute;right:22px;bottom:24px;display:flex;align-items:flex-end;
+    gap:12px;pointer-events:auto;touch-action:none;z-index:26}
+  .touch-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
+    width:64px;height:64px;border-radius:50%;background:rgba(10,9,8,.3);
+    border:1px solid rgba(201,160,106,.34);color:var(--gold);cursor:pointer;
+    backdrop-filter:blur(2px);opacity:.62;transition:opacity .14s ease,transform .1s ease,background .14s ease;
+    font-family:'Barlow Condensed';-webkit-tap-highlight-color:transparent}
+  .touch-btn.tb-jump{width:78px;height:78px}
+  .touch-btn .tb-glyph{font-size:20px;line-height:1}
+  .touch-btn.tb-jump .tb-glyph{font-size:24px}
+  .touch-btn .tb-label{font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:var(--bone-dim)}
+  .touch-btn.held{opacity:1;background:rgba(201,160,106,.24);transform:scale(.94)}
+  /* Sprint is world-only, matching the Shift key, so it goes away indoors. */
+  #hud:not(.in-world) #btnSprint{display:none}
+  @media (max-height:460px){
+    #touch-actions{right:14px;bottom:12px;gap:9px}
+    .touch-btn{width:54px;height:54px}
+    .touch-btn.tb-jump{width:66px;height:66px}
+  }
+
+  /* ---------- ROTATE GATE (mobile landscape) ---------- */
+  #rotateGate{position:fixed;inset:0;z-index:200;display:none;align-items:center;
+    justify-content:center;background:var(--ink);text-align:center;padding:24px}
+  #rotateGate.on{display:flex}
+  .rg-inner{display:flex;flex-direction:column;align-items:center;gap:22px}
+  .rg-phone{width:64px;height:110px;border:3px solid var(--gold);border-radius:12px;
+    position:relative;display:flex;align-items:center;justify-content:center;
+    animation:rg-turn 2.4s ease-in-out infinite;transform-origin:50% 50%}
+  .rg-screen{position:absolute;inset:7px;border-radius:5px;
+    background:linear-gradient(160deg,rgba(201,160,106,.28),rgba(201,160,106,.05))}
+  @keyframes rg-turn{
+    0%,18%{transform:rotate(0deg)}
+    45%,72%{transform:rotate(-90deg)}
+    100%{transform:rotate(-90deg)}
+  }
+  .rg-title{font-size:30px;color:var(--bone)}
+  .rg-sub{font-size:12px;letter-spacing:.34em;text-transform:uppercase;color:var(--gold)}
+  @media (prefers-reduced-motion:reduce){
+    .rg-phone{animation:none;transform:rotate(-90deg)}
+  }
   .display{font-family:'Pirata One',serif;letter-spacing:.04em}
   .type{font-family:'Special Elite',monospace}
 
@@ -376,5 +443,44 @@ src:url(data:font/woff2;base64,d09GMgABAAAAAFesABEAAAAA00QAAFdIAAEAAAAAAAAAAAAAA
     .hud-actions{top:auto;bottom:150px;right:14px}
     .hud-act{min-width:auto;padding:9px 11px}
     .bank-balances{grid-template-columns:1fr}
+  }
+
+  /* Keyboard hints are meaningless on touch, at any screen width. */
+  @media (pointer:coarse){
+    .controls-hint{display:none !important}
+  }
+
+  /* Landscape phone layout. Vertical space is the scarce resource, so everything
+     is pushed to the four corners and the middle is left clear to look through.
+     Left column: minimap, compass, joystick. Right column: coins, actions,
+     objective. Keyed on height, not width - a landscape phone is wide. */
+  @media (pointer:coarse) and (orientation:landscape) and (max-height:560px){
+    #worldUi{left:14px;top:74px;gap:5px}
+    #minimap{width:104px;height:104px}
+    #compass{font-size:9px;letter-spacing:.14em;padding:4px 8px}
+
+    #joystick-container{width:112px;height:112px;left:12px;bottom:12px}
+    #joystick-container .js-ring{width:100px;height:100px}
+    #joystick-container .js-thumb{width:44px;height:44px}
+
+    /* Bottom strip belongs to the thumbs now: stick on the left, sprint/jump on
+       the right. The objective card sits between them. */
+    .hud-bottom{left:136px;right:auto;bottom:12px;max-width:min(40vw,260px)}
+    .objective{padding:7px 11px}
+    .objective .o1{font-size:9px;letter-spacing:.34em}
+    .objective .o2{font-size:13px;margin-top:2px}
+    .o3{font-size:9px;letter-spacing:.18em;margin-top:3px}
+    .progressline{margin-top:5px}
+    .progressline .pl-meta{font-size:8px;margin-bottom:3px}
+
+    .hud-actions{top:78px;right:14px;bottom:auto;left:auto;flex-direction:column;gap:5px}
+    .hud-act{min-width:auto;padding:6px 9px;font-size:11px;letter-spacing:.14em}
+    .display-settings{right:14px;bottom:auto;top:auto;bottom:96px}
+    .display-cog{width:32px;height:32px;font-size:15px}
+
+    #prompt{top:auto;bottom:26%;font-size:11px;letter-spacing:.18em;padding:7px 14px}
+    #levelIntro .lt{font-size:clamp(34px,7vw,54px)}
+    #levelIntro .ls{font-size:11px}
+    #levelIntro .lm{font-size:10px;letter-spacing:.24em}
   }
 
