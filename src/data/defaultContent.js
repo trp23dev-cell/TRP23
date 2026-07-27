@@ -1,5 +1,10 @@
 export const defaultContent = {
-  version: 1,
+  // Bump this whenever the shipped chapter/drop copy changes in a way that must
+  // reach existing installs. The server replaces any stored content older than
+  // this on boot (see ensureStorage in server/mockApiServer.js), and the client
+  // storage key in contentStore.js is bumped alongside it.
+  // v2: chapter renames + stash -> archive + Ch02 moral line.
+  version: 2,
   brand: {
     name: "TRAP MADE IT",
     chapterTitle: "The Come Up",
@@ -19,26 +24,26 @@ export const defaultContent = {
       stash: { code: "TRAP-COMEUP10", deal: "10% OFF YOUR NEXT ORDER" },
       dropId: "drop-chain-core",
       missions: [
-        { id: "walk", type: "explore", title: "Case the spot", rewardCoins: 150, limit: 1, antiAbuseRule: "distance-threshold" },
+        { id: "walk", type: "explore", title: "Get your bearings", rewardCoins: 150, limit: 1, antiAbuseRule: "distance-threshold" },
         { id: "board", type: "inspect", title: "Read the board", rewardCoins: 100, limit: 1, antiAbuseRule: "single-clear" },
-        { id: "stash", type: "stash", title: "Find the stash", rewardCoins: 500, limit: 1, antiAbuseRule: "single-clear" }
+        { id: "stash", type: "stash", title: "Find the archive", rewardCoins: 500, limit: 1, antiAbuseRule: "single-clear" }
       ]
     },
     {
       id: "lvl-02",
       number: "02",
-      name: "THE COOK UP",
+      name: "THE KITCHEN",
       subtitle: "The kitchen is where plans get made.",
       roomVisualKey: "derelict-kitchen",
       isActive: true,
       unlockWindow: { startAt: null, endAt: null },
-      moralFocus: "Discipline: craft over chaos.",
+      moralFocus: "Strategy: every trap needs an exit plan.",
       stash: { code: "TRAP-COOKUP15", deal: "15% OFF YOUR NEXT ORDER" },
       dropId: "drop-star-midnight",
       missions: [
         { id: "inspect", type: "viewer_spin", title: "Inspect the drop", rewardCoins: 150, limit: 1, antiAbuseRule: "single-clear" },
-        { id: "own1", type: "purchase_count", title: "First flip", rewardCoins: 250, requirement: 1, limit: 1, antiAbuseRule: "order-linked" },
-        { id: "stash", type: "stash", title: "Find the stash", rewardCoins: 500, limit: 1, antiAbuseRule: "single-clear" }
+        { id: "own1", type: "purchase_count", title: "First move", rewardCoins: 250, requirement: 1, limit: 1, antiAbuseRule: "order-linked" },
+        { id: "stash", type: "stash", title: "Find the archive", rewardCoins: 500, limit: 1, antiAbuseRule: "single-clear" }
       ]
     },
     {
@@ -54,14 +59,14 @@ export const defaultContent = {
       dropId: "drop-cross-sand",
       missions: [
         { id: "own2", type: "purchase_count", title: "Stack the closet", rewardCoins: 300, requirement: 2, limit: 1, antiAbuseRule: "order-linked" },
-        { id: "stash", type: "stash", title: "Find the stash", rewardCoins: 500, limit: 1, antiAbuseRule: "single-clear" }
+        { id: "stash", type: "stash", title: "Find the archive", rewardCoins: 500, limit: 1, antiAbuseRule: "single-clear" }
       ]
     },
     {
       id: "lvl-04",
       number: "04",
-      name: "THE FRONT",
-      subtitle: "Look legit. Move different.",
+      name: "THE SHOP FLOOR",
+      subtitle: "Standards are the difference.",
       roomVisualKey: "shop-front",
       isActive: true,
       unlockWindow: { startAt: null, endAt: null },
@@ -70,7 +75,7 @@ export const defaultContent = {
       dropId: "drop-wave-teal",
       missions: [
         { id: "viewall", type: "inspect_count", title: "Know the stock", rewardCoins: 400, requirement: 4, limit: 1, antiAbuseRule: "distinct-items" },
-        { id: "stash", type: "stash", title: "Find the stash", rewardCoins: 500, limit: 1, antiAbuseRule: "single-clear" }
+        { id: "stash", type: "stash", title: "Find the archive", rewardCoins: 500, limit: 1, antiAbuseRule: "single-clear" }
       ]
     },
     {
@@ -86,7 +91,7 @@ export const defaultContent = {
       dropId: "drop-web-storm",
       missions: [
         { id: "own3", type: "purchase_count", title: "Serious collector", rewardCoins: 300, requirement: 3, limit: 1, antiAbuseRule: "order-linked" },
-        { id: "stash", type: "stash", title: "Find the stash", rewardCoins: 500, limit: 1, antiAbuseRule: "single-clear" }
+        { id: "stash", type: "stash", title: "Find the archive", rewardCoins: 500, limit: 1, antiAbuseRule: "single-clear" }
       ]
     },
     {
@@ -101,7 +106,7 @@ export const defaultContent = {
       stash: { code: "TRAP-MADEIT40", deal: "40% OFF - YOU MADE IT" },
       dropId: "drop-flame-blood",
       missions: [
-        { id: "stash", type: "stash", title: "Find the stash", rewardCoins: 500, limit: 1, antiAbuseRule: "single-clear" },
+        { id: "stash", type: "stash", title: "Find the archive", rewardCoins: 500, limit: 1, antiAbuseRule: "single-clear" },
         { id: "label", type: "creator_unlock", title: "Start your label", rewardCoins: 0, limit: 1, antiAbuseRule: "single-clear" }
       ]
     }

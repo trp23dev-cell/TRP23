@@ -74,6 +74,7 @@ You're viewing this in an email preview, which can't run the game.<br>
     </div>
   </div>
   <div class="hud-actions" id="hudActions">
+    <button class="hud-act" id="leaveChapterBtn" title="Back out to the block">🚪<span>Leave</span></button>
     <button class="hud-act" id="openStoreBtn" title="Open this spot's store">🛍<span>Store</span></button>
     <button class="hud-act" id="openBankBtn" title="Open the bank">🏦<span>Bank</span></button>
     <button class="hud-act" id="openAccountBtn" title="Your account"><span id="accountChip">Guest</span></button>
@@ -81,11 +82,18 @@ You're viewing this in an email preview, which can't run the game.<br>
   <div id="crosshair"></div>
   <div id="hoverTag"></div>
   <div id="toast"></div>
+
+  <!-- THE BLOCK: radar, compass and the [E] prompt. Shown only outdoors. -->
+  <div id="worldUi">
+    <canvas id="minimap" width="190" height="190"></canvas>
+    <div id="compass"><span id="nearName">—</span><span id="nearDist"></span></div>
+  </div>
+  <div id="prompt"></div>
   <div class="hud-bottom">
     <div class="objective">
       <div class="o1">Objective</div>
       <div class="o2" id="objText">Explore the house</div>
-      <div class="o3" id="stashLine">STASH: <span class="hid">STILL HIDDEN</span></div>
+      <div class="o3" id="stashLine">ARCHIVE: <span class="hid">STILL HIDDEN</span></div>
       <div class="progressline">
         <div class="pl-meta"><span>The Come Up</span><span id="plPct">0%</span></div>
         <div class="pl-track"><div class="pl-fill" id="plFill"></div></div>
@@ -118,11 +126,12 @@ You're viewing this in an email preview, which can't run the game.<br>
 <div class="panel-wrap" id="boardPanel">
   <div class="panel">
     <div class="panel-head">
-      <div class="ph-title"><span class="ph-num">02</span><span class="ph-name display">The Drawing Board</span></div>
+      <div class="ph-title"><span class="ph-num">02</span><span class="ph-name display">Your Case File</span></div>
       <button class="xbtn" data-close="boardPanel">✕</button>
     </div>
+    <div class="moral-line type" id="moralLine"></div>
     <div class="missions" id="missionList"></div>
-    <div class="board-foot type">Clear the board. Find the stash. Level up.<span id="codesFoot"></span></div>
+    <div class="board-foot type">Clear the board. Find the archive. Get out.<span id="codesFoot"></span></div>
   </div>
 </div>
 
@@ -131,17 +140,18 @@ You're viewing this in an email preview, which can't run the game.<br>
   <div class="ln" id="liNum">LEVEL 01</div>
   <div class="lt" id="liName">THE COME UP</div>
   <div class="ls" id="liSub">Every empire starts at the bottom.</div>
+  <div class="lm" id="liMoral">Awareness: you are not stuck forever.</div>
 </div>
 
 <!-- STASH FOUND -->
 <div class="panel-wrap" id="stashPanel">
   <div class="panel" style="width:auto">
     <div class="lock-inner">
-      <div class="li-icon">📦</div>
-      <h2 class="display">Stash Found</h2>
+      <div class="li-icon">🗂</div>
+      <h2 class="display">Archive Found</h2>
       <p id="stashText"></p>
       <div class="req" id="stashCode"></div>
-      <p style="margin-top:10px;font-size:11px">Screenshot the code — it's your real-world deal for this level. One per player.</p>
+      <p style="margin-top:10px;font-size:11px">Screenshot the code — it's your real-world deal for this chapter. One per player.</p>
       <div style="margin-top:22px"><button class="xbtn" data-close="stashPanel" style="width:auto;padding:0 26px;height:40px;letter-spacing:.3em;font-family:'Barlow Condensed'">TAKE IT</button></div>
     </div>
   </div>
