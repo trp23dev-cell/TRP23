@@ -1,0 +1,287 @@
+#!/usr/bin/env node
+// ============================================================================
+// VERIFY MAP — exercise the shipped map against the shipped collision code.
+//
+// Runs headlessly against a running API server, so it checks the real data the
+// game will get rather than a fixture. Imports the actual physics from
+// freeRoamWorld.js: if this passes and the game still walls the player into a
+// building, the bug is in rendering, not in geometry.
+//
+//   npm run map:verify              (expects the API on :8787)
+//   MAP_API=http://localhost:8799 npm run map:verify
+// ============================================================================
+
+// Must be set before the client modules are imported: they read it when their
+// API base is first evaluated.
+globalThis.__TRAP_API_ORIGIN = process.env.MAP_API || "http://localhost:8787";
+
+const { tileBuildings } = await import("../src/world/mapStream.js");
+const {
+  createCollisionIndex,
+  resolveWorldCollisions,
+  nearestPlace,
+  prepareMap,
+  PLAYER_RADIUS,
+  ENTER_DISTANCE,
+} = await import("../src/world/freeRoamWorld.js");
+
+const API = globalThis.__TRAP_API_ORIGIN + "/api";
+
+let failures = 0;
+function check(name, ok, detail = "") {
+  process.stdout.write(`${ok ? "  ok  " : "FAIL  "}${name}${detail ? ` — ${detail}` : ""}\n`);
+  if (!ok) failures += 1;
+}
+
+function insideAny(x, z, buildings) {
+  for (const b of buildings) {
+    if (x < b.minX || x > b.maxX || z < b.minZ || z > b.maxZ) continue;
+    let inside = false;
+    const n = b.ring.length / 2;
+    for (let i = 0, j = n - 1; i < n; j = i++) {
+      const xi = b.ring[i * 2];
+      const zi = b.ring[i * 2 + 1];
+      const xj = b.ring[j * 2];
+      const zj = b.ring[j * 2 + 1];
+      if (zi > z !== zj > z && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside;
+    }
+    if (inside) return b;
+  }
+  return null;
+}
+
+const main = async () => {
+  // Same entry point the game uses at boot: it also widens WORLD_BOUND to the
+  // real map extent, without which the resolver clamps the player to the old
+  // 150m box and the checks below are meaningless.
+  const manifest = await prepareMap();
+  process.stdout.write(
+    `manifest: ${manifest.tiles.length} tiles, ${manifest.buildingCount} buildings, ` +
+    `origin ${manifest.origin.lat},${manifest.origin.lon}\n\n`
+  );
+
+  // Pull every tile so the checks below see the whole city, not a 3x3 window.
+  const buildings = [];
+  for (const [tx, tz] of manifest.tiles) {
+    const payload = await (await fetch(`${API}/map/tile/${tx}/${tz}`)).json();
+    buildings.push(...tileBuildings(payload));
+  }
+  const index = createCollisionIndex();
+  index.rebuild(buildings, []);
+  check("all tiles fetched and indexed", buildings.length === manifest.buildingCount,
+    `${buildings.length} of ${manifest.buildingCount}`);
+
+  // --- anchors ---
+  process.stdout.write("\nstory locations:\n");
+  const wanted = ["JD", "TRAP CENTRAL BANK", "KIMANI THE BARBER"];
+  for (const name of wanted) {
+    const a = manifest.anchors.find((x) => x.name === name);
+    check(`${name} present`, !!a);
+    if (!a) continue;
+
+    const stuck = insideAny(a.x, a.z, buildings);
+    check(`${name}: standing spot is outdoors`, !stuck, stuck ? `inside ${stuck.id}` : "");
+
+    const exitStuck = insideAny(a.exit.x, a.exit.z, buildings);
+    check(`${name}: exit spot is outdoors`, !exitStuck, exitStuck ? `inside ${exitStuck.id}` : "");
+
+    // The exit must be far enough out that stepping through does not instantly
+    // re-offer the door you just came out of.
+    const exitDist = Math.hypot(a.exit.x - a.door.x, a.exit.z - a.door.z);
+    check(`${name}: exit clears the enter radius`, exitDist > ENTER_DISTANCE,
+      `${exitDist.toFixed(1)}m vs ${ENTER_DISTANCE}m`);
+
+    // Standing spot must actually trigger the prompt.
+    const standDist = Math.hypot(a.x - a.door.x, a.z - a.door.z);
+    check(`${name}: standing spot is inside the enter radius`, standDist < ENTER_DISTANCE,
+      `${standDist.toFixed(1)}m`);
+  }
+
+  // --- the three are distinguishable: nearestPlace must pick the right door ---
+  process.stdout.write("\nnearest-place resolution:\n");
+  const places = manifest.anchors.map((a) => ({ ...a, locked: false }));
+  for (const a of manifest.anchors) {
+    const near = nearestPlace({ x: a.x, z: a.z }, places);
+    check(`standing at ${a.name} resolves to itself`, near.place.name === a.name,
+      `got ${near.place.name}`);
+  }
+
+  // --- collision ---
+  process.stdout.write("\ncollision:\n");
+  // The case the game actually produces: walk at a building from outside, one
+  // movement step at a time, and confirm the player never ends up inside it.
+  // Teleporting into the middle of a footprint is not a state play can reach —
+  // spawn and every door exit are checked to be outdoors above.
+  let breached = 0;
+  let approaches = 0;
+  const STEP = 0.35; // a sprint step, larger than a walk
+  for (const b of buildings.filter((_, i) => i % 7 === 0)) {
+    const cx = (b.minX + b.maxX) / 2;
+    const cz = (b.minZ + b.maxZ) / 2;
+    for (let dir = 0; dir < 8; dir += 1) {
+      const ang = (dir / 8) * Math.PI * 2;
+      const start = { x: cx + Math.cos(ang) * 60, z: cz + Math.sin(ang) * 60 };
+      if (insideAny(start.x, start.z, buildings)) continue;
+      approaches += 1;
+      const p = { ...start };
+      for (let s = 0; s < 180; s += 1) {
+        p.x -= Math.cos(ang) * STEP;
+        p.z -= Math.sin(ang) * STEP;
+        resolveWorldCollisions(p, index);
+        if (insideAny(p.x, p.z, buildings)) { breached += 1; break; }
+      }
+    }
+  }
+  check("walking at a building never gets you inside one", breached === 0,
+    `${breached}/${approaches} approaches breached`);
+
+  // And a bad state must degrade gracefully rather than fling the player across
+  // the city — the correction is bounded per call.
+  let worst = 0;
+  for (const b of buildings.filter((_, i) => i % 17 === 0)) {
+    const cx = (b.minX + b.maxX) / 2;
+    const cz = (b.minZ + b.maxZ) / 2;
+    if (!insideAny(cx, cz, buildings)) continue;
+    const p = { x: cx, z: cz };
+    resolveWorldCollisions(p, index);
+    worst = Math.max(worst, Math.hypot(p.x - cx, p.z - cz));
+  }
+  check("recovery from inside a building is bounded", worst <= 6.01, `worst jump ${worst.toFixed(1)}m`);
+
+  // Kimani's building sits on Corporation Street at an angle to the axes — the
+  // case a bounding-box resolver gets wrong by walling off open road.
+  const kimani = manifest.anchors.find((a) => a.name === "KIMANI THE BARBER");
+  const kb = buildings.find((b) => b.id === kimani.buildingId);
+  check("Kimani's footprint is not axis-aligned", !!kb && isDiagonal(kb),
+    kb ? `${kb.ring.length / 2} vertices` : "not found");
+
+  // Walking the street outside a diagonal building must not be blocked.
+  let blocked = 0;
+  let steps = 0;
+  for (let t = 0; t <= 40; t += 1) {
+    const x = kimani.exit.x + (t - 20) * 0.5;
+    const z = kimani.exit.z;
+    if (insideAny(x, z, buildings)) continue;
+    steps += 1;
+    const p = { x, z };
+    resolveWorldCollisions(p, index);
+    if (Math.hypot(p.x - x, p.z - z) > 0.01) blocked += 1;
+  }
+  check("open street outside Kimani's is walkable", blocked === 0,
+    `${blocked}/${steps} points shoved`);
+
+  // --- spawn ---
+  process.stdout.write("\nspawn:\n");
+  const [sx, sz] = manifest.spawn;
+  const spawnStuck = insideAny(sx, sz, buildings);
+  check("spawn is outdoors", !spawnStuck, spawnStuck ? `inside ${spawnStuck.id}` : "");
+  const sp = { x: sx, z: sz };
+  resolveWorldCollisions(sp, index);
+  check("spawn survives collision resolve", Math.hypot(sp.x - sx, sp.z - sz) < PLAYER_RADIUS,
+    `moved ${Math.hypot(sp.x - sx, sp.z - sz).toFixed(2)}m`);
+  const bank = manifest.anchors.find((a) => a.kind === "bank");
+  const toBank = Math.hypot(sx - bank.x, sz - bank.z);
+  check("spawn is within sight of the bank", toBank < 40, `${toBank.toFixed(0)}m`);
+
+  // --- world build ---
+  // Runs the real buildFreeRoamWorld against a stub of the three API it uses.
+  // This will not tell us it looks right, but it does exercise the extrusion
+  // index maths and the door/sign placement, which is where a silent geometry
+  // bug would otherwise sit until someone loaded the page.
+  process.stdout.write("\nworld build:\n");
+  const { buildFreeRoamWorld } = await import("../src/world/freeRoamWorld.js");
+  const THREE = stubThree();
+  const group = new THREE.Group();
+  const built = buildFreeRoamWorld({
+    THREE,
+    group,
+    chapters: [{ name: "JD", sub: "the first one" }],
+    cleared: 0,
+    canvasTex: () => ({ wrapS: 0, wrapT: 0, repeat: { set() {} }, dispose() {} }),
+  });
+
+  check("world exposes the three story places", built.places.length === 3,
+    built.places.map((p) => `${p.name}[${p.kind}]`).join(", "));
+  check("JD is the chapter door", built.places.some((p) => p.kind === "chapter" && p.index === 0));
+  check("bank is the bank door", built.places.some((p) => p.kind === "bank"));
+  check("Kimani's is a placeholder door", built.places.some((p) => p.kind === "placeholder"));
+  check("every place has an exit", built.places.every((p) => p.exit && Number.isFinite(p.exit.yaw)));
+  check("spawn and yaw are finite", Number.isFinite(built.spawn[0]) && Number.isFinite(built.yaw));
+
+  // Let the streamed tiles land, then confirm real geometry was produced.
+  await new Promise((r) => setTimeout(r, 800));
+  const meshes = group.children.filter((c) => c.__isMesh);
+  const verts = meshes.reduce((n, m) => n + (m.geometry?.__count || 0), 0);
+  check("tiles produced merged geometry", verts > 10000, `${verts} vertices in ${meshes.length} meshes`);
+  check("geometry is merged, not per-building", meshes.length < 40,
+    `${meshes.length} meshes for ${built.colliders.buildings.length} buildings`);
+
+  const bad = meshes.find((m) => m.geometry && m.geometry.__maxIndex >= m.geometry.__count);
+  check("no out-of-range triangle indices", !bad,
+    bad ? `index ${bad.geometry.__maxIndex} >= ${bad.geometry.__count} verts` : "");
+
+  built.stream.dispose();
+  check("dispose releases every tile", built.stream.residentCount === 0);
+
+  process.stdout.write(`\n${failures ? `${failures} FAILED` : "all checks passed"}\n`);
+  process.exit(failures ? 1 : 0);
+};
+
+/** The narrow slice of the three API the world builder actually touches. */
+function stubThree() {
+  class Obj {
+    constructor() { this.children = []; this.position = xyz(); this.rotation = xyz(); this.scale = xyz(); }
+    add(c) { this.children.push(c); }
+    remove(c) { this.children = this.children.filter((x) => x !== c); }
+    traverse(fn) { fn(this); for (const c of this.children) c.traverse?.(fn); }
+  }
+  const xyz = () => ({ x: 0, y: 0, z: 0, set(a, b, c) { this.x = a; this.y = b; this.z = c; } });
+
+  class BufferGeometry {
+    constructor() { this.__count = 0; this.__maxIndex = -1; }
+    setAttribute(name, attr) { if (name === "position") this.__count = attr.__count; }
+    setIndex(idx) { this.__maxIndex = idx.length ? Math.max(...idx) : -1; }
+    computeVertexNormals() {}
+    computeBoundingSphere() {}
+    dispose() {}
+  }
+  class Mesh extends Obj {
+    constructor(geometry, material) { super(); this.geometry = geometry; this.material = material; this.__isMesh = true; }
+  }
+  const Mat = class { constructor(o) { Object.assign(this, o); } dispose() {} };
+
+  return {
+    Group: Obj,
+    Mesh,
+    BufferGeometry,
+    Float32BufferAttribute: class { constructor(arr, size) { this.__count = arr.length / size; } },
+    PlaneGeometry: BufferGeometry,
+    BoxGeometry: BufferGeometry,
+    SphereGeometry: BufferGeometry,
+    CylinderGeometry: BufferGeometry,
+    MeshStandardMaterial: Mat,
+    MeshBasicMaterial: Mat,
+    HemisphereLight: Obj,
+    DirectionalLight: Obj,
+    AmbientLight: Obj,
+    PointLight: Obj,
+    RepeatWrapping: 1000,
+    DoubleSide: 2,
+  };
+}
+
+function isDiagonal(b) {
+  // True if any wall runs at a meaningful angle to both axes.
+  const n = b.ring.length / 2;
+  for (let i = 0, j = n - 1; i < n; j = i++) {
+    const dx = Math.abs(b.ring[i * 2] - b.ring[j * 2]);
+    const dz = Math.abs(b.ring[i * 2 + 1] - b.ring[j * 2 + 1]);
+    if (Math.hypot(dx, dz) > 4 && dx > 1.5 && dz > 1.5) return true;
+  }
+  return false;
+}
+
+main().catch((err) => {
+  process.stderr.write(`verify failed: ${err.stack || err.message}\n`);
+  process.exit(1);
+});

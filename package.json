@@ -19,7 +19,9 @@
     "ios:prepare": "npm run build && npm run ios:sync",
     "android:sync": "npx cap sync android",
     "android:open": "npx cap open android",
-    "android:prepare": "npm run build && npm run android:sync"
+    "android:prepare": "npm run build && npm run android:sync",
+    "map:build": "node scripts/build-map-tiles.mjs",
+    "map:verify": "node scripts/verify-map.mjs"
   },
   "dependencies": {
     "@capacitor/core": "^7.4.2",

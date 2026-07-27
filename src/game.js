@@ -10,6 +10,7 @@ import { formatRegistryValidationReport, validateRoomAssetRegistry } from "./ren
 import { getContent, getContentRemoteFirst } from "./data/contentStore";
 import {
   buildFreeRoamWorld,
+  prepareMap,
   resolveWorldCollisions,
   nearestPlace,
   drawMinimap,
@@ -1529,7 +1530,7 @@ function loadLevel(i, showIntro=true){
 // old `nextLevel`, which is why progression now advances there instead of here.
 // mode 'world' = walking the block outside; mode 'room' = inside a chapter.
 let mode='room';
-let worldColliders=[], worldPlaces=[], nearPlace=null;
+let worldColliders=null, worldPlaces=[], nearPlace=null, worldStream=null;
 const _miniDir=new THREE.Vector3();
 
 // `exitFromIndex` puts the player outside the door of the chapter they just left
@@ -1539,6 +1540,9 @@ function loadWorld(exitFromIndex=null){
   const roomAssetRequest=++activeRoomAssetRequest;
   void roomAssetRequest;                       // invalidates any in-flight room GLB load
   doorLocked=false; doorGlowRef=null; heroSpinRef=null; tvTexRef=null; dustRef=null; bulbRef=null;
+  // loadWorld() runs again on every return from a chapter, so the previous
+  // stream's shared materials and textures have to go with its geometry.
+  if(worldStream){ worldStream.dispose(); worldStream=null; }
   if(levelGroup){
     levelGroup.traverse(o=>{ if(o.geometry) o.geometry.dispose(); });
     scene.remove(levelGroup);
@@ -1555,6 +1559,7 @@ function loadWorld(exitFromIndex=null){
     canvasTex, setTextureQuality, shadows,
   });
   worldColliders=built.colliders; worldPlaces=built.places; nearPlace=null;
+  worldStream=built.stream;
   levelGroup.traverse(applyLightQuality);
 
   scene.environment=null;
@@ -1618,6 +1623,13 @@ function tryEnterNearest(){
   if(!nearPlace||nearPlace.dist>=ENTER_DISTANCE) return;
   const pl=nearPlace.place;
   if(pl.kind==='bank'){ openBankPanel(); return; }
+  // Kimani's is a real door on a real building with nothing behind it yet. It
+  // is deliberately walkable-to and interactable so the block reads as lived
+  // in; the barber's functions land later.
+  if(pl.kind==='placeholder'){
+    toast(`<span class="gold">${pl.name}</span> — ${pl.sub||'CLOSED FOR NOW'}`,3200);
+    return;
+  }
   if(pl.locked){
     const need=LEVELS[state.levelsCleared];
     toast(`<span class="gold">${pl.name}</span> IS SHUT — FINISH ${need?need.name:'THE CHAPTER BEFORE IT'} FIRST`,3600);
@@ -1972,6 +1984,9 @@ function moveStep(dt){
     camera.position.add(v);
     if(mode==='world'){
       resolveWorldCollisions(camera.position,worldColliders);
+      // Stream the city in around the player. Cheap to call every step: it
+      // early-outs unless they have crossed into a new tile.
+      worldStream?.update(camera.position.x,camera.position.z);
     } else {
       camera.position.x=Math.max(-ROOM.w/2+bounds.insetX,Math.min(ROOM.w/2-bounds.insetX,camera.position.x));
       camera.position.z=Math.max(-ROOM.d/2+bounds.insetZ,Math.min(ROOM.d/2-bounds.insetZ,camera.position.z));
@@ -2364,6 +2379,18 @@ landingShow('home');   // always open on the home screen
 async function startGame(){
   if(gameStarted) return; gameStarted=true;
   await hydrateProgress();
+  // The map manifest carries the spawn point and the story doors, so it has to
+  // land before the world can be built; the tile geometry still streams in
+  // afterwards. Held ahead of the loader dismissing so a failure reads as
+  // "still loading" rather than dropping the player into an empty void.
+  try{
+    await prepareMap();
+  }catch(err){
+    console.error('[map]',err);
+    gameStarted=false;
+    toast('<span class="gold">CANNOT REACH THE BLOCK</span> — MAP DATA UNAVAILABLE',6000);
+    return;
+  }
   $('#loader').classList.add('done');
   $('#hud').classList.add('on');
   controls.enabled=true;

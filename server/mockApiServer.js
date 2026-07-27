@@ -3,6 +3,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash, randomUUID, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { gzipSync } from "node:zlib";
 import { defaultContent } from "../src/data/defaultContent.js";
 import { defaultWorld } from "../src/data/defaultWorld.js";
 import { createSqliteStore, STARTING_COINS } from "./storage/sqliteStore.js";
@@ -307,6 +308,49 @@ function sendJson(res, statusCode, payload) {
   res.end(JSON.stringify(payload));
 }
 
+// Map tiles are immutable between builds and are hit constantly as the player
+// walks, so they get gzip + a build-stamped ETag. A rebuild changes builtAt and
+// invalidates everything; an unchanged tile costs a 304 and no body.
+const tileGzipCache = new Map();
+
+function sendMapPayload(req, res, json, builtAt) {
+  const etag = `W/"map-${builtAt}-${json.length}"`;
+  if (req.headers["if-none-match"] === etag) {
+    res.writeHead(304, { ETag: etag, "Access-Control-Allow-Origin": "*" });
+    res.end();
+    return;
+  }
+
+  const headers = {
+    "Content-Type": "application/json; charset=utf-8",
+    "Access-Control-Allow-Origin": "*",
+    "Cache-Control": "public, max-age=86400",
+    ETag: etag,
+  };
+
+  if ((req.headers["accept-encoding"] || "").includes("gzip")) {
+    let body = tileGzipCache.get(etag);
+    if (!body) {
+      body = gzipSync(json);
+      // Bounded so a wider world cannot grow this without limit.
+      if (tileGzipCache.size > 256) tileGzipCache.clear();
+      tileGzipCache.set(etag, body);
+    }
+    headers["Content-Encoding"] = "gzip";
+    res.writeHead(200, headers);
+    res.end(body);
+    return;
+  }
+
+  res.writeHead(200, headers);
+  res.end(json);
+}
+
+function parseMapTile(pathname) {
+  const m = pathname.match(/^\/api\/map\/tile\/(-?\d+)\/(-?\d+)$/);
+  return m ? { tileX: Number(m[1]), tileZ: Number(m[2]) } : null;
+}
+
 function parsePlayerId(pathname) {
   const match = pathname.match(/^\/api\/player\/([^/]+)$/);
   return match ? decodeURIComponent(match[1]) : null;
@@ -330,6 +374,33 @@ async function handleRequest(req, res) {
 
   if (req.method === "GET" && pathname === "/api/health") {
     sendJson(res, 200, { ok: true, service: "mock-api", schemaVersion: store.getSchemaVersion() });
+    return;
+  }
+
+  // ---------------- MAP (OpenStreetMap-derived, ODbL) ----------------
+  // Built by `npm run map:build`. The client streams tiles from here and never
+  // contacts OSM itself.
+  if (req.method === "GET" && pathname === "/api/map/manifest") {
+    const manifest = store.getMapManifest();
+    if (!manifest) {
+      sendJson(res, 503, { error: "map_not_built", hint: "run: npm run map:build" });
+      return;
+    }
+    sendMapPayload(req, res, JSON.stringify(manifest), manifest.builtAt);
+    return;
+  }
+
+  const tileRef = req.method === "GET" ? parseMapTile(pathname) : null;
+  if (tileRef) {
+    const tile = store.getMapTile(tileRef.tileX, tileRef.tileZ);
+    // An empty tile is a normal answer, not an error: the world is not a
+    // rectangle, and the streamer asks for a 3x3 block regardless of what
+    // exists. Returning 200 with nothing in it keeps its cache logic simple.
+    if (!tile) {
+      sendJson(res, 200, { b: [], r: [], empty: true });
+      return;
+    }
+    sendMapPayload(req, res, tile.payload, tile.builtAt);
     return;
   }
 
