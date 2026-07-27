@@ -180,8 +180,106 @@ const main = async () => {
   check("spawn survives collision resolve", Math.hypot(sp.x - sx, sp.z - sz) < PLAYER_RADIUS,
     `moved ${Math.hypot(sp.x - sx, sp.z - sz).toFixed(2)}m`);
   const bank = manifest.anchors.find((a) => a.kind === "bank");
-  const toBank = Math.hypot(sx - bank.x, sz - bank.z);
-  check("spawn is within sight of the bank", toBank < 40, `${toBank.toFixed(0)}m`);
+  const toBank = Math.hypot(sx - bank.door.x, sz - bank.door.z);
+  // Close enough to read the sign, far enough to see the building it is on.
+  check("spawn stands back from the bank", toBank > 6 && toBank < 30, `${toBank.toFixed(0)}m from the door`);
+
+  // --- geometry correctness: walls and roofs ---
+  // Both of these were shipped broken once. Mixed OSM ring winding built two
+  // fifths of the city inside out (see-through walls under backface culling),
+  // and a triangle-fan roof spills outside the walls on the 58% of footprints
+  // that are concave.
+  process.stdout.write("\nwalls and roofs:\n");
+  const { normalisedOrder, triangulate, ringSignedArea, extrudeBuilding, emptyBuffers, STOREY } =
+    await import("../src/world/buildingMesh.js");
+
+  let wrongWinding = 0;
+  let roofErr = 0;
+  let worstRoof = 0;
+  let missingWalls = 0;
+  for (const b of buildings) {
+    const order = normalisedOrder(b.ring);
+
+    // Every ring must come out anticlockwise, whatever OSM did.
+    let a2 = 0;
+    for (let i = 0, j = order.length - 1; i < order.length; j = i++) {
+      a2 += b.ring[order[j] * 2] * b.ring[order[i] * 2 + 1] - b.ring[order[i] * 2] * b.ring[order[j] * 2 + 1];
+    }
+    if (a2 / 2 <= 0) wrongWinding += 1;
+
+    // The roof must cover exactly the footprint: no gaps, no overspill.
+    const tris = triangulate(b.ring, order);
+    let area = 0;
+    for (let i = 0; i < tris.length; i += 3) {
+      const p = order[tris[i]], q = order[tris[i + 1]], r = order[tris[i + 2]];
+      area += Math.abs(
+        (b.ring[q * 2] - b.ring[p * 2]) * (b.ring[r * 2 + 1] - b.ring[p * 2 + 1]) -
+        (b.ring[r * 2] - b.ring[p * 2]) * (b.ring[q * 2 + 1] - b.ring[p * 2 + 1])
+      ) / 2;
+    }
+    const truth = Math.abs(ringSignedArea(b.ring));
+    const err = Math.abs(area - truth) / Math.max(truth, 1);
+    worstRoof = Math.max(worstRoof, err);
+    if (err > 0.01) roofErr += 1;
+
+    // Every wall of every building must actually be emitted.
+    const buf = emptyBuffers();
+    extrudeBuilding(b.ring, b.height, 1, buf);
+    const quads = (buf.ground.positions.length + buf.wall.positions.length) / 12;
+    const expected = countUsableEdges(b.ring) * (b.height > STOREY ? 2 : 1);
+    if (quads !== expected) missingWalls += 1;
+  }
+  check("every footprint is wound anticlockwise", wrongWinding === 0, `${wrongWinding} inside out`);
+  check("roofs cover their footprint exactly", roofErr === 0,
+    `worst ${(worstRoof * 100).toFixed(2)}% area error`);
+  check("every wall is emitted", missingWalls === 0, `${missingWalls} buildings short of walls`);
+
+  // Outward normals: a point nudged along a wall normal must land outside.
+  let inwardNormals = 0;
+  let normalsTested = 0;
+  for (const b of buildings.filter((_, i) => i % 5 === 0)) {
+    const buf = emptyBuffers();
+    extrudeBuilding(b.ring, b.height, 1, buf);
+    const P = buf.ground.positions;
+    const N = buf.ground.normals;
+    for (let q = 0; q < P.length; q += 12) {
+      const mx = (P[q] + P[q + 3]) / 2;
+      const mz = (P[q + 2] + P[q + 5]) / 2;
+      normalsTested += 1;
+      if (insideAny(mx + N[q] * 0.4, mz + N[q + 2] * 0.4, [b])) inwardNormals += 1;
+    }
+  }
+  check("wall normals point outward", inwardNormals === 0,
+    `${inwardNormals}/${normalsTested} faced inward`);
+
+  // The check above passes on geometry that is completely invisible. Backface
+  // culling uses the TRIANGLE WINDING, not the normal attribute, and shipping
+  // these disagreeing deleted every wall in the city while every assertion
+  // still went green. So: derive the geometric normal from the vertex order and
+  // require it to agree with the normal we declared.
+  let flipped = 0;
+  let facesTested = 0;
+  for (const b of buildings.filter((_, i) => i % 5 === 0)) {
+    const buf = emptyBuffers();
+    extrudeBuilding(b.ring, b.height, 1, buf);
+    for (const part of [buf.ground, buf.wall, buf.roof]) {
+      const { positions: P, normals: N, indices: I } = part;
+      for (let t = 0; t < I.length; t += 3) {
+        const [i0, i1, i2] = [I[t] * 3, I[t + 1] * 3, I[t + 2] * 3];
+        const ux = P[i1] - P[i0], uy = P[i1 + 1] - P[i0 + 1], uz = P[i1 + 2] - P[i0 + 2];
+        const vx = P[i2] - P[i0], vy = P[i2 + 1] - P[i0 + 1], vz = P[i2 + 2] - P[i0 + 2];
+        // Geometric normal from the winding, right-hand rule.
+        const gx = uy * vz - uz * vy;
+        const gy = uz * vx - ux * vz;
+        const gz = ux * vy - uy * vx;
+        if (Math.hypot(gx, gy, gz) < 1e-9) continue;
+        facesTested += 1;
+        if (gx * N[i0] + gy * N[i0 + 1] + gz * N[i0 + 2] < 0) flipped += 1;
+      }
+    }
+  }
+  check("triangle winding agrees with the normals", flipped === 0,
+    `${flipped}/${facesTested} faces wound inside out`);
 
   // --- world build ---
   // Runs the real buildFreeRoamWorld against a stub of the three API it uses.
@@ -192,13 +290,23 @@ const main = async () => {
   const { buildFreeRoamWorld } = await import("../src/world/freeRoamWorld.js");
   const THREE = stubThree();
   const group = new THREE.Group();
+  // canvasTex actually runs the draw callback against a stub 2D context, so
+  // every texture in cityTextures.js is executed rather than just constructed.
+  let texturesDrawn = 0;
+  const canvasTex = (w, h, draw) => {
+    draw(stubCtx(), w, h);
+    texturesDrawn += 1;
+    return { wrapS: 0, wrapT: 0, repeat: { set() {} }, dispose() {} };
+  };
+
   const built = buildFreeRoamWorld({
     THREE,
     group,
     chapters: [{ name: "JD", sub: "the first one" }],
     cleared: 0,
-    canvasTex: () => ({ wrapS: 0, wrapT: 0, repeat: { set() {} }, dispose() {} }),
+    canvasTex,
   });
+  check("city textures all render without throwing", texturesDrawn >= 7, `${texturesDrawn} drawn`);
 
   check("world exposes the three story places", built.places.length === 3,
     built.places.map((p) => `${p.name}[${p.kind}]`).join(", "));
@@ -226,6 +334,22 @@ const main = async () => {
   process.stdout.write(`\n${failures ? `${failures} FAILED` : "all checks passed"}\n`);
   process.exit(failures ? 1 : 0);
 };
+
+/** Enough of CanvasRenderingContext2D to run the texture painters headlessly. */
+function stubCtx() {
+  const noop = () => {};
+  return new Proxy({
+    createLinearGradient: () => ({ addColorStop: noop }),
+    canvas: { width: 256, height: 256 },
+  }, {
+    get(target, prop) {
+      if (prop in target) return target[prop];
+      // Any other method is a no-op; any other property reads/writes freely.
+      return typeof prop === "string" && /^[a-z]/.test(prop) ? noop : undefined;
+    },
+    set() { return true; },
+  });
+}
 
 /** The narrow slice of the three API the world builder actually touches. */
 function stubThree() {
@@ -265,9 +389,28 @@ function stubThree() {
     DirectionalLight: Obj,
     AmbientLight: Obj,
     PointLight: Obj,
+    RingGeometry: BufferGeometry,
     RepeatWrapping: 1000,
     DoubleSide: 2,
+    BackSide: 1,
+    Color: class {
+      constructor(hex) { this.hex = hex >>> 0 || 0; }
+      multiplyScalar() { return this; }
+      lerp() { return this; }
+      getHexString() { return this.hex.toString(16).padStart(6, "0"); }
+    },
   };
+}
+
+/** Edges long enough for extrudeBuilding to bother with (it skips slivers). */
+function countUsableEdges(ring) {
+  const n = ring.length / 2;
+  let count = 0;
+  for (let i = 0; i < n; i += 1) {
+    const j = (i + 1) % n;
+    if (Math.hypot(ring[j * 2] - ring[i * 2], ring[j * 2 + 1] - ring[i * 2 + 1]) >= 0.01) count += 1;
+  }
+  return count;
 }
 
 function isDiagonal(b) {

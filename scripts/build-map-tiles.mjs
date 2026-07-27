@@ -459,14 +459,22 @@ async function main() {
     throw new Error(`only resolved ${anchors.length}/${anchorFile.anchors.length} anchors — refusing to publish a map missing story locations`);
   }
 
-  // --- spawn: on a street, not inside somebody's front room ---
+  // --- spawn: out in the street, facing the bank ---
+  // Far enough back to see the building you are standing in front of. Spawning
+  // on the doorstep puts the frontage and its sign across the whole screen and
+  // tells the player nothing about where they are.
   const bank = anchors.find((a) => a.kind === "bank");
-  let spawn = bank ? { x: bank.exit.x, z: bank.exit.z } : { x: 0, z: 14 };
-  let spawnYaw = bank ? bank.exit.yaw + Math.PI : 0; // face the bank on arrival
-  if (buildings.some((b) => pointInRing(spawn, b.ring))) {
-    const clear = roadPoints.find((p) => !buildings.some((b) => pointInRing(p, b.ring)));
-    if (clear) spawn = clear;
-    process.stdout.write("WARNING: bank exit was inside a footprint, spawning on nearest road\n");
+  let spawn = { x: 0, z: 14 };
+  let spawnYaw = 0;
+  if (bank) {
+    const { nx, nz } = bank.door;
+    // Back off as far as the street allows, preferring a proper standing-back
+    // distance and settling for less rather than putting the player in a wall.
+    for (const dist of [20, 17, 14, 11, 9, 7]) {
+      const p = { x: bank.door.x + nx * dist, z: bank.door.z + nz * dist };
+      if (!buildings.some((b) => pointInRing(p, b.ring))) { spawn = p; break; }
+    }
+    spawnYaw = bank.door.yaw + Math.PI; // turn around to look back at the door
   }
 
   // --- bin into tiles ---

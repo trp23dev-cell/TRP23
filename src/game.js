@@ -8,9 +8,11 @@ import { DEFAULT_VISUAL_SETTINGS, QUALITY_PROFILES, ROOM_LIGHT_PROFILES } from "
 import { applyRoomAssetLayer, ROOM_ASSET_REGISTRY } from "./render/roomAssetRegistry";
 import { formatRegistryValidationReport, validateRoomAssetRegistry } from "./render/roomAssetValidation";
 import { getContent, getContentRemoteFirst } from "./data/contentStore";
+import { createBigMap } from "./world/bigMap";
 import {
   buildFreeRoamWorld,
   prepareMap,
+  createWaypointBeacon,
   resolveWorldCollisions,
   nearestPlace,
   drawMinimap,
@@ -1531,6 +1533,9 @@ function loadLevel(i, showIntro=true){
 // mode 'world' = walking the block outside; mode 'room' = inside a chapter.
 let mode='room';
 let worldColliders=null, worldPlaces=[], nearPlace=null, worldStream=null;
+// The waypoint survives going into a chapter and coming back out, so you can
+// mark where you are headed, do a job, and still be pointed at it afterwards.
+let waypoint=null, waypointBeacon=null, bigMap=null;
 const _miniDir=new THREE.Vector3();
 
 // `exitFromIndex` puts the player outside the door of the chapter they just left
@@ -1560,6 +1565,10 @@ function loadWorld(exitFromIndex=null){
   });
   worldColliders=built.colliders; worldPlaces=built.places; nearPlace=null;
   worldStream=built.stream;
+  // Rebuilt with the world, because the old one went out with the old group.
+  waypointBeacon=createWaypointBeacon({THREE,group:levelGroup});
+  waypointBeacon.set(waypoint);
+  updateWaypointHud();
   levelGroup.traverse(applyLightQuality);
 
   scene.environment=null;
@@ -1668,8 +1677,89 @@ function updateWorldHud(){
     }
   }
   const cv=$('#minimap');
-  if(cv) drawMinimap(cv.getContext('2d'),cv,camera,worldColliders,worldPlaces,near,THREE,_miniDir);
+  if(cv) drawMinimap(cv.getContext('2d'),cv,camera,worldColliders,worldPlaces,near,THREE,_miniDir,waypoint);
+  updateWaypointHud();
 }
+
+// ==================== THE MAP + WAYPOINTS ====================
+
+function updateWaypointHud(){
+  const bar=$('#worldUi');
+  if(bar) bar.classList.toggle('has-wp',!!waypoint);
+  if(!waypoint) return;
+  const d=Math.hypot(camera.position.x-waypoint.x,camera.position.z-waypoint.z);
+  const n=$('#wpName'), dEl=$('#wpDist');
+  if(n) n.textContent=waypoint.name||'Waypoint';
+  if(dEl) dEl.textContent=`· ${Math.round(d)}m`;
+  // Arriving clears it: a marker you are standing on is just clutter.
+  if(d<4) setWaypoint(null);
+}
+
+function setWaypoint(wp){
+  waypoint=wp;
+  waypointBeacon?.set(wp);
+  bigMap?.setWaypoint(wp);
+  updateWaypointHud();
+  const label=$('#mapWaypoint');
+  if(label) label.textContent=wp?(wp.name||'Marked spot'):'None set';
+  if(wp) toast(`WAYPOINT SET — <span class="gold">${wp.name||'MARKED SPOT'}</span>`,2200);
+}
+
+function ensureBigMap(){
+  if(bigMap) return bigMap;
+  const cv=$('#bigMap');
+  if(!cv) return null;
+  bigMap=createBigMap({canvas:cv,onWaypoint:wp=>setWaypoint(wp)});
+  $('#mapClearWp')?.addEventListener('click',()=>setWaypoint(null));
+  return bigMap;
+}
+
+async function openMapPanel(){
+  if(mode!=='world') return;
+  const map=ensureBigMap();
+  if(!map) return;
+  openPanel('mapPanel');
+  map.setPlaces(worldPlaces);
+  map.setPlayer({x:camera.position.x,z:camera.position.z,yaw:yaw});
+  map.setWaypoint(waypoint);
+  map.recentre();
+  // Sizing has to wait for the panel to actually be laid out.
+  requestAnimationFrame(()=>map.resize());
+  renderMapPlaceList();
+  // The whole city, not just the tiles currently streamed in for rendering.
+  try{ map.setData(await worldStream.loadWholeCity()); }
+  catch(err){ console.warn('[map]',err); }
+}
+
+function renderMapPlaceList(){
+  const host=$('#mapPlaces');
+  if(!host) return;
+  host.innerHTML='';
+  for(const pl of worldPlaces){
+    const d=Math.round(Math.hypot(camera.position.x-pl.x,camera.position.z-pl.z));
+    const b=document.createElement('button');
+    b.innerHTML=`<span>${pl.locked?'🔒 ':''}${pl.name}</span><span class="msd">${d}m</span>`;
+    if(pl.locked) b.classList.add('locked');
+    b.addEventListener('click',()=>{
+      setWaypoint({x:pl.x,z:pl.z,name:pl.name});
+      bigMap?.recentre();
+    });
+    host.appendChild(b);
+  }
+}
+
+function toggleMapPanel(){
+  const wrap=$('#mapPanel');
+  if(!wrap) return;
+  if(wrap.classList.contains('open')) closePanel('mapPanel');
+  else openMapPanel();
+}
+
+$('#openMapBtn')?.addEventListener('click',toggleMapPanel);
+$('#wpClear')?.addEventListener('click',()=>setWaypoint(null));
+addEventListener('resize',()=>{
+  if($('#mapPanel')?.classList.contains('open')) bigMap?.resize();
+});
 
 // ==================== CONTROLS ====================
 const controls={enabled:false};
@@ -1702,6 +1792,9 @@ addEventListener('keydown',e=>{
   keys[e.code]=true;
   if(e.code==='Escape') unlockMouseLook();
   if(e.code==='KeyE'&&mode==='world') tryEnterNearest();
+  // M opens and closes the big map. Works while the panel has focus too, which
+  // is why it is not gated on controls.enabled.
+  if(e.code==='KeyM'&&mode==='world'){ e.preventDefault(); toggleMapPanel(); }
   if(e.code==='Space'){ if(controls.enabled) e.preventDefault(); tryJump(); }
 });
 addEventListener('keyup',e=>keys[e.code]=false);
@@ -2522,6 +2615,7 @@ function loop(now){
   if(heroSpinRef) heroSpinRef.rotation.y+=dt*.25;
   if(mode==='world'){
     updateWorldHud();
+    waypointBeacon?.tick(now*.001);
   } else if(controls.enabled&&!dragging){
     const o=castCenter();
     if(o!==hoverObj){

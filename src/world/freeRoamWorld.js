@@ -288,9 +288,30 @@ export function buildFreeRoamWorld({ THREE, group, chapters, cleared = 0, canvas
   ground.receiveShadow = true;
   group.add(ground);
 
+  // ---- sky ----
+  // A gradient dome rather than a flat background colour. Flat backgrounds read
+  // as a wall at the end of the street; a horizon that warms toward the ground
+  // gives the city somewhere to stand and sells the distance.
+  const skyTex = tune(canvasTex(4, 256, (g, w, h) => {
+    const grad = g.createLinearGradient(0, 0, 0, h);
+    const top = new THREE.Color(mood.bg).multiplyScalar(0.72);
+    const horizon = new THREE.Color(mood.bg).lerp(new THREE.Color(0xd8a878), 0.34);
+    grad.addColorStop(0, `#${top.getHexString()}`);
+    grad.addColorStop(0.62, `#${new THREE.Color(mood.bg).getHexString()}`);
+    grad.addColorStop(1, `#${horizon.getHexString()}`);
+    g.fillStyle = grad;
+    g.fillRect(0, 0, w, h);
+  }));
+  const sky = new THREE.Mesh(
+    new THREE.SphereGeometry(WORLD_BOUND * 1.9, 24, 16),
+    new THREE.MeshBasicMaterial({ map: skyTex, side: THREE.BackSide, depthWrite: false, fog: false })
+  );
+  sky.renderOrder = -1;
+  group.add(sky);
+
   // ---- lights ----
   group.add(new THREE.HemisphereLight(0xd6dbf0, 0x555044, mood.hemi));
-  const sun = new THREE.DirectionalLight(0xffffff, mood.sun);
+  const sun = new THREE.DirectionalLight(0xfff0dc, mood.sun);
   sun.position.set(-40, 60, -20);
   group.add(sun);
   group.add(new THREE.AmbientLight(0xffffff, mood.amb));
@@ -302,6 +323,11 @@ export function buildFreeRoamWorld({ THREE, group, chapters, cleared = 0, canvas
     manifest,
     canvasTex,
     setTextureQuality,
+    // Windows and shopfronts burn brightest at the start of the journey and
+    // fade as the sky comes up, the same arc the door lights carry. Kept low:
+    // this feeds a bloom pass, and anything above ~0.7 turns every shopfront
+    // into a solid white band with no glazing bars or doorway left in it.
+    nightLift: 0.12 + mood.lamp * 0.30,
     onTilesChanged: () => index.rebuild(stream.activeBuildings(), stream.activeRoads()),
   });
 
@@ -348,11 +374,16 @@ export function buildFreeRoamWorld({ THREE, group, chapters, cleared = 0, canvas
     doorMesh.position.set(0, 1.7, 0);
     b.add(doorMesh);
 
+    // The sign goes on the fascia board above the glazing — where a real shop
+    // sign is — not floating at first-floor height. Width is capped: the bank's
+    // frontage is 16m wide, and a sign that size fills the screen when you
+    // spawn in front of it.
+    const signW = Math.min(Math.max(door.width - 1.2, 2.6), 5.5);
     const sign = new THREE.Mesh(
-      new THREE.PlaneGeometry(Math.min(Math.max(door.width - 1, 3), 7), 1.4),
+      new THREE.PlaneGeometry(signW, signW * 0.2),
       new THREE.MeshBasicMaterial({ map: signTex(name, locked), transparent: true, side: THREE.DoubleSide })
     );
-    sign.position.set(0, 4.2, 0.04);
+    sign.position.set(0, 2.85, 0.06);
     b.add(sign);
 
     // mood.lamp carries the dusk-to-daylight arc: the doors blaze at the start
@@ -398,6 +429,69 @@ export function buildFreeRoamWorld({ THREE, group, chapters, cleared = 0, canvas
   return { spawn, yaw, mood, colliders: index, places, stream };
 }
 
+/**
+ * A marker you can see from across the block.
+ *
+ * A waypoint is only useful if you can find it without looking at the map, so
+ * it is a tall beam rather than a pin on the ground: on a street of two-storey
+ * shopfronts a 40m column stays visible from most of the city centre.
+ */
+export function createWaypointBeacon({ THREE, group }) {
+  const beacon = new THREE.Group();
+
+  const beam = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.35, 0.35, 40, 8, 1, true),
+    new THREE.MeshBasicMaterial({
+      color: 0xf4ecdd,
+      transparent: true,
+      opacity: 0.16,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    })
+  );
+  beam.position.y = 20;
+  beacon.add(beam);
+
+  const core = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.09, 0.09, 40, 6),
+    new THREE.MeshBasicMaterial({ color: 0xfff6e6, transparent: true, opacity: 0.55, depthWrite: false })
+  );
+  core.position.y = 20;
+  beacon.add(core);
+
+  // A ring on the pavement, so the beam has a foot you can actually walk to.
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(1.1, 1.5, 24),
+    new THREE.MeshBasicMaterial({ color: 0xf4ecdd, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false })
+  );
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.06;
+  beacon.add(ring);
+
+  beacon.visible = false;
+  group.add(beacon);
+
+  return {
+    set(wp) {
+      if (!wp) { beacon.visible = false; return; }
+      beacon.position.set(wp.x, 0, wp.z);
+      beacon.visible = true;
+    },
+    /** Slow pulse, so it reads as a marker rather than as part of the city. */
+    tick(t) {
+      if (!beacon.visible) return;
+      const p = 0.5 + Math.sin(t * 2.2) * 0.5;
+      beam.material.opacity = 0.10 + p * 0.12;
+      ring.material.opacity = 0.34 + p * 0.28;
+      ring.scale.setScalar(1 + p * 0.10);
+    },
+    dispose() {
+      group.remove(beacon);
+      beacon.traverse((o) => { o.geometry?.dispose(); o.material?.dispose(); });
+    },
+  };
+}
+
 /** Nearest place to the player, for the compass and the [E] prompt. */
 export function nearestPlace(position, places) {
   let best = null, bd = Infinity;
@@ -409,7 +503,7 @@ export function nearestPlace(position, places) {
 }
 
 /** Player-centred, north-up street map. */
-export function drawMinimap(ctx, canvas, camera, index, places, near, THREE, dirVec) {
+export function drawMinimap(ctx, canvas, camera, index, places, near, THREE, dirVec, waypoint) {
   const W = canvas.width, H = canvas.height;
   const cx = W / 2, cy = H / 2, ppm = 1.15;
   const px = camera.position.x, pz = camera.position.z;
@@ -453,6 +547,30 @@ export function drawMinimap(ctx, canvas, camera, index, places, near, THREE, dir
     if (isNear) {
       ctx.strokeStyle = "rgba(201,160,106,.7)";
       ctx.beginPath(); ctx.arc(sx, sy, 7, 0, Math.PI * 2); ctx.stroke();
+    }
+  }
+
+  // Waypoint. If it is off the edge of the dial, it becomes an arrow pinned to
+  // the rim pointing the way — a marker you cannot see is no use.
+  if (waypoint) {
+    const wx = (waypoint.x - px) * ppm;
+    const wz = (waypoint.z - pz) * ppm;
+    const rim = Math.min(W, H) / 2 - 9;
+    const dist = Math.hypot(wx, wz);
+    ctx.fillStyle = "#f4ecdd";
+    if (dist <= rim) {
+      const sx = cx + wx, sy = cy + wz;
+      ctx.beginPath(); ctx.arc(sx, sy, 3.5, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = "rgba(244,236,221,.8)";
+      ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.arc(sx, sy, 7.5, 0, Math.PI * 2); ctx.stroke();
+    } else {
+      const a = Math.atan2(wz, wx);
+      ctx.save();
+      ctx.translate(cx + Math.cos(a) * rim, cy + Math.sin(a) * rim);
+      ctx.rotate(a + Math.PI / 2);
+      ctx.beginPath(); ctx.moveTo(0, -6); ctx.lineTo(4, 4); ctx.lineTo(-4, 4); ctx.closePath(); ctx.fill();
+      ctx.restore();
     }
   }
 

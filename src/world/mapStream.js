@@ -17,6 +17,20 @@
 // ============================================================================
 
 import { TILE_SIZE, tileKey } from "./geo.js";
+import { extrudeBuilding, emptyBuffers } from "./buildingMesh.js";
+import {
+  facadeAlbedo, facadeEmissive, shopfrontAlbedo, shopfrontEmissive, roofAlbedo, roadAlbedo,
+} from "./cityTextures.js";
+
+/** Stable 0..1 hash of an OSM id, for per-building variation that never flickers. */
+function hashUnit(id) {
+  let h = 2166136261;
+  for (let i = 0; i < id.length; i += 1) {
+    h ^= id.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return ((h >>> 0) % 1000) / 1000;
+}
 
 // In the browser this is the usual same-origin (or VITE_API_ORIGIN) base. The
 // globalThis fallback is the seam scripts/verify-map.mjs uses to point the real
@@ -80,7 +94,9 @@ export function tileBuildings(payload) {
  * @param {Function} [opts.setTextureQuality]
  * @param {Function} [opts.onTilesChanged]  called when the resident set changes
  */
-export function createMapStream({ THREE, group, manifest, canvasTex, setTextureQuality, onTilesChanged }) {
+export function createMapStream({
+  THREE, group, manifest, canvasTex, setTextureQuality, onTilesChanged, nightLift = 1,
+}) {
   const available = new Set((manifest?.tiles || []).map(([x, z]) => tileKey(x, z)));
   const tune = (t) => { if (setTextureQuality) setTextureQuality(t); return t; };
 
@@ -88,23 +104,51 @@ export function createMapStream({ THREE, group, manifest, canvasTex, setTextureQ
   const inflight = new Map();   // key -> Promise
   const payloadCache = new Map(); // key -> payload, so a revisit is instant
 
-  // Shared across every tile: one material and one texture for the whole city
-  // rather than per-building copies.
-  const wallTex = tune(canvasTex(128, 256, (g, w, h) => {
-    g.fillStyle = "#0b0a0c";
-    g.fillRect(0, 0, w, h);
-    for (let y = 12; y < h - 8; y += 22) {
-      for (let x = 10; x < w - 8; x += 20) {
-        const lit = Math.random() < 0.32;
-        g.fillStyle = lit ? `rgba(201,160,106,${0.25 + Math.random() * 0.4})` : "rgba(28,26,24,0.6)";
-        g.fillRect(x, y, 10, 12);
-      }
-    }
-  }));
-  wallTex.wrapS = wallTex.wrapT = THREE.RepeatWrapping;
+  // Shared across every tile: one material set for the whole city rather than
+  // per-building copies. Textures repeat, and the UVs are in real metres, so a
+  // single 256px tile dresses the entire block.
+  const repeating = (tex) => {
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    return tune(tex);
+  };
 
-  const wallMat = new THREE.MeshStandardMaterial({ map: wallTex, color: 0x15141a, roughness: 0.9 });
-  const roadMat = new THREE.MeshStandardMaterial({ color: 0x35322c, roughness: 0.95 });
+  const textures = {
+    facade: repeating(facadeAlbedo(canvasTex)),
+    facadeLit: repeating(facadeEmissive(canvasTex)),
+    shop: repeating(shopfrontAlbedo(canvasTex)),
+    shopLit: repeating(shopfrontEmissive(canvasTex)),
+    roof: repeating(roofAlbedo(canvasTex)),
+    road: repeating(roadAlbedo(canvasTex)),
+  };
+  textures.roof.repeat.set(1, 1);
+  textures.road.repeat.set(0.35, 0.35);
+
+  // emissiveIntensity is driven by the mood, so windows and shopfronts burn at
+  // dusk and fade back as the sky comes up to meet them.
+  const materials = {
+    wall: new THREE.MeshStandardMaterial({
+      map: textures.facade,
+      emissiveMap: textures.facadeLit,
+      emissive: 0xffd2a1, // warm bulb light, never white
+      emissiveIntensity: nightLift,
+      roughness: 0.92,
+      vertexColors: true,
+    }),
+    ground: new THREE.MeshStandardMaterial({
+      map: textures.shop,
+      emissiveMap: textures.shopLit,
+      emissive: 0xffd2a1, // warm bulb light, never white
+      emissiveIntensity: nightLift,
+      roughness: 0.85,
+      vertexColors: true,
+    }),
+    roof: new THREE.MeshStandardMaterial({
+      map: textures.roof,
+      roughness: 0.95,
+      vertexColors: true,
+    }),
+    road: new THREE.MeshStandardMaterial({ map: textures.road, roughness: 0.96 }),
+  };
 
   async function fetchTile(tx, tz) {
     const key = tileKey(tx, tz);
@@ -116,84 +160,50 @@ export function createMapStream({ THREE, group, manifest, canvasTex, setTextureQ
     return payload;
   }
 
-  /**
-   * Extrude one footprint ring into walls.
-   *
-   * Only the side walls and a flat roof are generated — no floor, since it is
-   * never visible and doubles the triangle count of the entire city.
-   */
-  function extrude(flat, height, positions, normals, uvs, indices) {
-    const n = flat.length / 2;
-    if (n < 3) return;
-
-    for (let i = 0; i < n; i += 1) {
-      const ax = flat[i * 2];
-      const az = flat[i * 2 + 1];
-      const j = (i + 1) % n;
-      const bx = flat[j * 2];
-      const bz = flat[j * 2 + 1];
-
-      const ex = bx - ax;
-      const ez = bz - az;
-      const len = Math.hypot(ex, ez);
-      if (len < 0.01) continue;
-      const nx = ez / len;
-      const nz = -ex / len;
-
-      const base = positions.length / 3;
-      positions.push(ax, 0, az, bx, 0, bz, bx, height, bz, ax, height, az);
-      for (let k = 0; k < 4; k += 1) normals.push(nx, 0, nz);
-      // Tile the window texture by real metres so a wide building gets more
-      // windows rather than stretched ones.
-      const u = len / 6;
-      const v = height / 6;
-      uvs.push(0, 0, u, 0, u, v, 0, v);
-      indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
-    }
-
-    // Roof: fan from the first vertex. Footprints are near-convex enough at this
-    // scale that a fan is indistinguishable from a proper triangulation when
-    // seen from street level.
-    const roofBase = positions.length / 3;
-    for (let i = 0; i < n; i += 1) {
-      positions.push(flat[i * 2], height, flat[i * 2 + 1]);
-      normals.push(0, 1, 0);
-      uvs.push(0, 0);
-    }
-    for (let i = 1; i < n - 1; i += 1) {
-      indices.push(roofBase, roofBase + i, roofBase + i + 1);
-    }
+  /** Turn one buffer set into a mesh, or null if nothing was written to it. */
+  function meshFrom(buf, material, y = 0) {
+    if (!buf.positions.length) return null;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(buf.positions, 3));
+    geo.setAttribute("normal", new THREE.Float32BufferAttribute(buf.normals, 3));
+    geo.setAttribute("uv", new THREE.Float32BufferAttribute(buf.uvs, 2));
+    if (buf.colors.length) geo.setAttribute("color", new THREE.Float32BufferAttribute(buf.colors, 3));
+    geo.setIndex(buf.indices);
+    geo.computeBoundingSphere();
+    const mesh = new THREE.Mesh(geo, material);
+    mesh.position.y = y;
+    // A whole city casting shadows is not affordable on a handset; the sun
+    // shadow is spent on the player and the street furniture instead.
+    mesh.castShadow = false;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+    return mesh;
   }
 
   function buildTile(key, payload) {
-    const positions = [];
-    const normals = [];
-    const uvs = [];
-    const indices = [];
-
-    for (const b of payload.b || []) extrude(b.p, b.h, positions, normals, uvs, indices);
+    const buffers = emptyBuffers();
+    for (const b of payload.b || []) {
+      // A stable per-building tint off the OSM id, so a terrace reads as
+      // separate properties rather than one extruded slab.
+      const tint = 0.82 + hashUnit(b.i) * 0.30;
+      extrudeBuilding(b.p, b.h, tint, buffers);
+    }
     const buildings = tileBuildings(payload);
 
-    let mesh = null;
-    if (positions.length) {
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-      geo.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
-      geo.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
-      geo.setIndex(indices);
-      geo.computeBoundingSphere();
-      mesh = new THREE.Mesh(geo, wallMat);
-      mesh.castShadow = false;   // a whole city casting shadows is not affordable
-      mesh.receiveShadow = true;
-      group.add(mesh);
-    }
+    const meshes = [
+      meshFrom(buffers.ground, materials.ground),
+      meshFrom(buffers.wall, materials.wall),
+      meshFrom(buffers.roof, materials.roof),
+    ].filter(Boolean);
 
-    // Roads as flat ribbons laid just above the ground plane.
-    const rp = [];
-    const ri = [];
+    // Roads as flat ribbons laid just above the ground plane. Ends are mitred
+    // by simply overlapping quads at each vertex — at street width the joins
+    // are under the pavement furniture and nobody sees the seam.
+    const road = { positions: [], normals: [], uvs: [], colors: [], indices: [] };
     for (const r of payload.r || []) {
       const half = r.w / 2;
       const count = r.p.length / 2;
+      let along = 0;
       for (let i = 0; i < count - 1; i += 1) {
         const ax = r.p[i * 2];
         const az = r.p[i * 2 + 1];
@@ -205,34 +215,31 @@ export function createMapStream({ THREE, group, manifest, canvasTex, setTextureQ
         if (len < 0.01) continue;
         const nx = (ez / len) * half;
         const nz = (-ex / len) * half;
-        const base = rp.length / 3;
-        rp.push(ax + nx, 0, az + nz, bx + nx, 0, bz + nz, bx - nx, 0, bz - nz, ax - nx, 0, az - nz);
-        ri.push(base, base + 1, base + 2, base, base + 2, base + 3);
+        const base = road.positions.length / 3;
+        road.positions.push(
+          ax + nx, 0, az + nz, bx + nx, 0, bz + nz,
+          bx - nx, 0, bz - nz, ax - nx, 0, az - nz
+        );
+        for (let k = 0; k < 4; k += 1) road.normals.push(0, 1, 0);
+        // UVs run along the road so the tarmac does not swim as it turns.
+        road.uvs.push(along, 0, along + len, 0, along + len, r.w, along, r.w);
+        along += len;
+        road.indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
       }
     }
 
-    let roadMesh = null;
-    if (rp.length) {
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute("position", new THREE.Float32BufferAttribute(rp, 3));
-      geo.setIndex(ri);
-      geo.computeVertexNormals();
-      geo.computeBoundingSphere();
-      roadMesh = new THREE.Mesh(geo, roadMat);
-      roadMesh.position.y = 0.02; // above the ground plane, below the kerbs
-      roadMesh.receiveShadow = true;
-      group.add(roadMesh);
-    }
+    // Just above the ground plane, so the two do not z-fight.
+    const roadMesh = meshFrom(road, materials.road, 0.02);
 
-    resident.set(key, { mesh, roadMesh, buildings, roads: payload.r || [] });
+    resident.set(key, { meshes, roadMesh, buildings, roads: payload.r || [] });
   }
 
   function unloadTile(key) {
     const t = resident.get(key);
     if (!t) return;
-    if (t.mesh) {
-      group.remove(t.mesh);
-      t.mesh.geometry.dispose();
+    for (const m of t.meshes) {
+      group.remove(m);
+      m.geometry.dispose();
     }
     if (t.roadMesh) {
       group.remove(t.roadMesh);
@@ -291,6 +298,34 @@ export function createMapStream({ THREE, group, manifest, canvasTex, setTextureQ
     return true;
   }
 
+  /**
+   * Every tile the server has, for the full-city map.
+   *
+   * Deliberately separate from the streaming path: this fetches payloads and
+   * builds no geometry at all, so opening the map does not put the whole city
+   * on the GPU. Payloads share the streamer's cache, so tiles already walked
+   * through cost nothing and the rest stay cached for next time.
+   */
+  let allTilesPromise = null;
+  function loadWholeCity() {
+    if (!allTilesPromise) {
+      allTilesPromise = Promise.all(
+        (manifest?.tiles || []).map(([tx, tz]) =>
+          fetchTile(tx, tz).catch(() => ({ b: [], r: [] }))
+        )
+      ).then((payloads) => {
+        const b = [];
+        const r = [];
+        for (const p of payloads) {
+          b.push(...tileBuildings(p));
+          r.push(...(p.r || []));
+        }
+        return { buildings: b, roads: r };
+      });
+    }
+    return allTilesPromise;
+  }
+
   /** Every building currently resident, for collision and the minimap. */
   function activeBuildings() {
     const out = [];
@@ -306,9 +341,8 @@ export function createMapStream({ THREE, group, manifest, canvasTex, setTextureQ
 
   function dispose() {
     for (const key of [...resident.keys()]) unloadTile(key);
-    wallMat.dispose();
-    roadMat.dispose();
-    wallTex.dispose();
+    for (const m of Object.values(materials)) m.dispose();
+    for (const t of Object.values(textures)) t.dispose();
     payloadCache.clear();
   }
 
@@ -316,6 +350,7 @@ export function createMapStream({ THREE, group, manifest, canvasTex, setTextureQ
     update,
     activeBuildings,
     activeRoads,
+    loadWholeCity,
     dispose,
     get residentCount() { return resident.size; },
   };
