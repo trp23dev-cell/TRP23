@@ -1466,7 +1466,10 @@ function applySceneConfigOverrides(sceneConfig){
   if(sceneConfig.fog) scene.fog=new THREE.FogExp2(sceneConfig.fog[0],sceneConfig.fog[1]);
   if(sceneConfig.background!==undefined) scene.background=new THREE.Color(sceneConfig.background);
   if(sceneConfig.bounds) bounds={insetX:sceneConfig.bounds.insetX,insetZ:sceneConfig.bounds.insetZ};
-  if(sceneConfig.spawn) camera.position.set(sceneConfig.spawn[0],sceneConfig.spawn[1]??1.6,sceneConfig.spawn[2]);
+  if(sceneConfig.spawn){
+    groundY=sceneConfig.spawn[1]??1.6; velY=0; grounded=true;
+    camera.position.set(sceneConfig.spawn[0],groundY,sceneConfig.spawn[2]);
+  }
   if(typeof sceneConfig.yaw==="number") yaw=sceneConfig.yaw;
   if(typeof sceneConfig.pitch==="number") pitch=sceneConfig.pitch;
 }
@@ -1500,7 +1503,8 @@ function loadLevel(i, showIntro=true){
     applySceneConfigOverrides(result.sceneConfig);
   }).catch(err=>console.warn("Room asset layer failed",err));
   bounds={insetX:cfg.insetX,insetZ:cfg.insetZ};
-  camera.position.set(cfg.spawn[0],1.6,cfg.spawn[1]);
+  groundY=1.6; velY=0; grounded=true;
+  camera.position.set(cfg.spawn[0],groundY,cfg.spawn[1]);
   yaw=cfg.yaw; pitch=0;
   $('#levelLabel').textContent=`CHAPTER ${LV().num} — ${LV().name}`;
   renderMissions(); progress();
@@ -1528,7 +1532,9 @@ let mode='room';
 let worldColliders=[], worldPlaces=[], nearPlace=null;
 const _miniDir=new THREE.Vector3();
 
-function loadWorld(){
+// `exitFromIndex` puts the player outside the door of the chapter they just left
+// instead of back at the start of the block. Omit it for a fresh arrival.
+function loadWorld(exitFromIndex=null){
   mode='world';
   const roomAssetRequest=++activeRoomAssetRequest;
   void roomAssetRequest;                       // invalidates any in-flight room GLB load
@@ -1556,13 +1562,19 @@ function loadWorld(){
   scene.background=new THREE.Color(built.mood.bg);
   renderer.toneMappingExposure=built.mood.exposure*userBrightnessScale*EXPOSURE_BASE_GAIN;
 
-  camera.position.set(built.spawn[0],1.7,built.spawn[1]);
-  yaw=built.yaw; pitch=0;
+  let spawnX=built.spawn[0], spawnZ=built.spawn[1], spawnYaw=built.yaw;
+  if(exitFromIndex!==null){
+    const from=built.places.find(p=>p.index===exitFromIndex);
+    if(from?.exit){ spawnX=from.exit.x; spawnZ=from.exit.z; spawnYaw=from.exit.yaw; }
+  }
+  groundY=1.7; velY=0; grounded=true;
+  camera.position.set(spawnX,groundY,spawnZ);
+  yaw=spawnYaw; pitch=0;
   $('#levelLabel').textContent='THE BLOCK';
   $('#hud').classList.add('in-world');
   const next=LEVELS[Math.min(state.levelsCleared,LEVELS.length-1)];
   $('#objText').textContent=state.levelsCleared>=LEVELS.length ? 'YOU MADE IT' : `FIND ${next.name}`;
-  $('#stashLine').innerHTML='<span class="hid">WALK THE BLOCK — [E] TO ENTER</span>';
+  $('#stashLine').innerHTML=`<span class="hid">WALK THE BLOCK — ${platform.isTouchDevice?'TAP':'[E]'} TO ENTER</span>`;
   const moral=$('#moralLine'); if(moral) moral.textContent='';
 }
 
@@ -1589,7 +1601,7 @@ function returnToWorld(cleared){
   }
   persistProgress();
   setTimeout(()=>{
-    loadWorld();
+    loadWorld(finishedIdx);
     setTimeout(()=>f.classList.remove('on'),250);
     if(cleared){
       const nextIdx=state.levelsCleared;
@@ -1620,6 +1632,9 @@ function tryEnterNearest(){
 window.__trapDebug={
   warpTo(x,z){ camera.position.set(x,1.7,z); updateWorldHud(); },
   get mode(){ return mode; },
+  get pos(){ return { x:+camera.position.x.toFixed(2), y:+camera.position.y.toFixed(2), z:+camera.position.z.toFixed(2), yaw:+yaw.toFixed(2) }; },
+  get grounded(){ return grounded; },
+  get sprint(){ return sprintHeld; },
   get places(){ return worldPlaces.map(p=>({name:p.name,locked:p.locked,x:p.x,z:p.z})); },
 };
 
@@ -1654,8 +1669,8 @@ function refreshDesktopControlHint(){
   const hintEl=$('#desktopControlsHint');
   if(!hintEl||!platform.isDesktop) return;
   hintEl.innerHTML=(mouseLookLocked||!pointerLockSupported)
-    ? '<b>W A S D</b> - move<br><b>Mouse</b> - look<br><b>Click</b> - interact<br><b>Esc</b> - deactivate mouse look'
-    : '<b>W A S D</b> - move<br><b>Click</b> - activate mouse look<br><b>Esc</b> - release cursor';
+    ? '<b>W A S D</b> - move<br><b>Shift</b> - sprint<br><b>Space</b> - jump<br><b>Mouse</b> - look<br><b>Click</b> - interact<br><b>Esc</b> - deactivate mouse look'
+    : '<b>W A S D</b> - move<br><b>Shift</b> - sprint<br><b>Space</b> - jump<br><b>Click</b> - activate mouse look<br><b>Esc</b> - release cursor';
 }
 
 function lockMouseLook(){
@@ -1675,6 +1690,7 @@ addEventListener('keydown',e=>{
   keys[e.code]=true;
   if(e.code==='Escape') unlockMouseLook();
   if(e.code==='KeyE'&&mode==='world') tryEnterNearest();
+  if(e.code==='Space'){ if(controls.enabled) e.preventDefault(); tryJump(); }
 });
 addEventListener('keyup',e=>keys[e.code]=false);
 
@@ -1695,9 +1711,80 @@ if(pointerLockSupported){
 let dragging=false,lx=0,ly=0,downT=0,downX=0,downY=0;
 let joystickActive=false,joystickX=0,joystickY=0;
 
+// ---- vertical movement ----
+// Eye height is the "ground" - there is no player body, so the camera itself is
+// what falls. Gravity is a touch heavier than real so the hop feels snappy
+// rather than floaty at this scale.
+const GRAVITY=24, JUMP_VELOCITY=6.4;
+let groundY=1.7, velY=0, grounded=true;
+let sprintHeld=false;                 // set by Shift on desktop, the pad on touch
+
+function tryJump(){
+  if(!controls.enabled||orientationBlocked||!grounded) return;
+  velY=JUMP_VELOCITY;
+  grounded=false;
+}
+// Two fingers at once: one drives the joystick, one pans the camera. Each is
+// pinned to its own pointerId so they never fight over the same handler.
+let lookPointerId=null;
+
+// ==================== MOBILE: LANDSCAPE + GESTURES ====================
+// Portrait is unplayable - the joystick and the world share too little height -
+// so the game asks for landscape the way video apps ask for fullscreen, and
+// pauses input until it gets it.
+let orientationBlocked=false;
+// Declared here rather than next to startGame(): updateRotateGate reads it and is
+// wired to resize/orientation listeners at module load, so it must exist by then.
+let gameStarted=false;
+
+function isPortrait(){
+  if(screen.orientation?.type) return screen.orientation.type.startsWith('portrait');
+  return innerHeight>innerWidth;
+}
+
+function updateRotateGate(){
+  const gate=$('#rotateGate');
+  if(!gate) return;
+  const blocked=platform.isTouchDevice&&gameStarted&&isPortrait();
+  orientationBlocked=blocked;
+  gate.classList.toggle('on',blocked);
+  if(blocked){                       // drop any in-flight input so nothing sticks
+    dragging=false; lookPointerId=null;
+    joystickActive=false; joystickX=0; joystickY=0;
+    const thumb=$('#joystick-thumb');
+    if(thumb) thumb.style.transform='translate(-50%,-50%)';
+  }
+}
+
+// Must run inside a real user gesture, so it is bound to the landing buttons
+// rather than called from startGame (which awaits before it would get here).
+async function goFullscreenLandscape(){
+  if(!platform.isTouchDevice) return;
+  try{
+    if(!document.fullscreenElement&&document.documentElement.requestFullscreen)
+      await document.documentElement.requestFullscreen({navigationUI:'hide'});
+  }catch(_e){}
+  // Android/Chrome honours this; iOS Safari does not, which is what the gate is for.
+  try{ await screen.orientation?.lock?.('landscape'); }catch(_e){}
+}
+
+if(platform.isTouchDevice){
+  // Block the browser's own zoom/scroll gestures. `touch-action:none` covers most
+  // of it, but iOS still fires gesture events and multi-touch scrolls.
+  ['gesturestart','gesturechange','gestureend'].forEach(t=>
+    document.addEventListener(t,e=>e.preventDefault(),{passive:false}));
+  document.addEventListener('touchmove',e=>{
+    if(e.touches.length>1) e.preventDefault();
+  },{passive:false});
+  document.addEventListener('dblclick',e=>e.preventDefault(),{passive:false});
+  addEventListener('orientationchange',()=>setTimeout(updateRotateGate,120));
+  screen.orientation?.addEventListener?.('change',()=>setTimeout(updateRotateGate,120));
+  addEventListener('resize',updateRotateGate);
+}
+
 // Desktop mouse pointer lock: click to lock, then move + WASD both work
 renderer.domElement.addEventListener('pointerdown',e=>{
-  if(!controls.enabled) return;
+  if(!controls.enabled||orientationBlocked) return;
 
   if(pointerLockSupported&&e.pointerType==='mouse'){
     if(!mouseLookLocked){
@@ -1713,38 +1800,44 @@ renderer.domElement.addEventListener('pointerdown',e=>{
     return;
   }
 
-  // Touch or pen - use swipe for look or joystick for movement
-  if(e.pointerType==='touch'){
+  // Touch: anywhere on the world (i.e. not the joystick or HUD, which sit above
+  // the canvas) pans the camera. First finger down owns the look.
+  if(e.pointerType==='touch'&&lookPointerId===null){
+    lookPointerId=e.pointerId;
     dragging=true; lx=e.clientX; ly=e.clientY; downT=performance.now(); downX=e.clientX; downY=e.clientY;
   }
 });
 
 addEventListener('pointermove',e=>{
-  if(!controls.enabled) return;
-  
+  if(!controls.enabled||orientationBlocked) return;
+
   if(mouseLookLocked&&e.pointerType==='mouse'){
     // Mouse look via pointer lock - works with WASD movement simultaneously
     yaw-=e.movementX*.0026; pitch-=e.movementY*.0026;
     pitch=Math.max(-1.2,Math.min(1.2,pitch));
     return;
   }
-  
-  if(!dragging||e.pointerType!=='touch') return;
-  
-  // Touch swipe for camera look (when not using joystick)
+
+  // Only the finger that started the look pans. Without the id check the
+  // joystick finger drags the camera too.
+  if(!dragging||e.pointerType!=='touch'||e.pointerId!==lookPointerId) return;
+
   yaw-=(e.clientX-lx)*.0032; pitch-=(e.clientY-ly)*.0032;
   pitch=Math.max(-1.2,Math.min(1.2,pitch));
   lx=e.clientX; ly=e.clientY;
 });
 
-addEventListener('pointerup',e=>{
-  if(e.pointerType!=='touch') return;
-  if(!dragging) return; 
+function endLookPointer(e){
+  if(e.pointerType!=='touch'||e.pointerId!==lookPointerId) return;
+  lookPointerId=null;
+  if(!dragging) return;
   dragging=false;
-  
+  if(e.type!=='pointerup') return;                 // cancelled: never a tap
   const moved=Math.hypot(e.clientX-downX,e.clientY-downY);
-  if(controls.enabled&&moved<8&&performance.now()-downT<300) tryInteract();
-});
+  if(controls.enabled&&!orientationBlocked&&moved<8&&performance.now()-downT<300) tryInteract();
+}
+addEventListener('pointerup',endLookPointer);
+addEventListener('pointercancel',endLookPointer);
 
 const ray=new THREE.Raycaster();
 let hoverObj=null;
@@ -1762,57 +1855,101 @@ function tryInteract(){
 
 // Mobile: Virtual joystick for movement (faint, fits UI scheme)
 if(platform.isTouchDevice){
+  // Bottom-left, where a left thumb naturally rests in landscape. The pad itself
+  // is the only part of the screen that is not camera-look.
   const joystickHTML=`
-    <div id="joystick-container" style="position:absolute;bottom:80px;left:50%;transform:translateX(-50%);pointer-events:auto;width:160px;height:160px;">
-      <div style="position:relative;width:100%;height:100%;border:1px solid rgba(218,165,32,.2);border-radius:50%;background:rgba(10,9,8,.15);box-shadow:inset 0 0 20px rgba(0,0,0,.4)">
-        <div id="joystick-thumb" style="position:absolute;width:60px;height:60px;background:rgba(218,165,32,.25);border:1px solid rgba(218,165,32,.4);border-radius:50%;left:50px;top:50px;transform:translate(-50%,-50%);box-shadow:0 0 10px rgba(218,165,32,.2);transition:all 0.05s linear"></div>
+    <div id="joystick-container">
+      <div class="js-ring">
+        <div id="joystick-thumb" class="js-thumb"></div>
       </div>
+    </div>
+  `;
+  // Right-thumb action pad, the way COD Mobile / Minecraft lay it out: jump on
+  // the outside where the thumb rests, sprint tucked in beside it.
+  const actionPadHTML=`
+    <div id="touch-actions">
+      <button id="btnSprint" class="touch-btn" aria-label="Sprint">
+        <span class="tb-glyph">»</span><span class="tb-label">Sprint</span>
+      </button>
+      <button id="btnJump" class="touch-btn tb-jump" aria-label="Jump">
+        <span class="tb-glyph">▲</span><span class="tb-label">Jump</span>
+      </button>
     </div>
   `;
   const hudDiv=$('#hud');
   const tempDiv=document.createElement('div');
-  tempDiv.innerHTML=joystickHTML;
-  hudDiv.appendChild(tempDiv.firstElementChild);
-  
+  tempDiv.innerHTML=joystickHTML+actionPadHTML;
+  while(tempDiv.firstElementChild) hudDiv.appendChild(tempDiv.firstElementChild);
+
+  // Sprint is hold-to-run; jump fires on press so it feels immediate.
+  const sprintBtn=$('#btnSprint'), jumpBtn=$('#btnJump');
+  const holdSprint=on=>{ sprintHeld=on; sprintBtn.classList.toggle('held',on); };
+  sprintBtn.addEventListener('pointerdown',e=>{
+    e.preventDefault();
+    if(!controls.enabled||orientationBlocked) return;
+    holdSprint(true);
+    try{ sprintBtn.setPointerCapture(e.pointerId); }catch(_e){}
+  });
+  ['pointerup','pointercancel','pointerleave'].forEach(t=>
+    sprintBtn.addEventListener(t,()=>holdSprint(false)));
+  jumpBtn.addEventListener('pointerdown',e=>{
+    e.preventDefault();
+    tryJump();
+    jumpBtn.classList.add('held');
+    setTimeout(()=>jumpBtn.classList.remove('held'),120);
+  });
+
   const joystickContainer=$('#joystick-container');
   const joystickThumb=$('#joystick-thumb');
   let joystickPointerId=null;
   
+  const MAX_DIST=64;
+
+  function releaseJoystick(){
+    joystickPointerId=null;
+    joystickActive=false;
+    joystickX=0; joystickY=0;
+    joystickContainer.classList.remove('active');
+    joystickThumb.style.transform='translate(-50%,-50%)';
+  }
+
   joystickContainer.addEventListener('pointerdown',e=>{
-    if(!controls.enabled) return;
+    if(!controls.enabled||orientationBlocked) return;
+    e.preventDefault();
     joystickPointerId=e.pointerId;
     joystickActive=true;
+    joystickContainer.classList.add('active');
+    // Capture so the finger keeps driving the stick even once it slides off the pad.
+    try{ joystickContainer.setPointerCapture(e.pointerId); }catch(_e){}
   });
-  
-  document.addEventListener('pointermove',e=>{
+
+  joystickContainer.addEventListener('pointermove',e=>{
     if(!joystickActive||e.pointerId!==joystickPointerId) return;
-    
+    e.preventDefault();
     const rect=joystickContainer.getBoundingClientRect();
     const cx=rect.left+rect.width/2, cy=rect.top+rect.height/2;
     const dx=e.clientX-cx, dy=e.clientY-cy;
     const dist=Math.hypot(dx,dy);
-    const maxDist=70;
-    
-    joystickX=Math.min(1,dist/maxDist)*(dx/dist||0);
-    joystickY=Math.min(1,dist/maxDist)*(dy/dist||0);
-    
-    const tx=joystickX*70, ty=joystickY*70;
+
+    joystickX=Math.min(1,dist/MAX_DIST)*(dx/dist||0);
+    joystickY=Math.min(1,dist/MAX_DIST)*(dy/dist||0);
+
+    const tx=joystickX*MAX_DIST, ty=joystickY*MAX_DIST;
     joystickThumb.style.transform=`translate(calc(-50% + ${tx}px), calc(-50% + ${ty}px))`;
   });
-  
-  document.addEventListener('pointerup',e=>{
-    if(e.pointerId!==joystickPointerId) return;
-    joystickActive=false;
-    joystickX=0;
-    joystickY=0;
-    joystickThumb.style.transform='translate(-50%,-50%)';
+
+  joystickContainer.addEventListener('pointerup',e=>{
+    if(e.pointerId===joystickPointerId) releaseJoystick();
+  });
+  joystickContainer.addEventListener('pointercancel',e=>{
+    if(e.pointerId===joystickPointerId) releaseJoystick();
   });
 }
 function moveStep(dt){
-  if(!controls.enabled) return;
+  if(!controls.enabled||orientationBlocked) return;
   // Outdoors you cover real distance and can sprint; indoors keeps the original
   // slow, deliberate room pace.
-  const sprinting=mode==='world'&&(keys.ShiftLeft||keys.ShiftRight);
+  const sprinting=mode==='world'&&(keys.ShiftLeft||keys.ShiftRight||sprintHeld);
   const sp=(mode==='world'?(sprinting?11:5.5):2.4)*dt;
   const f=new THREE.Vector3(-Math.sin(yaw),0,-Math.cos(yaw));
   const r=new THREE.Vector3(Math.cos(yaw),0,-Math.sin(yaw));
@@ -1834,7 +1971,6 @@ function moveStep(dt){
     v.normalize().multiplyScalar(sp);
     camera.position.add(v);
     if(mode==='world'){
-      camera.position.y=1.7;
       resolveWorldCollisions(camera.position,worldColliders);
     } else {
       camera.position.x=Math.max(-ROOM.w/2+bounds.insetX,Math.min(ROOM.w/2-bounds.insetX,camera.position.x));
@@ -1842,6 +1978,19 @@ function moveStep(dt){
       state.walked+=sp;
       if(state.walked>6) clearMission('walk');
     }
+  }
+
+  // Vertical: runs every frame, not just when moving, so a standing jump works.
+  if(!grounded||velY!==0){
+    velY-=GRAVITY*dt;
+    camera.position.y+=velY*dt;
+    if(camera.position.y<=groundY){
+      camera.position.y=groundY;
+      velY=0;
+      grounded=true;
+    }
+  } else {
+    camera.position.y=groundY;
   }
 }
 
@@ -2211,7 +2360,7 @@ function landingShow(which){
 landingShow('home');   // always open on the home screen
 
 // Start the 3D game (session already established: login/register/guest).
-let gameStarted=false;
+// (`gameStarted` is declared up with the orientation gate, which reads it.)
 async function startGame(){
   if(gameStarted) return; gameStarted=true;
   await hydrateProgress();
@@ -2221,12 +2370,19 @@ async function startGame(){
   setCoins(state.coins);
   initDisplaySettings();
   loadWorld();
+  updateRotateGate();
   queuePlayerEvent('session_start',{ levelIndex: state.level||0 });
   if(platform.isTouchDevice) setTimeout(()=>toast(platform.hint.lockHint(),3000),1200);
   refreshDesktopControlHint();
   setTimeout(()=>toast('SIX CHAPTERS BETWEEN YOU AND THE WAREHOUSE — <span class="gold">WALK THE BLOCK AND FIND THE FIRST</span>',4600),2800);
   persistProgress();
 }
+
+// Fullscreen + landscape must be requested from inside a real user gesture. The
+// landing handlers await network calls before reaching startGame, which loses the
+// gesture, so bind straight to the buttons instead.
+['#homeEnterBtn','#laGuestBtn','#laSignupBtn','#laLoginBtn','#laTwofaConfirm','#laTwofaSkip']
+  .forEach(sel=>$(sel)?.addEventListener('pointerdown',goFullscreenLandscape));
 
 // Home "Enter": already signed in -> play; otherwise -> auth screen.
 $('#homeEnterBtn')?.addEventListener('click',async ()=>{

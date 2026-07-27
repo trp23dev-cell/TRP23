@@ -2,13 +2,28 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- user-scalable=no + maximum-scale kill pinch-zoom; viewport-fit=cover lets the
+     game run under the notch in landscape. This is a game, not a document. -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>TRAP MADE IT - The Come Up</title>
 </head>
 <body>
 <noscript><div style="position:fixed;inset:0;background:#0a0908;color:#e8e0d0;display:flex;align-items:center;justify-content:center;text-align:center;padding:30px;font-family:Georgia,serif;font-size:18px;line-height:1.8;z-index:999">
 You're viewing this in an email preview, which can't run the game.<br>
 <b>Download the file, then open it in Chrome, Safari or Edge.</b></div></noscript>
+
+<!-- ROTATE GATE: mobile plays in landscape only. Shown whenever the phone is
+     upright once the game is running, the way video apps prompt for fullscreen. -->
+<div id="rotateGate">
+  <div class="rg-inner">
+    <div class="rg-phone"><span class="rg-screen"></span></div>
+    <div class="rg-title display">Rotate your phone</div>
+    <div class="rg-sub">Trap Made It plays in landscape</div>
+  </div>
+</div>
 
 <!-- LOADING -->
 <div id="loader">
@@ -101,7 +116,7 @@ You're viewing this in an email preview, which can't run the game.<br>
     </div>
   </div>
   <div class="controls-hint" id="desktopControlsHint">
-    <b>W A S D</b> - move<br><b>Click</b> - activate mouse look<br><b>Esc</b> - release cursor
+    <b>W A S D</b> - move<br><b>Shift</b> - sprint<br><b>Space</b> - jump<br><b>Click</b> - activate mouse look<br><b>Esc</b> - release cursor
   </div>
   <div class="display-settings" id="displaySettings">
     <button id="displayCog" class="display-cog" aria-label="Display settings" title="Display settings">⚙</button>
