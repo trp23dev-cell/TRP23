@@ -270,23 +270,18 @@ export function buildFreeRoamWorld({ THREE, group, chapters, cleared = 0, canvas
   const index = createCollisionIndex();
 
   // ---- ground ----
-  const groundTex = tune(canvasTex(512, 512, (g, w, h) => {
-    g.fillStyle = "#22201d"; g.fillRect(0, 0, w, h);
-    for (let i = 0; i < 5000; i++) {
-      g.fillStyle = `rgba(${50 + Math.random() * 30},${46 + Math.random() * 26},40,${Math.random() * .35})`;
-      g.fillRect(Math.random() * w, Math.random() * h, 2, 2);
-    }
-  }));
-  groundTex.wrapS = groundTex.wrapT = THREE.RepeatWrapping;
-  groundTex.repeat.set(120, 120);
-  const groundSpan = WORLD_BOUND * 2.4;
-  const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(groundSpan, groundSpan),
-    new THREE.MeshStandardMaterial({ map: groundTex, roughness: .95 })
+  // No flat plane any more: the real ground arrives per tile as a LIDAR
+  // heightmap (terrain.js). What is left here is a dark skirt sitting below the
+  // lowest ground in the city, so the horizon past the loaded tiles reads as
+  // land falling away rather than as a hole with sky through it.
+  const floor = (manifest?.terrainRange?.[0] ?? 0) - 12;
+  const skirt = new THREE.Mesh(
+    new THREE.PlaneGeometry(WORLD_BOUND * 6, WORLD_BOUND * 6),
+    new THREE.MeshStandardMaterial({ color: 0x1a1815, roughness: 1 })
   );
-  ground.rotation.x = -Math.PI / 2;
-  ground.receiveShadow = true;
-  group.add(ground);
+  skirt.rotation.x = -Math.PI / 2;
+  skirt.position.y = floor;
+  group.add(skirt);
 
   // ---- sky ----
   // A gradient dome rather than a flat background colour. Flat backgrounds read
@@ -397,7 +392,7 @@ export function buildFreeRoamWorld({ THREE, group, chapters, cleared = 0, canvas
     dl.position.set(0, 3, 1.5);
     b.add(dl);
 
-    b.position.set(door.x, 0, door.z);
+    b.position.set(door.x, door.y || 0, door.z);
     // The door group is rotated to sit flat on its wall, facing the street.
     b.rotation.y = Math.atan2(door.nx, door.nz);
     if (shadows) shadows(b);
@@ -421,12 +416,30 @@ export function buildFreeRoamWorld({ THREE, group, chapters, cleared = 0, canvas
 
   const spawn = manifest?.spawn || [0, 14];
   const yaw = manifest?.spawnYaw ?? 0;
+  // Seeded from the city floor and then tracked as the player walks, so a tile
+  // arriving late never teleports them vertically.
+  let lastKnownGround = manifest?.terrainRange?.[0] ?? 0;
 
   // Kick off the first tiles so the street is there when the fade lifts.
   stream.update(spawn[0], spawn[1], { force: true });
   index.rebuild(stream.activeBuildings(), stream.activeRoads());
 
-  return { spawn, yaw, mood, colliders: index, places, stream };
+  return {
+    spawn, yaw, mood, colliders: index, places, stream,
+    /**
+     * Ground height under a point, for anything that has to stand on the hill.
+     *
+     * While a tile is still in flight the last known height is held rather than
+     * falling back to anything absolute: the city spans 76m, so dropping to the
+     * lowest ground would pitch a player standing by the Cathedral into a 60m
+     * fall the moment a tile was slow.
+     */
+    groundAt: (x, z) => {
+      const h = stream.heightAt(x, z);
+      if (h !== null) { lastKnownGround = h; return h; }
+      return lastKnownGround;
+    },
+  };
 }
 
 /**
@@ -436,7 +449,7 @@ export function buildFreeRoamWorld({ THREE, group, chapters, cleared = 0, canvas
  * it is a tall beam rather than a pin on the ground: on a street of two-storey
  * shopfronts a 40m column stays visible from most of the city centre.
  */
-export function createWaypointBeacon({ THREE, group }) {
+export function createWaypointBeacon({ THREE, group, groundAt }) {
   const beacon = new THREE.Group();
 
   const beam = new THREE.Mesh(
@@ -474,8 +487,15 @@ export function createWaypointBeacon({ THREE, group }) {
   return {
     set(wp) {
       if (!wp) { beacon.visible = false; return; }
-      beacon.position.set(wp.x, 0, wp.z);
+      // Planted on the ground it marks. On a 60m hill a beacon rooted at zero
+      // is either buried or hanging in the sky.
+      beacon.position.set(wp.x, groundAt ? groundAt(wp.x, wp.z) : 0, wp.z);
       beacon.visible = true;
+    },
+    /** The ground may only arrive once its tile streams in, so re-seat it. */
+    reseat(wp) {
+      if (!wp || !beacon.visible || !groundAt) return;
+      beacon.position.y = groundAt(wp.x, wp.z);
     },
     /** Slow pulse, so it reads as a marker rather than as part of the city. */
     tick(t) {

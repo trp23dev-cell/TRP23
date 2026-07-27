@@ -18,8 +18,10 @@
 
 import { TILE_SIZE, tileKey } from "./geo.js";
 import { extrudeBuilding, emptyBuffers } from "./buildingMesh.js";
+import { createTerrainIndex, buildTerrainMesh } from "./terrain.js";
 import {
   facadeAlbedo, facadeEmissive, shopfrontAlbedo, shopfrontEmissive, roofAlbedo, roadAlbedo,
+  pavementAlbedo,
 } from "./cityTextures.js";
 
 /** Stable 0..1 hash of an OSM id, for per-building variation that never flickers. */
@@ -80,7 +82,7 @@ export function tileBuildings(payload) {
       if (b.p[i + 1] < minZ) minZ = b.p[i + 1];
       if (b.p[i + 1] > maxZ) maxZ = b.p[i + 1];
     }
-    out.push({ id: b.i, ring: b.p, height: b.h, name: b.n || null, minX, maxX, minZ, maxZ });
+    out.push({ id: b.i, ring: b.p, height: b.h, base: b.y ?? null, name: b.n || null, minX, maxX, minZ, maxZ });
   }
   return out;
 }
@@ -119,6 +121,7 @@ export function createMapStream({
     shopLit: repeating(shopfrontEmissive(canvasTex)),
     roof: repeating(roofAlbedo(canvasTex)),
     road: repeating(roadAlbedo(canvasTex)),
+    pavement: repeating(pavementAlbedo(canvasTex)),
   };
   textures.roof.repeat.set(1, 1);
   textures.road.repeat.set(0.35, 0.35);
@@ -148,16 +151,29 @@ export function createMapStream({
       vertexColors: true,
     }),
     road: new THREE.MeshStandardMaterial({ map: textures.road, roughness: 0.96 }),
+    // `ground` above is the shopfront band at street level; this is the actual
+    // earth under the city.
+    terrain: new THREE.MeshStandardMaterial({ map: textures.pavement, roughness: 0.97 }),
   };
 
-  async function fetchTile(tx, tz) {
+  const terrain = createTerrainIndex();
+
+  // A tile that fails to arrive is not a cosmetic problem: it leaves a hole in
+  // the ground with no heightmap, so retry a few times before giving up.
+  async function fetchTile(tx, tz, attempt = 0) {
     const key = tileKey(tx, tz);
     if (payloadCache.has(key)) return payloadCache.get(key);
-    const res = await fetch(`${API_BASE}/map/tile/${tx}/${tz}`);
-    if (!res.ok) throw new Error(`tile ${key}: ${res.status}`);
-    const payload = await res.json();
-    payloadCache.set(key, payload);
-    return payload;
+    try {
+      const res = await fetch(`${API_BASE}/map/tile/${tx}/${tz}`);
+      if (!res.ok) throw new Error(`tile ${key}: ${res.status}`);
+      const payload = await res.json();
+      payloadCache.set(key, payload);
+      return payload;
+    } catch (err) {
+      if (attempt >= 3) throw err;
+      await new Promise((r) => setTimeout(r, 150 * 2 ** attempt));
+      return fetchTile(tx, tz, attempt + 1);
+    }
   }
 
   /** Turn one buffer set into a mesh, or null if nothing was written to it. */
@@ -180,13 +196,26 @@ export function createMapStream({
     return mesh;
   }
 
-  function buildTile(key, payload) {
+  function buildTile(key, payload, tileX, tileZ) {
+    // Ground first: everything else stands on it.
+    let terrainMesh = null;
+    if (payload.t) {
+      terrain.add(tileX, tileZ, payload.t);
+      terrainMesh = buildTerrainMesh({
+        THREE, tile: payload.t, tileX, tileZ, material: materials.terrain,
+      });
+      group.add(terrainMesh);
+    }
+
     const buffers = emptyBuffers();
     for (const b of payload.b || []) {
       // A stable per-building tint off the OSM id, so a terrace reads as
       // separate properties rather than one extruded slab.
       const tint = 0.82 + hashUnit(b.i) * 0.30;
-      extrudeBuilding(b.p, b.h, tint, buffers);
+      // `y` is the founded base from the tiler: the lowest ground under the
+      // footprint, with a skirt. Extruding from zero instead leaves buildings
+      // on the hill buried or hanging in mid-air.
+      extrudeBuilding(b.p, b.h, tint, buffers, b.y || 0);
     }
     const buildings = tileBuildings(payload);
 
@@ -209,6 +238,10 @@ export function createMapStream({
         const az = r.p[i * 2 + 1];
         const bx = r.p[i * 2 + 2];
         const bz = r.p[i * 2 + 3];
+        // Elevations come per vertex from the tiler, so the carriageway follows
+        // the hill instead of cutting a level shelf through it.
+        const ay = r.e ? r.e[i] : 0;
+        const by = r.e ? r.e[i + 1] : 0;
         const ex = bx - ax;
         const ez = bz - az;
         const len = Math.hypot(ex, ez);
@@ -217,8 +250,8 @@ export function createMapStream({
         const nz = (-ex / len) * half;
         const base = road.positions.length / 3;
         road.positions.push(
-          ax + nx, 0, az + nz, bx + nx, 0, bz + nz,
-          bx - nx, 0, bz - nz, ax - nx, 0, az - nz
+          ax + nx, ay, az + nz, bx + nx, by, bz + nz,
+          bx - nx, by, bz - nz, ax - nx, ay, az - nz
         );
         for (let k = 0; k < 4; k += 1) road.normals.push(0, 1, 0);
         // UVs run along the road so the tarmac does not swim as it turns.
@@ -228,10 +261,11 @@ export function createMapStream({
       }
     }
 
-    // Just above the ground plane, so the two do not z-fight.
-    const roadMesh = meshFrom(road, materials.road, 0.02);
+    // Just above the terrain, so the two do not z-fight.
+    const roadMesh = meshFrom(road, materials.road, 0.06);
+    if (terrainMesh) meshes.push(terrainMesh);
 
-    resident.set(key, { meshes, roadMesh, buildings, roads: payload.r || [] });
+    resident.set(key, { meshes, roadMesh, buildings, roads: payload.r || [], tileX, tileZ });
   }
 
   function unloadTile(key) {
@@ -245,6 +279,9 @@ export function createMapStream({
       group.remove(t.roadMesh);
       t.roadMesh.geometry.dispose();
     }
+    // The heightmap goes with the tile, or the index grows without bound as the
+    // player walks and starts answering for ground that is no longer there.
+    terrain.remove(t.tileX, t.tileZ);
     resident.delete(key);
   }
 
@@ -278,7 +315,7 @@ export function createMapStream({
             // The player may have walked out of range while this was in the
             // air. Building it anyway would leak a tile nothing will unload.
             if (Math.abs(wantX - currentTx) > KEEP_RADIUS || Math.abs(wantZ - currentTz) > KEEP_RADIUS) return;
-            buildTile(key, payload);
+            buildTile(key, payload, wantX, wantZ);
             if (onTilesChanged) onTilesChanged();
           })
           .catch((err) => {
@@ -351,6 +388,8 @@ export function createMapStream({
     activeBuildings,
     activeRoads,
     loadWholeCity,
+    /** Ground height at a world position, or null if that tile is not loaded. */
+    heightAt: (x, z) => terrain.heightAt(x, z),
     dispose,
     get residentCount() { return resident.size; },
   };

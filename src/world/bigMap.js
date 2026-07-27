@@ -64,6 +64,10 @@ export function createBigMap({ canvas, onWaypoint }) {
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     for (const r of data.roads) {
+      // Culled against the view like the buildings are. The city centre has
+      // nearly 2000 road segments and this redraws on every pan frame.
+      if (r._maxX < view.minX || r._minX > view.maxX ||
+          r._maxZ < view.minZ || r._minZ > view.maxZ) continue;
       const width = Math.max(1, r.w * zoom * 0.85);
       ctx.strokeStyle = r.k === "footway" || r.k === "path" || r.k === "steps"
         ? "rgba(201,160,106,.14)"
@@ -262,7 +266,21 @@ export function createBigMap({ canvas, onWaypoint }) {
   }
 
   return {
-    setData(d) { data = d; draw(); },
+    setData(d) {
+      // Bounds are cached once here rather than recomputed per pan frame.
+      for (const r of d.roads || []) {
+        let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+        for (let i = 0; i < r.p.length; i += 2) {
+          if (r.p[i] < minX) minX = r.p[i];
+          if (r.p[i] > maxX) maxX = r.p[i];
+          if (r.p[i + 1] < minZ) minZ = r.p[i + 1];
+          if (r.p[i + 1] > maxZ) maxZ = r.p[i + 1];
+        }
+        r._minX = minX; r._maxX = maxX; r._minZ = minZ; r._maxZ = maxZ;
+      }
+      data = d;
+      draw();
+    },
     setPlaces(p) { places = p; draw(); },
     setPlayer(p) {
       player = p;

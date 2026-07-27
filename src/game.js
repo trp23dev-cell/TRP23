@@ -1536,6 +1536,8 @@ let worldColliders=null, worldPlaces=[], nearPlace=null, worldStream=null;
 // The waypoint survives going into a chapter and coming back out, so you can
 // mark where you are headed, do a job, and still be pointed at it afterwards.
 let waypoint=null, waypointBeacon=null, bigMap=null;
+// Ground-height lookup for the current world. Null indoors.
+let worldGroundAt=null;
 const _miniDir=new THREE.Vector3();
 
 // `exitFromIndex` puts the player outside the door of the chapter they just left
@@ -1565,8 +1567,9 @@ function loadWorld(exitFromIndex=null){
   });
   worldColliders=built.colliders; worldPlaces=built.places; nearPlace=null;
   worldStream=built.stream;
+  worldGroundAt=built.groundAt;
   // Rebuilt with the world, because the old one went out with the old group.
-  waypointBeacon=createWaypointBeacon({THREE,group:levelGroup});
+  waypointBeacon=createWaypointBeacon({THREE,group:levelGroup,groundAt:built.groundAt});
   waypointBeacon.set(waypoint);
   updateWaypointHud();
   levelGroup.traverse(applyLightQuality);
@@ -1581,7 +1584,9 @@ function loadWorld(exitFromIndex=null){
     const from=built.places.find(p=>p.index===exitFromIndex);
     if(from?.exit){ spawnX=from.exit.x; spawnZ=from.exit.z; spawnYaw=from.exit.yaw; }
   }
-  groundY=1.7; velY=0; grounded=true;
+  // Stand on the hill, not at a fixed height. The tiles around the spawn are
+  // built synchronously above, so the ground is already known here.
+  groundY=built.groundAt(spawnX,spawnZ)+EYE_HEIGHT; velY=0; grounded=true;
   camera.position.set(spawnX,groundY,spawnZ);
   yaw=spawnYaw; pitch=0;
   $('#levelLabel').textContent='THE BLOCK';
@@ -1821,6 +1826,8 @@ let joystickActive=false,joystickX=0,joystickY=0;
 // what falls. Gravity is a touch heavier than real so the hop feels snappy
 // rather than floaty at this scale.
 const GRAVITY=24, JUMP_VELOCITY=6.4;
+// Eye height outdoors. Indoors the chapter scenes set their own floor.
+const EYE_HEIGHT=1.7;
 let groundY=1.7, velY=0, grounded=true;
 let sprintHeld=false;                 // set by Shift on desktop, the pad on touch
 
@@ -2086,6 +2093,13 @@ function moveStep(dt){
       state.walked+=sp;
       if(state.walked>6) clearMission('walk');
     }
+  }
+
+  // Outdoors the floor is the hill, not a number. Re-read it every frame: the
+  // player is walking across a LIDAR heightmap, and on Steep Hill the ground
+  // drops about a metre for every seven walked.
+  if(mode==='world'&&worldGroundAt){
+    groundY=worldGroundAt(camera.position.x,camera.position.z)+EYE_HEIGHT;
   }
 
   // Vertical: runs every frame, not just when moving, so a standing jump works.
@@ -2616,6 +2630,8 @@ function loop(now){
   if(mode==='world'){
     updateWorldHud();
     waypointBeacon?.tick(now*.001);
+    // Re-seat once the tile under a distant waypoint has streamed in.
+    if(waypoint) waypointBeacon?.reseat(waypoint);
   } else if(controls.enabled&&!dragging){
     const o=castCenter();
     if(o!==hoverObj){

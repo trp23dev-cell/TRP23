@@ -24,12 +24,20 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createSqliteStore } from "../server/storage/sqliteStore.js";
-import { project, TILE_SIZE, ORIGIN, MAP_ATTRIBUTION } from "../src/world/geo.js";
+import { project, unproject, TILE_SIZE, ORIGIN, MAP_ATTRIBUTION } from "../src/world/geo.js";
+import { fetchTerrain, TERRAIN_ATTRIBUTION } from "./lib/terrainSource.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-// Lincoln city centre: High Street up to Corporation Street, Brayford to Sincil.
-const DEFAULT_BBOX = { w: -0.546, s: 53.224, e: -0.536, n: 53.231 };
+// Lincoln city centre. Runs from the Brayford and the lower High Street all the
+// way up to the Castle and the Cathedral, because the climb is the city: the
+// High Street sits at ~6m and the Cathedral at ~65m, and a bbox that stops
+// short of Steep Hill throws away the thing that makes Lincoln Lincoln.
+const DEFAULT_BBOX = { w: -0.548, s: 53.224, e: -0.533, n: 53.238 };
+
+// Spacing of the terrain grid handed to the client, in metres. The source is 1m
+// LIDAR; 5m is smooth underfoot and keeps a tile's heightmap to ~2600 samples.
+const TERRAIN_STEP = 5;
 
 // OSM rejects requests without a real User-Agent (it answers 406), which is an
 // easy hour to lose if you do not know it.
@@ -41,11 +49,12 @@ const METRES_PER_LEVEL = 3.2;
 // ---------------------------------------------------------------- CLI
 
 function parseArgs(argv) {
-  const args = { file: null, bbox: DEFAULT_BBOX, dry: false };
+  const args = { file: null, bbox: DEFAULT_BBOX, dry: false, terrain: true };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === "--file") args.file = argv[++i];
     else if (a === "--dry") args.dry = true;
+    else if (a === "--no-terrain") args.terrain = false;
     else if (a === "--bbox") {
       const [w, s, e, n] = String(argv[++i]).split(",").map(Number);
       if ([w, s, e, n].some((v) => !Number.isFinite(v))) {
@@ -372,6 +381,27 @@ async function main() {
   const { nodes, ways } = parseOsmXml(xml);
   process.stdout.write(`parsed ${nodes.size} nodes, ${ways.length} ways\n`);
 
+  // ---- the ground ----
+  let terrain = null;
+  if (args.terrain) {
+    process.stdout.write("fetching LIDAR terrain...\n");
+    terrain = await fetchTerrain(args.bbox);
+    process.stdout.write(
+      `terrain ${terrain.width}x${terrain.height} @1m, ` +
+      `${terrain.min.toFixed(1)}m to ${terrain.max.toFixed(1)}m ` +
+      `(${(terrain.max - terrain.min).toFixed(0)}m of hill)\n`
+    );
+  }
+
+  // Elevation at a point in game metres. Terrain is published on the National
+  // Grid, so this goes back out to lat/lon and across; it is only ever called
+  // at build time, never per frame.
+  const groundAt = (x, z) => {
+    if (!terrain) return 0;
+    const ll = unproject(x, z);
+    return terrain.at(ll.lat, ll.lon);
+  };
+
   // --- roads first: doors need them ---
   const roads = [];
   const roadPoints = [];
@@ -381,7 +411,10 @@ async function main() {
     const pts = w.refs.map((r) => nodes.get(r)).filter(Boolean).map((n) => project(n.lat, n.lon));
     if (pts.length < 2) continue;
     const simple = simplify(pts, SIMPLIFY_TOLERANCE_M);
-    roads.push({ points: simple, width: ROAD_WIDTH[kind] || 5, kind });
+    // Roads drape over the ground rather than cutting through it, so Steep Hill
+    // is something you actually walk up.
+    const elevations = simple.map((p) => groundAt(p.x, p.z));
+    roads.push({ points: simple, elevations, width: ROAD_WIDTH[kind] || 5, kind });
     roadPoints.push(...simple);
   }
 
@@ -400,9 +433,26 @@ async function main() {
     }
     const ring = simplify(pts, SIMPLIFY_TOLERANCE_M);
     if (ring.length < 3) continue;
+
+    // Found the building on the ground it actually stands on. On a slope the
+    // uphill wall would otherwise float and the downhill wall would sink, and
+    // on Steep Hill that is a several-metre error. Base goes to the LOWEST
+    // ground under the footprint, with a skirt, so the downhill side is buried
+    // rather than hanging in the air; roofs stay level, as real ones are.
+    let base = 0;
+    if (terrain) {
+      let lowest = Infinity;
+      for (const p of ring) lowest = Math.min(lowest, groundAt(p.x, p.z));
+      // Big footprints can dip in the middle, not just at the corners.
+      const c = centroidOf(ring);
+      lowest = Math.min(lowest, groundAt(c.x, c.z));
+      base = lowest - 0.6;
+    }
+
     buildings.push({
       id: `way/${w.id}`,
       ring,
+      base,
       height: heightFor(w.id, w.tags),
       name: w.tags.name || null,
       tags: w.tags,
@@ -450,7 +500,12 @@ async function main() {
       // not instantly re-offer the door you just came through.
       x: door.x + door.nx * STAND_OFFSET,
       z: door.z + door.nz * STAND_OFFSET,
-      door: { x: door.x, z: door.z, yaw: door.yaw, width: door.width, nx: door.nx, nz: door.nz },
+      // The door sits on the pavement outside, not on the building's buried
+      // base, or it ends up half underground on the downhill side.
+      door: {
+        x: door.x, z: door.z, y: round(groundAt(door.x, door.z)),
+        yaw: door.yaw, width: door.width, nx: door.nx, nz: door.nz,
+      },
       exit: { x: door.x + door.nx * EXIT_OFFSET, z: door.z + door.nz * EXIT_OFFSET, yaw: door.yaw },
     });
   }
@@ -501,6 +556,7 @@ async function main() {
     tileFor(c.x, c.z).payload.b.push({
       i: b.id,
       p: flat,
+      y: round(b.base),
       h: round(b.height),
       ...(b.name ? { n: b.name } : {}),
     });
@@ -509,7 +565,41 @@ async function main() {
     const c = centroidOf(r.points);
     const flat = [];
     for (const p of r.points) flat.push(round(p.x), round(p.z));
-    tileFor(c.x, c.z).payload.r.push({ p: flat, w: r.width, k: r.kind });
+    tileFor(c.x, c.z).payload.r.push({
+      p: flat,
+      e: r.elevations.map((v) => round(v)),
+      w: r.width,
+      k: r.kind,
+    });
+  }
+
+  // ---- per-tile heightmaps ----
+  // Every tile carries the ground beneath it. Samples land exactly on tile
+  // boundaries and are shared with the neighbour, so there is no seam and no
+  // need to reconcile two tiles' idea of where the ground is.
+  if (terrain) {
+    const n = TILE_SIZE / TERRAIN_STEP + 1; // 51 samples spanning 0..250m
+    for (const t of tiles.values()) {
+      const originX = t.tileX * TILE_SIZE;
+      const originZ = t.tileZ * TILE_SIZE;
+      const raw = new Array(n * n);
+      let lo = Infinity;
+      for (let j = 0; j < n; j += 1) {
+        for (let i = 0; i < n; i += 1) {
+          const h = groundAt(originX + i * TERRAIN_STEP, originZ + j * TERRAIN_STEP);
+          raw[j * n + i] = h;
+          if (h < lo) lo = h;
+        }
+      }
+      // Stored as decimetres above the tile's own floor: integers compress far
+      // better than floats, and 10cm is well below what anyone can feel.
+      t.payload.t = {
+        y: round(lo),
+        step: TERRAIN_STEP,
+        n,
+        v: raw.map((h) => Math.round((h - lo) * 10)),
+      };
+    }
   }
 
   const list = [...tiles.values()];
@@ -535,6 +625,9 @@ async function main() {
       origin: ORIGIN,
       bbox: args.bbox,
       attribution: MAP_ATTRIBUTION,
+      terrainAttribution: terrain ? TERRAIN_ATTRIBUTION : null,
+      terrainStep: terrain ? TERRAIN_STEP : 0,
+      terrainRange: terrain ? [round(terrain.min), round(terrain.max)] : null,
       spawn: [round(spawn.x), round(spawn.z)],
       spawnYaw: round(spawnYaw, 4),
       anchors,

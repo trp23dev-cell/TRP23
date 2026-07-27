@@ -123,12 +123,16 @@ export function triangulate(flat, order) {
  * Vertex colours carry a cheap ambient occlusion — walls darken toward the
  * ground — plus a per-building tint so a terrace does not read as one slab.
  */
-export function extrudeBuilding(flat, height, tint, buffers) {
+export function extrudeBuilding(flat, height, tint, buffers, base = 0) {
   const n = flat.length / 2;
   if (n < 3) return;
 
   const order = normalisedOrder(flat);
-  const groundTop = Math.min(STOREY, height);
+  // `height` is storeys above the ground the building stands on, and `base` is
+  // where that ground is. Keeping them separate is what lets a terrace climbing
+  // Steep Hill keep level roofs while each property sits on its own step.
+  const top = base + height;
+  const groundTop = base + Math.min(STOREY, height);
 
   for (let k = 0; k < n; k += 1) {
     const i = order[k];
@@ -147,19 +151,19 @@ export function extrudeBuilding(flat, height, tint, buffers) {
     const nx = ez / len;
     const nz = -ex / len;
 
-    quad(buffers.ground, ax, az, bx, bz, 0, groundTop, nx, nz, len, tint, 0.45, 1.0);
-    if (height > groundTop) {
-      quad(buffers.wall, ax, az, bx, bz, groundTop, height, nx, nz, len, tint, 0.72, 1.0);
+    quad(buffers.ground, ax, az, bx, bz, base, groundTop, nx, nz, len, tint, 0.45, 1.0, base);
+    if (top > groundTop) {
+      quad(buffers.wall, ax, az, bx, bz, groundTop, top, nx, nz, len, tint, 0.72, 1.0, base);
     }
   }
 
   // ---- roof ----
   const tris = triangulate(flat, order);
   const b = buffers.roof;
-  const base = b.positions.length / 3;
+  const vertexBase = b.positions.length / 3;
   for (let k = 0; k < n; k += 1) {
     const i = order[k];
-    b.positions.push(flat[i * 2], height, flat[i * 2 + 1]);
+    b.positions.push(flat[i * 2], top, flat[i * 2 + 1]);
     b.normals.push(0, 1, 0);
     b.uvs.push(flat[i * 2] / 8, flat[i * 2 + 1] / 8);
     b.colors.push(tint, tint, tint);
@@ -167,21 +171,23 @@ export function extrudeBuilding(flat, height, tint, buffers) {
   // Same story as the walls: a triangle wound anticlockwise in plan view faces
   // downward once it is lifted onto the roof, so the order is reversed here.
   for (let i = 0; i < tris.length; i += 3) {
-    b.indices.push(base + tris[i], base + tris[i + 2], base + tris[i + 1]);
+    b.indices.push(vertexBase + tris[i], vertexBase + tris[i + 2], vertexBase + tris[i + 1]);
   }
 }
 
 /** One wall quad, with AO shading from `bottomShade` up to `topShade`. */
-function quad(b, ax, az, bx, bz, y0, y1, nx, nz, len, tint, bottomShade, topShade) {
-  const base = b.positions.length / 3;
+function quad(b, ax, az, bx, bz, y0, y1, nx, nz, len, tint, bottomShade, topShade, base = 0) {
+  const vertexBase = b.positions.length / 3;
   b.positions.push(ax, y0, az, bx, y0, bz, bx, y1, bz, ax, y1, az);
   for (let i = 0; i < 4; i += 1) b.normals.push(nx, 0, nz);
 
   // Tile by real metres so a wide building gets more windows, not stretched
   // ones, and so every building on a street lines up floor for floor.
+  // Texture v runs from the building's own base, not from sea level, or a shop
+  // 60m up the hill starts its brickwork nineteen storeys into the pattern.
   const u = len / 6;
-  const v0 = y0 / STOREY;
-  const v1 = y1 / STOREY;
+  const v0 = (y0 - base) / STOREY;
+  const v1 = (y1 - base) / STOREY;
   b.uvs.push(0, v0, u, v0, u, v1, 0, v1);
 
   const lo = tint * bottomShade;
@@ -193,7 +199,10 @@ function quad(b, ax, az, bx, bz, y0, y1, nx, nz, len, tint, bottomShade, topShad
   // wall in the city and you see straight through the block into the insides of
   // buildings behind it. The normal attribute alone will not save you; culling
   // reads the winding.
-  b.indices.push(base, base + 2, base + 1, base, base + 3, base + 2);
+  b.indices.push(
+    vertexBase, vertexBase + 2, vertexBase + 1,
+    vertexBase, vertexBase + 3, vertexBase + 2
+  );
 }
 
 export function emptyBuffers() {

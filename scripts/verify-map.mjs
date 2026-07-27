@@ -60,10 +60,14 @@ const main = async () => {
     `origin ${manifest.origin.lat},${manifest.origin.lon}\n\n`
   );
 
-  // Pull every tile so the checks below see the whole city, not a 3x3 window.
+  // Pull every tile once so the checks below see the whole city, not a 3x3
+  // window. Payloads are kept: re-fetching all 43 for each section exhausts the
+  // connection pool.
   const buildings = [];
+  const payloads = [];
   for (const [tx, tz] of manifest.tiles) {
     const payload = await (await fetch(`${API}/map/tile/${tx}/${tz}`)).json();
+    payloads.push({ tx, tz, payload });
     buildings.push(...tileBuildings(payload));
   }
   const index = createCollisionIndex();
@@ -184,6 +188,79 @@ const main = async () => {
   // Close enough to read the sign, far enough to see the building it is on.
   check("spawn stands back from the bank", toBank > 6 && toBank < 30, `${toBank.toFixed(0)}m from the door`);
 
+  // --- terrain ---
+  // Lincoln is a hill. If this is flat, or the ground and the buildings
+  // disagree about where the surface is, nothing else matters.
+  process.stdout.write("\nterrain:\n");
+  const { createTerrainIndex } = await import("../src/world/terrain.js");
+  const terrain = createTerrainIndex();
+  let tilesWithGround = 0;
+  for (const { tx, tz, payload } of payloads) {
+    if (payload.t) { terrain.add(tx, tz, payload.t); tilesWithGround += 1; }
+  }
+  check("every tile carries ground", tilesWithGround === manifest.tiles.length,
+    `${tilesWithGround}/${manifest.tiles.length}`);
+
+  const [lo, hi] = manifest.terrainRange || [0, 0];
+  check("the city is actually on a hill", hi - lo > 40, `${lo}m to ${hi}m = ${(hi - lo).toFixed(0)}m`);
+
+  // Known ground truth, straight off the Environment Agency's own service.
+  const landmarks = [
+    ["JD, High Street", 53.2279, -0.5407, 6.3],
+    ["NatWest, Mint Street", 53.2294, -0.54079, 9.7],
+    ["Cathedral quarter", 53.23440, -0.53640, 65.3],
+  ];
+  const { project } = await import("../src/world/geo.js");
+  let worstLandmark = 0;
+  for (const [name, lat, lon, truth] of landmarks) {
+    const p = project(lat, lon);
+    const got = terrain.heightAt(p.x, p.z);
+    const err = got === null ? Infinity : Math.abs(got - truth);
+    worstLandmark = Math.max(worstLandmark, err);
+    check(`${name} sits at the right height`, err < 2.5,
+      got === null ? "no tile loaded" : `${got.toFixed(1)}m vs ${truth}m surveyed`);
+  }
+
+  // The climb is the whole point.
+  const jd = project(53.2279, -0.5407);
+  const cath = project(53.23440, -0.53640);
+  const climb = terrain.heightAt(cath.x, cath.z) - terrain.heightAt(jd.x, jd.z);
+  check("Steep Hill climbs from the High Street to the Cathedral", climb > 45,
+    `${climb.toFixed(0)}m of climb`);
+
+  // Seams: neighbouring tiles must agree exactly on their shared edge, or the
+  // player walks off a step every 250m.
+  let worstSeam = 0;
+  for (const [tx, tz] of manifest.tiles) {
+    if (!terrain.has(tx + 1, tz)) continue;
+    const edgeX = (tx + 1) * 250;
+    for (let s = 0; s <= 250; s += 25) {
+      const z = tz * 250 + s;
+      const a = terrain.heightAt(edgeX - 0.001, z);
+      const b = terrain.heightAt(edgeX + 0.001, z);
+      if (a !== null && b !== null) worstSeam = Math.max(worstSeam, Math.abs(a - b));
+    }
+  }
+  check("tiles line up at their seams", worstSeam < 0.25, `worst step ${worstSeam.toFixed(3)}m`);
+
+  // Buildings must stand ON the ground, not float above it or sink out of sight.
+  let floating = 0;
+  let checkedFooting = 0;
+  for (const b of buildings) {
+    if (b.base === undefined || b.base === null) continue;
+    checkedFooting += 1;
+    let maxGround = -Infinity;
+    for (let i = 0; i < b.ring.length; i += 2) {
+      const g = terrain.heightAt(b.ring[i], b.ring[i + 1]);
+      if (g !== null) maxGround = Math.max(maxGround, g);
+    }
+    // The base is the lowest ground under the footprint minus a skirt, so it
+    // must always be below the highest ground the walls pass through.
+    if (maxGround > -Infinity && b.base > maxGround) floating += 1;
+  }
+  check("no building floats above its ground", floating === 0,
+    `${floating}/${checkedFooting} founded above the surface`);
+
   // --- geometry correctness: walls and roofs ---
   // Both of these were shipped broken once. Mixed OSM ring winding built two
   // fifths of the city inside out (see-through walls under backface culling),
@@ -246,7 +323,10 @@ const main = async () => {
       const mx = (P[q] + P[q + 3]) / 2;
       const mz = (P[q + 2] + P[q + 5]) / 2;
       normalsTested += 1;
-      if (insideAny(mx + N[q] * 0.4, mz + N[q + 2] * 0.4, [b])) inwardNormals += 1;
+      // Probe just off the wall. A longer step crosses narrow alcoves in
+      // concave footprints and lands back inside the same building, which reads
+      // as an inward normal when the normal is perfectly correct.
+      if (insideAny(mx + N[q] * 0.05, mz + N[q + 2] * 0.05, [b])) inwardNormals += 1;
     }
   }
   check("wall normals point outward", inwardNormals === 0,
@@ -321,8 +401,13 @@ const main = async () => {
   const meshes = group.children.filter((c) => c.__isMesh);
   const verts = meshes.reduce((n, m) => n + (m.geometry?.__count || 0), 0);
   check("tiles produced merged geometry", verts > 10000, `${verts} vertices in ${meshes.length} meshes`);
-  check("geometry is merged, not per-building", meshes.length < 40,
-    `${meshes.length} meshes for ${built.colliders.buildings.length} buildings`);
+  // What matters is meshes per TILE, not in total: a tile emits a fixed handful
+  // (shopfronts, upper walls, roofs, terrain, roads) no matter how many
+  // buildings it holds. Counting against a fixed total just fails as the city
+  // grows.
+  const perTile = meshes.length / Math.max(1, built.stream.residentCount);
+  check("geometry is merged, not per-building", perTile <= 6,
+    `${perTile.toFixed(1)} meshes/tile for ${built.colliders.buildings.length} buildings`);
 
   const bad = meshes.find((m) => m.geometry && m.geometry.__maxIndex >= m.geometry.__count);
   check("no out-of-range triangle indices", !bad,
@@ -379,6 +464,7 @@ function stubThree() {
     Mesh,
     BufferGeometry,
     Float32BufferAttribute: class { constructor(arr, size) { this.__count = arr.length / size; } },
+    BufferAttribute: class { constructor(arr, size) { this.__count = arr.length / size; } },
     PlaneGeometry: BufferGeometry,
     BoxGeometry: BufferGeometry,
     SphereGeometry: BufferGeometry,
