@@ -248,6 +248,19 @@ async function ensureStorage() {
   await fs.mkdir(storageDir, { recursive: true });
   store = createSqliteStore({ dbPath: dbFile });
   store.ensureKey(contentFile, defaultContent);
+
+  // Content migration. `ensureKey` only seeds when the row is missing, so a database
+  // carried over from an earlier build keeps serving its old chapter copy forever -
+  // and the client trusts the server over its own defaults. Replacing anything older
+  // than the shipped version is what makes copy changes actually reach players.
+  const storedContent = await readJson(contentFile, defaultContent);
+  if ((storedContent?.version || 0) < (defaultContent.version || 0)) {
+    await writeJson(contentFile, defaultContent);
+    console.log(
+      `[content] migrated stored content v${storedContent?.version || 0} -> v${defaultContent.version}`
+    );
+  }
+
   for (const file of [refundsFile, fulfillmentsFile, releasesFile, moderationFile, storiesFile, opportunitiesFile, chapterEventsFile]) {
     store.ensureKey(file, []);
   }

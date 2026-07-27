@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>TRAP — Free Roam (Test Phase 1)</title>
+<link rel="stylesheet" href="./style.css" />
+<!-- Self-contained: Three.js loaded from CDN. No link to the main project. -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.166.1/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.166.1/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+  <!-- START / POINTER-LOCK PROMPT -->
+  <div id="start">
+    <div class="s-inner">
+      <div class="s-chip">TEST PHASE 1</div>
+      <div class="s-logo">TRAP</div>
+      <div class="s-sub">FREE ROAM</div>
+      <p class="s-tag">Walk the block. Visit the bank. Find the spots.<br>This is a sandbox — completely separate from the main game.</p>
+      <button id="startBtn">Enter the World</button>
+      <div class="s-keys"><b>W A S D</b> move · <b>Shift</b> sprint · <b>Mouse</b> look · <b>E</b> interact · <b>Esc</b> release cursor</div>
+    </div>
+  </div>
+
+  <!-- HUD -->
+  <div id="hud" class="off">
+    <div class="hud-top">
+      <div class="brand">TRAP<span>.</span> <em>free roam</em></div>
+      <div class="coins"><span class="cico">T</span><span id="coinAmt">2,000</span><span class="clbl">Trap Coins</span></div>
+    </div>
+    <div id="crosshair"></div>
+    <div id="prompt" class="off"></div>
+    <div id="compass">Nearest: <b id="nearName">—</b> <span id="nearDist"></span></div>
+    <div class="hint">Explore freely — walk up to a building and press <b>E</b>.</div>
+    <div id="radar"><canvas id="minimap" width="180" height="180"></canvas><div class="r-lbl">THE BLOCK</div></div>
+  </div>
+
+  <!-- BANK PANEL -->
+  <div id="bankPanel" class="panel-wrap">
+    <div class="panel">
+      <div class="p-head"><span class="p-name">TRAP CENTRAL BANK</span><button class="x" data-close="bankPanel">✕</button></div>
+      <div class="p-body">
+        <div class="balances">
+          <div class="bal"><div class="bl">Wallet · cash</div><div class="ba" id="bkCash">2,000</div></div>
+          <div class="bal saved"><div class="bl">Bank · saved</div><div class="ba" id="bkSaved">0</div></div>
+        </div>
+        <div class="section-t">Buy Trap Coins <small>(mock — real payments later)</small></div>
+        <div class="buy-row">
+          <button class="buy" data-coins="500">£5 · 500</button>
+          <button class="buy" data-coins="1200">£10 · 1,200</button>
+          <button class="buy" data-coins="2600">£20 · 2,600</button>
+        </div>
+        <div class="section-t">Move money</div>
+        <div class="move-row">
+          <input id="bkAmount" type="number" min="1" placeholder="Amount" />
+          <button class="mini" id="bkDeposit">Deposit</button>
+          <button class="mini" id="bkWithdraw">Withdraw</button>
+        </div>
+        <div class="p-msg" id="bkMsg"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MISSION / SPOT PANEL -->
+  <div id="spotPanel" class="panel-wrap">
+    <div class="panel">
+      <div class="p-head"><span class="p-name" id="spotName">THE COME UP</span><button class="x" data-close="spotPanel">✕</button></div>
+      <div class="p-body">
+        <p id="spotDesc">Every empire starts at the bottom.</p>
+        <div class="req" id="spotReq">MISSION SPOT — enter to start (coming soon)</div>
+        <p class="p-note">In the full game this drops you into the room for this chapter, where the apparel you buy is a real item.</p>
+        <button class="mini wide" data-close="spotPanel">Back to the streets</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

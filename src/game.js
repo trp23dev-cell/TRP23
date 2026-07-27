@@ -9,6 +9,14 @@ import { applyRoomAssetLayer, ROOM_ASSET_REGISTRY } from "./render/roomAssetRegi
 import { formatRegistryValidationReport, validateRoomAssetRegistry } from "./render/roomAssetValidation";
 import { getContent, getContentRemoteFirst } from "./data/contentStore";
 import {
+  buildFreeRoamWorld,
+  resolveWorldCollisions,
+  nearestPlace,
+  drawMinimap,
+  worldMood,
+  ENTER_DISTANCE,
+} from "./world/freeRoamWorld";
+import {
   createDefaultPlayerProfile,
   getOrCreatePlayerId,
   loadPlayerProfile,
@@ -86,7 +94,7 @@ const platform={
 };
 
 /* ============================================================
-   TRAP MADE IT — THE COME UP · 6-LEVEL WORLD
+   TRAP MADE IT — THE COME UP · 6-CHAPTER WORLD
    L1 The Come Up  · L2 The Cook Up · L3 The Graveyard Shift
    L4 The Front    · L5 Top Floor   · L6 The Warehouse
    Every level hides a STASH: a real discount code + coins.
@@ -115,49 +123,54 @@ const BASE_PRODUCTS = [
 ];
 
 // ---------------- LEVELS ----------------
+// NOTE ON MISSION IDS: the id `stash` is the server-side dedupe key
+// (`playerId:levelId:missionId` in reward_claims) and is written into every existing
+// player's saved progress. The player-facing language is now "the archive" — a record
+// somebody left behind before they got out — but the id stays `stash` on purpose.
+// Renaming it would orphan every reward already claimed. Same for the #stash* DOM ids.
 const BASE_LEVELS=[
  {num:'01', name:'THE COME UP',        sub:'Every empire starts at the bottom.',
   code:'TRAP-COMEUP10', deal:'10% OFF YOUR NEXT ORDER',
   stashHint:'They never check behind the crates.',
   missions:[
-   {id:'walk',   title:'Case the spot',     desc:'Get your bearings. Walk the squat and find what was left behind.', reward:'+150 coins', coins:150},
-   {id:'board',  title:'Read the board',    desc:'Someone planned a come-up on this wall. Study the drawing board.', reward:'+100 coins', coins:100},
-   {id:'stash',  title:'Find the stash',    desc:'Every spot has one. A package is hidden somewhere in this room.',  reward:'LEVEL DEAL + 500 coins', coins:0},
+   {id:'walk',   title:'Get your bearings', desc:'Somebody lived here before you. Look at what they left behind.',  reward:'+150 coins', coins:150},
+   {id:'board',  title:'Read the board',    desc:"There's a board on the wall. It isn't the police's. Read it, then finish it.", reward:'+100 coins', coins:100},
+   {id:'stash',  title:'Find the archive',  desc:'Every spot has one. Somebody hid a record here before they got out. Find it.', reward:'CHAPTER DEAL + 500 coins', coins:0},
   ]},
- {num:'02', name:'THE COOK UP',        sub:'The kitchen is where plans get made.',
+ {num:'02', name:'THE KITCHEN',        sub:'The kitchen is where plans get made.',
   code:'TRAP-COOKUP15', deal:'15% OFF YOUR NEXT ORDER',
   stashHint:'Check where the pots used to live.',
   missions:[
    {id:'inspect',title:'Inspect the drop',  desc:'Give a set a full 360° inspection in the viewer.',                 reward:'+150 coins', coins:150},
-   {id:'own1',   title:'First flip',        desc:'Buy your first piece with Trap Coins. Everything starts with one move.', reward:'+250 coins', coins:250},
-   {id:'stash',  title:'Find the stash',    desc:'A package is hidden somewhere in this kitchen.',                   reward:'LEVEL DEAL + 500 coins', coins:0},
+   {id:'own1',   title:'First move',        desc:'Buy your first piece with Trap Coins. Every plan starts with one move.', reward:'+250 coins', coins:250},
+   {id:'stash',  title:'Find the archive',  desc:'Somebody planned their way out of this kitchen. They left the record.', reward:'CHAPTER DEAL + 500 coins', coins:0},
   ]},
  {num:'03', name:'THE GRAVEYARD SHIFT', sub:'Money never sleeps. Neither do you.',
   code:'TRAP-SHIFT20', deal:'20% OFF YOUR NEXT ORDER',
   stashHint:'The TV is always watching. Watch it back.',
   missions:[
-   {id:'own2',   title:'Stack the closet',  desc:'Own two sets. Stock is leverage. Leverage is power.',              reward:'+300 coins', coins:300},
-   {id:'stash',  title:'Find the stash',    desc:'A package is hidden somewhere in this flat.',                      reward:'LEVEL DEAL + 500 coins', coins:0},
+   {id:'own2',   title:'Stack the closet',  desc:'Own two sets. What you build up is yours to keep.',                reward:'+300 coins', coins:300},
+   {id:'stash',  title:'Find the archive',  desc:'A record is hidden somewhere in this flat. Somebody worked nights here too.', reward:'CHAPTER DEAL + 500 coins', coins:0},
   ]},
- {num:'04', name:'THE FRONT',          sub:'Look legit. Move different.',
+ {num:'04', name:'THE SHOP FLOOR',     sub:'Standards are the difference.',
   code:'TRAP-FRONT25', deal:'25% OFF YOUR NEXT ORDER',
   stashHint:'Nobody checks behind the counter.',
   missions:[
-   {id:'viewall',title:'Know the stock',    desc:'Inspect four different designs. A boss knows every piece on the shop floor.', reward:'+400 coins', coins:400},
-   {id:'stash',  title:'Find the stash',    desc:'A package is hidden somewhere in the shop.',                       reward:'LEVEL DEAL + 500 coins', coins:0},
+   {id:'viewall',title:'Know the stock',    desc:'Inspect four different designs. You cannot sell what you do not know.', reward:'+400 coins', coins:400},
+   {id:'stash',  title:'Find the archive',  desc:'A record is hidden somewhere on this shop floor.',                 reward:'CHAPTER DEAL + 500 coins', coins:0},
   ]},
  {num:'05', name:'TOP FLOOR',          sub:'New heights. Same hunger.',
   code:'TRAP-TOPFLOOR30', deal:'30% OFF YOUR NEXT ORDER',
   stashHint:'Under the big picture, where nobody looks.',
   missions:[
-   {id:'own3',   title:'Serious collector', desc:'Own three sets. The top floor respects volume.',                   reward:'+300 coins', coins:300},
-   {id:'stash',  title:'Find the stash',    desc:'A package is hidden somewhere in the office.',                     reward:'LEVEL DEAL + 500 coins', coins:0},
+   {id:'own3',   title:'Serious collector', desc:'Own three sets. Build something that lasts longer than a good week.', reward:'+300 coins', coins:300},
+   {id:'stash',  title:'Find the archive',  desc:'A record is hidden somewhere in this office.',                     reward:'CHAPTER DEAL + 500 coins', coins:0},
   ]},
  {num:'06', name:'THE WAREHOUSE',      sub:'Your name on the label now.',
   code:'TRAP-MADEIT40', deal:'40% OFF — YOU MADE IT',
   stashHint:'Top shelf. Where else.',
   missions:[
-   {id:'stash',  title:'Find the stash',    desc:'One last package, hidden in the racking.',                         reward:'LEVEL DEAL + 500 coins', coins:0},
+   {id:'stash',  title:'Find the archive',  desc:'One last record, hidden in the racking. The last one you will need.', reward:'CHAPTER DEAL + 500 coins', coins:0},
    {id:'label',  title:'Start your label',  desc:'Find the design station and put your name on the tag.',            reward:'THE END OF CHAPTER 1', coins:0},
   ]},
 ];
@@ -181,7 +194,7 @@ function buildRuntimeProducts(content){
 
 function missionRewardLabel(id,rewardCoins,baseReward){
   if(typeof rewardCoins!=='number') return baseReward;
-  if(id==='stash') return `LEVEL DEAL + ${rewardCoins} coins`;
+  if(id==='stash') return `CHAPTER DEAL + ${rewardCoins} coins`;
   if(rewardCoins<=0) return baseReward;
   return `+${rewardCoins} coins`;
 }
@@ -305,7 +318,12 @@ let userBrightnessScale=1.3;
 function clamp(n,min,max){ return Math.max(min,Math.min(max,n)); }
 
 function applyExposureForCurrentLevel(){
-  const profile=ROOM_LIGHT_PROFILES[state.level]||ROOM_LIGHT_PROFILES[0];
+  // Outdoors the exposure comes from how far through the journey the player is,
+  // not from a room profile - otherwise touching the brightness slider on the block
+  // would snap the sky back to a chapter interior's lighting.
+  const profile=(mode==='world')
+    ? worldMood(state.levelsCleared)
+    : (ROOM_LIGHT_PROFILES[state.level]||ROOM_LIGHT_PROFILES[0]);
   renderer.toneMappingExposure=profile.exposure*userBrightnessScale*EXPOSURE_BASE_GAIN;
 }
 
@@ -407,9 +425,11 @@ function progress(){
   $('#plFill').style.width=Math.min(100,overall)+'%';
   const next=lv.missions.find(m=>!m.done);
   $('#objText').textContent = next ? next.title.toUpperCase() :
-    (state.level<LEVELS.length-1 ? 'DOOR UNLOCKED — LEVEL UP' : 'YOU MADE IT');
+    (state.level<LEVELS.length-1 ? 'THE WAY OUT IS OPEN' : 'YOU MADE IT');
   const found=lv.missions.find(m=>m.id==='stash')?.done;
-  $('#stashLine').innerHTML='STASH: '+(found?'<span class="fnd">FOUND ✓</span>':'<span class="hid">STILL HIDDEN</span>');
+  $('#stashLine').innerHTML='ARCHIVE: '+(found?'<span class="fnd">FOUND ✓</span>':'<span class="hid">STILL HIDDEN</span>');
+  const moral=$('#moralLine');
+  if(moral) moral.textContent=lv.moralFocus||'';
 }
 function clearMission(id){
   const lv=LV();
@@ -431,7 +451,7 @@ function clearMission(id){
     if(state.level<LEVELS.length-1){
       doorLocked=false;
       if(doorGlowRef) doorGlowRef.material.emissiveIntensity=1.2;
-      setTimeout(()=>toast(`<span class="gold">LEVEL CLEARED</span> — THE DOOR TO ${LEVELS[state.level+1].name} IS OPEN`,4200),1400);
+      setTimeout(()=>toast(`<span class="gold">CHAPTER CLEARED</span> — THE WAY OUT TO ${LEVELS[state.level+1].name} IS OPEN`,4200),1400);
     } else {
       setTimeout(()=>toast('<span class="gold">CHAPTER 1 COMPLETE</span> — THE WAREHOUSE IS YOURS',5000),1400);
     }
@@ -442,7 +462,7 @@ function renderMissions(){
   const lv=LV();
   $('#missionList').innerHTML=lv.missions.map((m,i)=>`
     <div class="mission type ${m.done?'done':''}" style="--tilt:${(i%2?-1.2:1.4)+(i*.3-.6)}deg">
-      <div class="m-num">LEVEL ${lv.num} · CASE 0${i+1}</div>
+      <div class="m-num">CHAPTER ${lv.num} · CASE 0${i+1}</div>
       <div class="m-title">${m.title.toUpperCase()}</div>
       <div class="m-desc">${m.desc}${m.id==='stash'?` <br><br><b>HINT:</b> ${lv.stashHint}`:''}</div>
       <div class="m-reward">REWARD: ${m.reward}</div>
@@ -717,7 +737,9 @@ const boardTex=canvasTex(1024,640,(g,w,h)=>{
     g.fillStyle='#e9e0cc'; g.fillRect(0,0,150,170);
     g.fillStyle=i%3===0?'#11100d':'#262016'; g.fillRect(12,12,126,110);
     g.fillStyle='#3f382c'; g.font='16px "Special Elite"';
-    g.fillText(['LAST ARREST','SUBJECT','THE PLUG','WAREHOUSE','CASE FILE','THE STASH','DROP 03/12','LOCATION?'][i],16,150);
+    // The case file is the player's own, not a police file on a dealer. Same board,
+    // same pins, same string — the subject is you. (Bible Vol 3, Stage 2: Acknowledgement.)
+    g.fillText(['SUBJECT: YOU',"WHAT'S TRAPPING ME",'WHO I BLAME','WHAT I CONTROL','FIRST MOVE','THE WAY OUT','EVIDENCE','CLEARED?'][i],16,150);
     g.restore();
     g.fillStyle='#8a2323'; g.beginPath(); g.arc(x+75,y-2,8,0,7); g.fill();});
   g.strokeStyle='rgba(160,40,40,.9)'; g.lineWidth=3;
@@ -1011,7 +1033,7 @@ function stash(x,y,z,ry=0){
     // Coins are credited server-side via clearMission('stash'); just record the code locally for display.
     if(!state.codes.includes(LV().code)) state.codes.push(LV().code);
     const stashCoins=LV().missions.find(m=>m.id==='stash')?.coins||500;
-    $('#stashText').textContent=`Tucked away exactly where the board said it'd be. Inside: ${stashCoins} Trap Coins and a one-time deal for this level — ${LV().deal.toLowerCase()}.`;
+    $('#stashText').textContent=`Tucked exactly where the board said it'd be. Inside, a folder. Somebody sat in this room and wrote down what was holding them, then wrote down what they did about it. They're not here any more. ${stashCoins} Trap Coins, and a one-time deal for this chapter — ${LV().deal.toLowerCase()}.`;
     $('#stashCode').textContent='CODE: '+LV().code+' — '+LV().deal;
     openPanel('stashPanel');
     clearMission('stash');
@@ -1043,10 +1065,10 @@ function levelDoor(x,z,ry,label){
     if(doorLocked){
       $('#doorIcon').textContent='🔒';
       $('#doorTitle').textContent=LEVELS[state.level+1]?LEVELS[state.level+1].name:'???';
-      $('#doorText').textContent="It won't budge. Clear every case on the drawing board — including the stash — and the way up opens.";
+      $('#doorText').textContent="It won't budge. Finish the board, archive included, and the way out opens.";
       $('#doorReq').textContent='REQUIRES: ALL MISSIONS CLEARED';
       openPanel('doorPanel');
-    } else nextLevel();
+    } else returnToWorld(true);
   });
   return g;
 }
@@ -1480,7 +1502,7 @@ function loadLevel(i, showIntro=true){
   bounds={insetX:cfg.insetX,insetZ:cfg.insetZ};
   camera.position.set(cfg.spawn[0],1.6,cfg.spawn[1]);
   yaw=cfg.yaw; pitch=0;
-  $('#levelLabel').textContent=`LEVEL ${LV().num} — ${LV().name}`;
+  $('#levelLabel').textContent=`CHAPTER ${LV().num} — ${LV().name}`;
   renderMissions(); progress();
   setTimeout(()=>{     // sync progress carried over from earlier levels
     if(state.walked>6) clearMission('walk');
@@ -1489,24 +1511,137 @@ function loadLevel(i, showIntro=true){
   },1200);
   if(showIntro){
     const li=$('#levelIntro');
-    $('#liNum').textContent='LEVEL '+LV().num;
+    $('#liNum').textContent='CHAPTER '+LV().num;
     $('#liName').textContent=LV().name;
     $('#liSub').textContent=LV().sub;
+    $('#liMoral').textContent=LV().moralFocus||'';
     li.classList.add('on');
     setTimeout(()=>li.classList.remove('on'),2600);
   }
 }
-function nextLevel(){
+// ==================== THE BLOCK (free-roam hub) ====================
+// Chapters no longer chain straight into each other. The block is the hub: you
+// walk it, enter a chapter, and come back out to it. `returnToWorld` replaced the
+// old `nextLevel`, which is why progression now advances there instead of here.
+// mode 'world' = walking the block outside; mode 'room' = inside a chapter.
+let mode='room';
+let worldColliders=[], worldPlaces=[], nearPlace=null;
+const _miniDir=new THREE.Vector3();
+
+function loadWorld(){
+  mode='world';
+  const roomAssetRequest=++activeRoomAssetRequest;
+  void roomAssetRequest;                       // invalidates any in-flight room GLB load
+  doorLocked=false; doorGlowRef=null; heroSpinRef=null; tvTexRef=null; dustRef=null; bulbRef=null;
+  if(levelGroup){
+    levelGroup.traverse(o=>{ if(o.geometry) o.geometry.dispose(); });
+    scene.remove(levelGroup);
+  }
+  interactables=[]; hoverObj=null;
+  // The room's centre-screen hover tag has no meaning outdoors, and it is not
+  // repainted in world mode - so it has to be cleared or it stays on screen.
+  $('#hoverTag').classList.remove('on');
+  $('#crosshair').classList.remove('hot');
+  levelGroup=new THREE.Group(); scene.add(levelGroup);
+
+  const built=buildFreeRoamWorld({
+    THREE, group:levelGroup, chapters:LEVELS, cleared:state.levelsCleared,
+    canvasTex, setTextureQuality, shadows,
+  });
+  worldColliders=built.colliders; worldPlaces=built.places; nearPlace=null;
+  levelGroup.traverse(applyLightQuality);
+
+  scene.environment=null;
+  scene.fog=new THREE.FogExp2(built.mood.fog[0],built.mood.fog[1]);
+  scene.background=new THREE.Color(built.mood.bg);
+  renderer.toneMappingExposure=built.mood.exposure*userBrightnessScale*EXPOSURE_BASE_GAIN;
+
+  camera.position.set(built.spawn[0],1.7,built.spawn[1]);
+  yaw=built.yaw; pitch=0;
+  $('#levelLabel').textContent='THE BLOCK';
+  $('#hud').classList.add('in-world');
+  const next=LEVELS[Math.min(state.levelsCleared,LEVELS.length-1)];
+  $('#objText').textContent=state.levelsCleared>=LEVELS.length ? 'YOU MADE IT' : `FIND ${next.name}`;
+  $('#stashLine').innerHTML='<span class="hid">WALK THE BLOCK — [E] TO ENTER</span>';
+  const moral=$('#moralLine'); if(moral) moral.textContent='';
+}
+
+// Walking into a chapter building.
+function enterChapter(i){
   const f=$('#fader'); f.classList.add('on');
-  state.levelsCleared++;
-  queuePlayerEvent('level_advanced',{ toLevelIndex: state.level+1 });
+  setTimeout(()=>{
+    mode='room';
+    $('#hud').classList.remove('in-world');
+    $('#prompt')?.classList.remove('on');
+    loadLevel(i);
+    setTimeout(()=>f.classList.remove('on'),250);
+  },600);
+}
+
+// Leaving a chapter. `cleared` is true only when the exit door was used, which is
+// what actually advances the journey - quitting out early does not.
+function returnToWorld(cleared){
+  const f=$('#fader'); f.classList.add('on');
+  const finishedIdx=state.level;
+  if(cleared&&finishedIdx===state.levelsCleared){
+    state.levelsCleared=Math.min(state.levelsCleared+1,LEVELS.length);
+    queuePlayerEvent('level_advanced',{ toLevelIndex: state.levelsCleared });
+  }
   persistProgress();
   setTimeout(()=>{
-    loadLevel(state.level+1);
+    loadWorld();
     setTimeout(()=>f.classList.remove('on'),250);
-    if(state.level===LEVELS.length-1)
-      setTimeout(()=>toast('THE FINAL FLOOR — <span class="gold">MAKE IT YOURS</span>',4000),1200);
-  },750);
+    if(cleared){
+      const nextIdx=state.levelsCleared;
+      if(nextIdx<LEVELS.length)
+        setTimeout(()=>toast(`<span class="gold">CHAPTER CLEARED</span> — ${LEVELS[nextIdx].name} IS OPEN ON THE BLOCK`,4400),900);
+      else
+        setTimeout(()=>toast('<span class="gold">CHAPTER 1 COMPLETE</span> — THE WHOLE BLOCK IS YOURS',5000),900);
+    }
+  },700);
+}
+
+function tryEnterNearest(){
+  if(mode!=='world'||!controls.enabled) return;
+  if(!nearPlace||nearPlace.dist>=ENTER_DISTANCE) return;
+  const pl=nearPlace.place;
+  if(pl.kind==='bank'){ openBankPanel(); return; }
+  if(pl.locked){
+    const need=LEVELS[state.levelsCleared];
+    toast(`<span class="gold">${pl.name}</span> IS SHUT — FINISH ${need?need.name:'THE CHAPTER BEFORE IT'} FIRST`,3600);
+    return;
+  }
+  enterChapter(pl.index);
+}
+
+// Test seam for the headless smoke test: moves the player around the block so the
+// walk-in/walk-out flow can be driven without a human. Grants nothing a player
+// could not do by walking - locked chapters are still refused by tryEnterNearest().
+window.__trapDebug={
+  warpTo(x,z){ camera.position.set(x,1.7,z); updateWorldHud(); },
+  get mode(){ return mode; },
+  get places(){ return worldPlaces.map(p=>({name:p.name,locked:p.locked,x:p.x,z:p.z})); },
+};
+
+function updateWorldHud(){
+  const near=nearestPlace(camera.position,worldPlaces);
+  nearPlace=near;
+  const nameEl=$('#nearName'), distEl=$('#nearDist'), prompt=$('#prompt');
+  if(nameEl) nameEl.textContent=near?near.place.name:'—';
+  if(distEl) distEl.textContent=near?`· ${Math.round(near.dist)}m`:'';
+  const canEnter=!!near&&near.dist<ENTER_DISTANCE&&controls.enabled;
+  $('#crosshair').classList.toggle('hot',canEnter);
+  if(prompt){
+    prompt.classList.toggle('on',canEnter);
+    if(canEnter){
+      const pl=near.place;
+      prompt.innerHTML=pl.locked
+        ? `<b>🔒</b> ${pl.name} — not yet`
+        : `<b>${platform.isTouchDevice?'TAP':'[E]'}</b> Enter ${pl.name}`;
+    }
+  }
+  const cv=$('#minimap');
+  if(cv) drawMinimap(cv.getContext('2d'),cv,camera,worldColliders,worldPlaces,near,THREE,_miniDir);
 }
 
 // ==================== CONTROLS ====================
@@ -1539,6 +1674,7 @@ addEventListener('keydown',e=>{
     e.preventDefault();
   keys[e.code]=true;
   if(e.code==='Escape') unlockMouseLook();
+  if(e.code==='KeyE'&&mode==='world') tryEnterNearest();
 });
 addEventListener('keyup',e=>keys[e.code]=false);
 
@@ -1617,7 +1753,12 @@ function castCenter(){
   const hits=ray.intersectObjects(interactables,false);
   return (hits.length&&hits[0].distance<3.4)?hits[0].object:null;
 }
-function tryInteract(){ const o=castCenter(); if(o) o.userData.action(); }
+// Outdoors there is nothing to aim at - being near the door is enough, so clicks
+// and taps resolve against the nearest place rather than the centre raycast.
+function tryInteract(){
+  if(mode==='world'){ tryEnterNearest(); return; }
+  const o=castCenter(); if(o) o.userData.action();
+}
 
 // Mobile: Virtual joystick for movement (faint, fits UI scheme)
 if(platform.isTouchDevice){
@@ -1669,7 +1810,10 @@ if(platform.isTouchDevice){
 }
 function moveStep(dt){
   if(!controls.enabled) return;
-  const sp=2.4*dt;
+  // Outdoors you cover real distance and can sprint; indoors keeps the original
+  // slow, deliberate room pace.
+  const sprinting=mode==='world'&&(keys.ShiftLeft||keys.ShiftRight);
+  const sp=(mode==='world'?(sprinting?11:5.5):2.4)*dt;
   const f=new THREE.Vector3(-Math.sin(yaw),0,-Math.cos(yaw));
   const r=new THREE.Vector3(Math.cos(yaw),0,-Math.sin(yaw));
   const v=new THREE.Vector3();
@@ -1689,10 +1833,15 @@ function moveStep(dt){
   if(v.lengthSq()>0){
     v.normalize().multiplyScalar(sp);
     camera.position.add(v);
-    camera.position.x=Math.max(-ROOM.w/2+bounds.insetX,Math.min(ROOM.w/2-bounds.insetX,camera.position.x));
-    camera.position.z=Math.max(-ROOM.d/2+bounds.insetZ,Math.min(ROOM.d/2-bounds.insetZ,camera.position.z));
-    state.walked+=sp;
-    if(state.walked>6) clearMission('walk');
+    if(mode==='world'){
+      camera.position.y=1.7;
+      resolveWorldCollisions(camera.position,worldColliders);
+    } else {
+      camera.position.x=Math.max(-ROOM.w/2+bounds.insetX,Math.min(ROOM.w/2-bounds.insetX,camera.position.x));
+      camera.position.z=Math.max(-ROOM.d/2+bounds.insetZ,Math.min(ROOM.d/2-bounds.insetZ,camera.position.z));
+      state.walked+=sp;
+      if(state.walked>6) clearMission('walk');
+    }
   }
 }
 
@@ -1872,6 +2021,9 @@ async function openStorefront(locationId){
   openPanel('storePanel');
 }
 $('#openStoreBtn')?.addEventListener('click',()=>openStorefront());
+// Back out to the block. Leaving this way does not clear the chapter - only the
+// exit door does that, so quitting early never advances the journey.
+$('#leaveChapterBtn')?.addEventListener('click',()=>{ if(mode==='room') returnToWorld(false); });
 
 // ==================== BANK ====================
 function setBankStatus(msg,kind){ const el=$('#bankStatus'); el.textContent=msg||''; el.className='bank-status'+(kind?' '+kind:''); }
@@ -2068,11 +2220,11 @@ async function startGame(){
   controls.enabled=true;
   setCoins(state.coins);
   initDisplaySettings();
-  loadLevel(state.level||0);
+  loadWorld();
   queuePlayerEvent('session_start',{ levelIndex: state.level||0 });
-  if(isTouchDevice) setTimeout(()=>toast(platform.hint.lockHint(),3000),1200);
+  if(platform.isTouchDevice) setTimeout(()=>toast(platform.hint.lockHint(),3000),1200);
   refreshDesktopControlHint();
-  setTimeout(()=>toast('SIX LEVELS BETWEEN YOU AND THE WAREHOUSE — <span class="gold">FIND THE DRAWING BOARD</span>',4600),2800);
+  setTimeout(()=>toast('SIX CHAPTERS BETWEEN YOU AND THE WAREHOUSE — <span class="gold">WALK THE BLOCK AND FIND THE FIRST</span>',4600),2800);
   persistProgress();
 }
 
@@ -2185,7 +2337,9 @@ function loop(now){
     }
   }
   if(heroSpinRef) heroSpinRef.rotation.y+=dt*.25;
-  if(controls.enabled&&!dragging){
+  if(mode==='world'){
+    updateWorldHud();
+  } else if(controls.enabled&&!dragging){
     const o=castCenter();
     if(o!==hoverObj){
       hoverObj=o;

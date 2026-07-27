@@ -1,0 +1,58 @@
+/* TRAP MADE IT — landing screens (Home / Auth / 2FA) */
+
+/* Background layers (web #loader .bg / .shade) */
+.landing-bg {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    -unity-background-scale-mode: scale-and-crop;
+    background-image: url("project://database/Assets/UI/Textures/landing-bg.jpg");
+}
+.landing-shade {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-color: rgba(5, 4, 3, 0.55);
+}
+
+/* Stage centres the active screen (web #loader justify-content:center) */
+.landing-stage {
+    flex-grow: 1;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 20px;
+}
+.landing-screen { align-items: center; }
+
+/* HOME: big centred logo + Enter */
+.home-logo {
+    width: 560px;
+    height: 388px;
+    -unity-background-scale-mode: scale-to-fit;
+    background-image: url("project://database/Assets/UI/Textures/trap-logo.png");
+    -unity-background-image-tint-color: var(--gold);
+    margin-top: 10px;
+    margin-bottom: 4px;
+}
+.home-tag { font-size: 13px; letter-spacing: 5px; color: var(--bone-dim); margin-top: 6px; }
+#home-enter { margin-top: 30px; }
+
+/* AUTH + 2FA panels */
+.landing-panel { width: 400px; }
+.landing-panel .t-headline { margin-bottom: 2px; }
+.landing-tabs { margin-top: 18px; margin-bottom: 6px; }
+.landing-form { margin-top: 8px; }
+.guest-link { margin-top: 16px; }
+
+.twofa-secret {
+    font-size: 19px;
+    letter-spacing: 4px;
+    color: var(--bone);
+    background-color: rgba(10, 9, 8, 0.6);
+    border-color: var(--line);
+    border-width: 1px;
+    padding: 11px 12px;
+    margin-top: 12px;
+    white-space: normal;
+    -unity-text-align: middle-center;
+}
+.twofa-row { flex-direction: row; margin-top: 12px; }
+.twofa-row .unity-text-field { flex-grow: 1; }

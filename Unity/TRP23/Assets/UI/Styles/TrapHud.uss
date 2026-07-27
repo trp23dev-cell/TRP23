@@ -1,0 +1,110 @@
+/* TRAP MADE IT — in-game HUD + Store / Bank / Account panels */
+
+.hud-root { flex-grow: 1; }
+
+/* Top bar (web .hud-top) */
+.hud-top {
+    position: absolute;
+    top: 24px; left: 26px; right: 26px;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: flex-start;
+}
+.hud-brand-logo {
+    width: 150px;
+    height: 40px;
+    -unity-background-scale-mode: scale-to-fit;
+    background-image: url("project://database/Assets/UI/Textures/trap-logo.png");
+    -unity-background-image-tint-color: var(--gold);
+}
+.hud-level { font-size: 11px; letter-spacing: 4px; color: var(--bone-dim); margin-top: 4px; }
+
+/* Coins (web .coins) */
+.coins {
+    flex-direction: row;
+    align-items: center;
+    background-color: rgba(10, 9, 8, 0.72);
+    border-color: var(--line);
+    border-width: 1px;
+    padding: 10px 16px;
+}
+.coin-ico {
+    width: 26px; height: 26px;
+    border-radius: 13px;
+    border-color: var(--gold);
+    border-width: 2px;
+    color: var(--gold);
+    -unity-text-align: middle-center;
+    margin-right: 10px;
+}
+.coin-amt { font-size: 22px; color: var(--gold); -unity-font-style: bold; }
+.coin-lbl { font-size: 10px; letter-spacing: 3px; color: var(--bone-dim); }
+
+/* Action buttons (web .hud-actions) */
+.hud-actions {
+    position: absolute;
+    top: 84px; right: 24px;
+    flex-direction: column;
+}
+.hud-act {
+    flex-direction: row;
+    align-items: center;
+    background-color: rgba(10, 9, 8, 0.78);
+    border-color: var(--line);
+    border-width: 1px;
+    color: var(--bone);
+    font-size: 14px;
+    letter-spacing: 4px;
+    padding: 9px 14px;
+    margin-bottom: 8px;
+    min-width: 118px;
+    -unity-text-align: middle-left;
+}
+.hud-act:hover { border-color: var(--gold); color: var(--gold); }
+
+/* Objective (web .objective) */
+.objective {
+    position: absolute;
+    left: 24px; bottom: 30px;
+    width: 300px;
+    background-color: rgba(10, 9, 8, 0.72);
+    border-left-color: var(--gold);
+    border-left-width: 2px;
+    padding: 12px 16px;
+}
+.obj-label { font-size: 10px; letter-spacing: 7px; color: var(--gold); }
+.obj-text { font-size: 18px; color: var(--bone); margin-top: 4px; }
+.obj-stash { font-size: 11px; color: var(--bone-dim); margin-top: 6px; }
+.progress-meta { flex-direction: row; justify-content: space-between; margin-top: 10px; }
+.progress-meta Label { font-size: 11px; letter-spacing: 2px; color: var(--bone-dim); }
+.progress-track { height: 3px; background-color: rgba(201, 160, 106, 0.18); margin-top: 6px; }
+.progress-fill { height: 3px; width: 6%; background-color: var(--gold); }
+
+/* Controls hint (web .controls-hint) */
+.controls-hint {
+    position: absolute;
+    right: 24px; bottom: 26px;
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: var(--bone-dim);
+    -unity-text-align: middle-right;
+}
+
+/* Modal panels (Store / Bank / Account) share .overlay + .panel */
+.modal-panel { width: 520px; max-width: 94%; }
+.acct-row {
+    flex-direction: row;
+    justify-content: space-between;
+    padding: 9px 0;
+    border-bottom-width: 1px;
+    border-bottom-color: var(--line);
+}
+.acct-row .k { font-size: 12px; letter-spacing: 3px; color: var(--bone-dim); }
+.acct-row .v { font-size: 16px; color: var(--bone); }
+.bank-balances { flex-direction: row; }
+.bank-bal { flex-grow: 1; border-color: var(--line); border-width: 1px; padding: 16px; margin: 4px; }
+.bank-bal .bb-lbl { font-size: 10px; letter-spacing: 3px; color: var(--bone-dim); }
+.bank-bal .bb-amt { font-size: 30px; color: var(--gold); -unity-font-style: bold; margin-top: 6px; }
+.store-card { border-color: var(--line); border-width: 1px; padding: 16px; margin: 7px; width: 220px; }
+.store-card .sc-name { font-size: 20px; color: var(--bone); }
+.store-card .sc-price { font-size: 22px; color: var(--gold); -unity-font-style: bold; margin-top: 6px; }

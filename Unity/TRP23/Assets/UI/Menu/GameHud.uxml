@@ -1,0 +1,103 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" editor-extension-mode="False">
+    <Style src="project://database/Assets/UI/Styles/TrapTokens.uss" />
+    <Style src="project://database/Assets/UI/Styles/TrapComponents.uss" />
+    <Style src="project://database/Assets/UI/Styles/TrapHud.uss" />
+
+    <ui:VisualElement class="hud-root" picking-mode="Ignore">
+
+        <!-- TOP BAR -->
+        <ui:VisualElement class="hud-top">
+            <ui:VisualElement>
+                <ui:VisualElement class="hud-brand-logo" />
+                <ui:Label name="level-label" text="LEVEL 01 — THE COME UP" class="hud-level" />
+            </ui:VisualElement>
+            <ui:VisualElement class="coins">
+                <ui:Label text="T" class="coin-ico" />
+                <ui:VisualElement>
+                    <ui:Label name="coin-amt" text="1,600" class="coin-amt" />
+                    <ui:Label text="TRAP COINS" class="coin-lbl" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <!-- ACTIONS -->
+        <ui:VisualElement class="hud-actions">
+            <ui:Button name="open-store" text="🛍  STORE" class="hud-act" />
+            <ui:Button name="open-bank" text="🏦  BANK" class="hud-act" />
+            <ui:Button name="open-account" text="GUEST" class="hud-act" />
+        </ui:VisualElement>
+
+        <!-- OBJECTIVE -->
+        <ui:VisualElement class="objective">
+            <ui:Label text="OBJECTIVE" class="obj-label" />
+            <ui:Label name="obj-text" text="READ THE BOARD" class="obj-text" />
+            <ui:Label name="obj-stash" text="STASH: STILL HIDDEN" class="obj-stash" />
+            <ui:VisualElement class="progress-meta">
+                <ui:Label text="THE COME UP" />
+                <ui:Label name="progress-pct" text="6%" />
+            </ui:VisualElement>
+            <ui:VisualElement class="progress-track">
+                <ui:VisualElement name="progress-fill" class="progress-fill" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <!-- CONTROLS HINT -->
+        <ui:Label text="WASD — MOVE     MOUSE — LOOK     ESC — RELEASE CURSOR" class="controls-hint" />
+
+        <!-- STORE PANEL -->
+        <ui:VisualElement name="panel-store" class="overlay hidden">
+            <ui:VisualElement class="panel modal-panel">
+                <ui:VisualElement class="panel-head">
+                    <ui:Label text="THE COME UP — STORE" class="panel-name" />
+                    <ui:Button name="store-close" text="✕" class="btn-outline" />
+                </ui:VisualElement>
+                <ui:VisualElement name="store-grid" style="flex-direction: row; flex-wrap: wrap;" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <!-- BANK PANEL -->
+        <ui:VisualElement name="panel-bank" class="overlay hidden">
+            <ui:VisualElement class="panel modal-panel">
+                <ui:VisualElement class="panel-head">
+                    <ui:Label text="TRAP CENTRAL BANK" class="panel-name" />
+                    <ui:Button name="bank-close" text="✕" class="btn-outline" />
+                </ui:VisualElement>
+                <ui:VisualElement class="bank-balances">
+                    <ui:VisualElement class="bank-bal">
+                        <ui:Label text="WALLET · CASH" class="bb-lbl" />
+                        <ui:Label name="bank-cash" text="0" class="bb-amt" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="bank-bal">
+                        <ui:Label text="BANK · SAVED" class="bb-lbl" />
+                        <ui:Label name="bank-saved" text="0" class="bb-amt" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
+                <ui:VisualElement class="field" style="margin-top: 16px;">
+                    <ui:Label text="AMOUNT" class="field-label" />
+                    <ui:TextField name="bank-amount" class="trap-input" />
+                </ui:VisualElement>
+                <ui:VisualElement style="flex-direction: row;">
+                    <ui:Button name="bank-deposit" text="DEPOSIT" class="btn-outline" style="margin-right: 8px;" />
+                    <ui:Button name="bank-withdraw" text="WITHDRAW" class="btn-outline" />
+                </ui:VisualElement>
+                <ui:Label name="bank-msg" text="" class="msg" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <!-- ACCOUNT PANEL -->
+        <ui:VisualElement name="panel-account" class="overlay hidden">
+            <ui:VisualElement class="panel modal-panel">
+                <ui:VisualElement class="panel-head">
+                    <ui:Label name="account-title" text="YOUR ACCOUNT" class="panel-name" />
+                    <ui:Button name="account-close" text="✕" class="btn-outline" />
+                </ui:VisualElement>
+                <ui:VisualElement class="acct-row"><ui:Label text="USERNAME" class="k" /><ui:Label name="ap-username" text="—" class="v" /></ui:VisualElement>
+                <ui:VisualElement class="acct-row"><ui:Label text="EMAIL" class="k" /><ui:Label name="ap-email" text="—" class="v" /></ui:VisualElement>
+                <ui:VisualElement class="acct-row"><ui:Label text="PHONE" class="k" /><ui:Label name="ap-phone" text="—" class="v" /></ui:VisualElement>
+                <ui:VisualElement class="acct-row"><ui:Label text="TWO-FACTOR" class="k" /><ui:Label name="ap-2fa" text="Off" class="v" /></ui:VisualElement>
+                <ui:Button name="account-logout" text="LOG OUT" class="btn-outline btn-danger" style="margin-top: 16px;" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+    </ui:VisualElement>
+</ui:UXML>
