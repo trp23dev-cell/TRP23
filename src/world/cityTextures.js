@@ -57,12 +57,14 @@ function drawBrick(g, w, h, seed) {
 }
 
 /** A sash window with its reveal, drawn into the given box. */
-function drawWindow(g, x, y, w, h, lit, r) {
+function drawWindow(g, x, y, w, h, lit, r, sill = true) {
   g.fillStyle = "rgba(10,9,8,.55)";
   g.fillRect(x - 2, y - 2, w + 4, h + 4);
-  g.fillStyle = STONE;
-  g.fillRect(x - 3, y - 5, w + 6, 4); // lintel
-  g.fillRect(x - 3, y + h + 1, w + 6, 3); // sill
+  if (sill) {
+    g.fillStyle = STONE;
+    g.fillRect(x - 3, y - 5, w + 6, 4); // lintel
+    g.fillRect(x - 3, y + h + 1, w + 6, 3); // sill
+  }
 
   g.fillStyle = lit ? WINDOW_LIT : WINDOW_DARK;
   g.globalAlpha = lit ? 0.5 + r() * 0.4 : 1;
@@ -88,38 +90,123 @@ function windowPlan(seed, count) {
 
 const WINDOWS_PER_TILE = 3;
 
-export function facadeAlbedo(canvasTex) {
-  return canvasTex(TILE_W, TILE_H, (g, w, h) => {
-    drawBrick(g, w, h, 7);
-    const plan = windowPlan(11, WINDOWS_PER_TILE);
-    const r = rand(29);
-    const ww = 42;
-    const wh = 62;
-    for (let i = 0; i < WINDOWS_PER_TILE; i += 1) {
-      const x = 22 + i * ((w - 44) / (WINDOWS_PER_TILE - 1)) - ww / 2;
-      drawWindow(g, x, (h - wh) / 2, ww, wh, plan[i], r);
+// ---------------------------------------------------------------- styles
+//
+// Lincoln is not one material, and the split is geographic rather than
+// decorative. Uphill — Bailgate, Castle Hill, Minster Yard — is Lincoln
+// limestone, the pale honey-grey stone the Cathedral is built from. Downhill is
+// overwhelmingly Victorian red brick. The High Street mixes in painted render,
+// and the post-war edges are panel and concrete.
+
+/** Coursed limestone ashlar: uphill Lincoln, and every civic building. */
+function drawLimestone(g, w, h, seed) {
+  const r = rand(seed);
+  g.fillStyle = "#6d6857";
+  g.fillRect(0, 0, w, h);
+  const bh = 17;
+  const bw = 46;
+  for (let y = 0; y < h; y += bh) {
+    const offset = ((y / bh) % 2) * (bw / 2);
+    for (let x = -bw; x < w + bw; x += bw) {
+      const v = 118 + r() * 30;
+      g.fillStyle = `rgb(${v},${v - 6},${v - 26})`;
+      g.fillRect(x + offset + 0.7, y + 0.7, bw - 1.4, bh - 1.4);
     }
+  }
+  // Weathering runs down the stone rather than sitting on it.
+  for (let i = 0; i < 40; i += 1) {
+    g.fillStyle = `rgba(46,44,38,${r() * 0.14})`;
+    g.fillRect(r() * w, 0, 3 + r() * 12, h);
+  }
+}
+
+/** Painted render, the High Street's other half. */
+function drawRender(g, w, h, seed) {
+  const r = rand(seed);
+  const hue = [[104, 96, 84], [86, 84, 78], [112, 92, 76], [78, 86, 82]][seed % 4];
+  g.fillStyle = `rgb(${hue[0]},${hue[1]},${hue[2]})`;
+  g.fillRect(0, 0, w, h);
+  for (let i = 0; i < 2600; i += 1) {
+    const v = -12 + r() * 24;
+    g.fillStyle = `rgba(${hue[0] + v},${hue[1] + v},${hue[2] + v},.5)`;
+    g.fillRect(r() * w, r() * h, 3, 3);
+  }
+  // Damp rising up from the pavement, and staining under the sills.
+  const grad = g.createLinearGradient(0, h, 0, h * 0.6);
+  grad.addColorStop(0, "rgba(30,28,24,.4)");
+  grad.addColorStop(1, "rgba(30,28,24,0)");
+  g.fillStyle = grad;
+  g.fillRect(0, 0, w, h);
+}
+
+/** Post-war panel and concrete, for the sheds and the retail boxes. */
+function drawModern(g, w, h, seed) {
+  const r = rand(seed);
+  g.fillStyle = "#4a4a4c";
+  g.fillRect(0, 0, w, h);
+  for (let y = 0; y < h; y += 34) {
+    const v = 62 + r() * 16;
+    g.fillStyle = `rgb(${v},${v},${v + 3})`;
+    g.fillRect(0, y + 1, w, 32);
+    g.fillStyle = "rgba(20,20,22,.5)";
+    g.fillRect(0, y, w, 1.5);
+  }
+}
+
+const SURFACE = {
+  brick: drawBrick,
+  limestone: drawLimestone,
+  render: drawRender,
+  modern: drawModern,
+};
+
+// Window shape follows the material: Georgian sashes in stone, narrower
+// Victorian openings in brick, long horizontal strips in the modern boxes.
+const WINDOW_STYLE = {
+  brick: { count: 3, w: 42, h: 62, sill: true },
+  limestone: { count: 3, w: 46, h: 74, sill: true },
+  render: { count: 3, w: 44, h: 64, sill: true },
+  modern: { count: 2, w: 96, h: 46, sill: false },
+};
+
+const STYLE_SEED = { brick: 7, limestone: 23, render: 41, modern: 59 };
+
+function facadeWindows(g, w, h, style, emissiveOnly) {
+  const cfg = WINDOW_STYLE[style] || WINDOW_STYLE.brick;
+  const plan = windowPlan(STYLE_SEED[style] + 4, cfg.count);
+  const r = rand(STYLE_SEED[style] + 9);
+  for (let i = 0; i < cfg.count; i += 1) {
+    const gap = (w - cfg.w * cfg.count) / (cfg.count + 1);
+    const x = gap + i * (cfg.w + gap);
+    const y = (h - cfg.h) / 2;
+    if (emissiveOnly) {
+      if (!plan[i]) continue;
+      g.fillStyle = WINDOW_LIT;
+      g.globalAlpha = 0.5 + r() * 0.4;
+      g.fillRect(x, y, cfg.w, cfg.h);
+      g.globalAlpha = 1;
+    } else {
+      drawWindow(g, x, y, cfg.w, cfg.h, plan[i], r, cfg.sill);
+    }
+  }
+}
+
+export function facadeAlbedo(canvasTex, style = "brick") {
+  return canvasTex(TILE_W, TILE_H, (g, w, h) => {
+    (SURFACE[style] || drawBrick)(g, w, h, STYLE_SEED[style] || 7);
+    facadeWindows(g, w, h, style, false);
   });
 }
 
-export function facadeEmissive(canvasTex) {
+export function facadeEmissive(canvasTex, style = "brick") {
   return canvasTex(TILE_W, TILE_H, (g, w, h) => {
     g.fillStyle = "#000";
     g.fillRect(0, 0, w, h);
-    const plan = windowPlan(11, WINDOWS_PER_TILE);
-    const r = rand(29);
-    const ww = 42;
-    const wh = 62;
-    for (let i = 0; i < WINDOWS_PER_TILE; i += 1) {
-      if (!plan[i]) continue;
-      const x = 22 + i * ((w - 44) / (WINDOWS_PER_TILE - 1)) - ww / 2;
-      g.fillStyle = WINDOW_LIT;
-      g.globalAlpha = 0.55 + r() * 0.4;
-      g.fillRect(x, (h - wh) / 2, ww, wh);
-      g.globalAlpha = 1;
-    }
+    facadeWindows(g, w, h, style, true);
   });
 }
+
+export const FACADE_STYLES = ["brick", "limestone", "render", "modern"];
 
 // ---------------------------------------------------------------- shopfronts
 
@@ -274,5 +361,82 @@ export function pavementAlbedo(canvasTex) {
     }
     g.fillStyle = "rgba(0,0,0,.25)";
     for (let i = 0; i < 1800; i += 1) g.fillRect(r() * w, r() * h, 2, 2);
+  });
+}
+
+/**
+ * Plinth stone: the coursed base a building sits on where the ground falls
+ * away. Deliberately plain and dark — it is below the eye and its job is to
+ * ground the building, not to compete with the shopfront above it.
+ */
+export function plinthAlbedo(canvasTex) {
+  return canvasTex(256, 128, (g, w, h) => {
+    const r = rand(211);
+    g.fillStyle = "#39362f";
+    g.fillRect(0, 0, w, h);
+    const bh = 21;
+    const bw = 58;
+    for (let y = 0; y < h; y += bh) {
+      const offset = ((y / bh) % 2) * (bw / 2);
+      for (let x = -bw; x < w + bw; x += bw) {
+        const v = 58 + r() * 20;
+        g.fillStyle = `rgb(${v},${v - 3},${v - 10})`;
+        g.fillRect(x + offset + 1, y + 1, bw - 2, bh - 2);
+      }
+    }
+    // Damp at the very bottom, where it meets the pavement.
+    const grad = g.createLinearGradient(0, h, 0, h * 0.55);
+    grad.addColorStop(0, "rgba(14,13,11,.55)");
+    grad.addColorStop(1, "rgba(14,13,11,0)");
+    g.fillStyle = grad;
+    g.fillRect(0, 0, w, h);
+  });
+}
+
+/**
+ * A residential ground floor: front door, one window, brick.
+ *
+ * Two thirds of the buildings in the city centre are houses and flats. Giving
+ * them the shopfront treatment is what makes a procedural city read as fake —
+ * every street becomes a retail parade. This is the other two thirds.
+ */
+export function residentialAlbedo(canvasTex) {
+  return canvasTex(TILE_W, TILE_H, (g, w, h) => {
+    const r = rand(131);
+    drawBrick(g, w, h, 5);
+
+    // Window to one side.
+    drawWindow(g, 26, 30, 54, 66, false, r, true);
+
+    // Panelled front door with a step and a fanlight over it.
+    const dx = w - 92;
+    const dw = 46;
+    const dtop = 20;
+    g.fillStyle = STONE;
+    g.fillRect(dx - 5, dtop - 6, dw + 10, 5);
+    g.fillStyle = "#241c14";
+    g.fillRect(dx, dtop, dw, h - dtop - 12);
+    g.fillStyle = "rgba(201,160,106,.20)";
+    g.fillRect(dx + 5, dtop + 3, dw - 10, 12);          // fanlight
+    g.strokeStyle = "rgba(12,10,8,.85)";
+    g.lineWidth = 2;
+    g.strokeRect(dx + 6, dtop + 22, dw - 12, 30);        // upper panel
+    g.strokeRect(dx + 6, dtop + 60, dw - 12, 28);        // lower panel
+    // Doorstep.
+    g.fillStyle = "#3f3a32";
+    g.fillRect(dx - 4, h - 12, dw + 8, 6);
+
+    g.fillStyle = "rgba(0,0,0,.45)";
+    g.fillRect(0, h - 5, w, 5);
+  });
+}
+
+export function residentialEmissive(canvasTex) {
+  return canvasTex(TILE_W, TILE_H, (g, w, h) => {
+    g.fillStyle = "#000";
+    g.fillRect(0, 0, w, h);
+    // Just the fanlight over the door: a hallway light left on.
+    g.fillStyle = "rgba(201,160,106,.42)";
+    g.fillRect(w - 87, 23, 36, 12);
   });
 }

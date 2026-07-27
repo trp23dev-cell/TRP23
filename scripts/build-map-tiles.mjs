@@ -26,6 +26,7 @@ import { fileURLToPath } from "node:url";
 import { createSqliteStore } from "../server/storage/sqliteStore.js";
 import { project, unproject, TILE_SIZE, ORIGIN, MAP_ATTRIBUTION } from "../src/world/geo.js";
 import { fetchTerrain, TERRAIN_ATTRIBUTION } from "./lib/terrainSource.mjs";
+import { classifyBuilding } from "./lib/classify.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -33,7 +34,10 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 // way up to the Castle and the Cathedral, because the climb is the city: the
 // High Street sits at ~6m and the Cathedral at ~65m, and a bbox that stops
 // short of Steep Hill throws away the thing that makes Lincoln Lincoln.
-const DEFAULT_BBOX = { w: -0.548, s: 53.224, e: -0.533, n: 53.238 };
+// Lincoln city centre plus the eastern approach out to HMP Lincoln on
+// Greetwell Road, which the story needs. That is 2.2km across, well past what
+// the OSM API will return in one request, so the fetch chunks itself.
+const DEFAULT_BBOX = { w: -0.548, s: 53.224, e: -0.514, n: 53.239 };
 
 // Spacing of the terrain grid handed to the client, in metres. The source is 1m
 // LIDAR; 5m is smooth underfoot and keeps a tile's heightmap to ~2600 samples.
@@ -68,12 +72,46 @@ function parseArgs(argv) {
 
 // ---------------------------------------------------------------- OSM reading
 
-async function fetchBbox({ w, s, e, n }) {
+async function fetchOne({ w, s, e, n }) {
   const url = `https://api.openstreetmap.org/api/0.6/map?bbox=${w},${s},${e},${n}`;
-  process.stdout.write(`fetching ${url}\n`);
   const res = await fetch(url, { headers: { "User-Agent": USER_AGENT, Accept: "*/*" } });
-  if (!res.ok) throw new Error(`OSM returned ${res.status} ${res.statusText}`);
+  if (!res.ok) throw new Error(`OSM returned ${res.status} ${res.statusText} for ${url}`);
   return res.text();
+}
+
+/**
+ * Fetch a bbox, splitting it if the area is large.
+ *
+ * The OSM map API refuses any request that would return more than 50,000 nodes,
+ * and the city centre alone is already 34,000. Anything wider — reaching out to
+ * the prison, or any of the open-world expansion after it — has to come back in
+ * pieces and be merged.
+ */
+async function fetchBbox(bbox, maxSpanDeg = 0.011) {
+  const cols = Math.max(1, Math.ceil((bbox.e - bbox.w) / maxSpanDeg));
+  const rows = Math.max(1, Math.ceil((bbox.n - bbox.s) / maxSpanDeg));
+  if (cols === 1 && rows === 1) {
+    process.stdout.write(`fetching OSM bbox ${bbox.w},${bbox.s},${bbox.e},${bbox.n}\n`);
+    return [await fetchOne(bbox)];
+  }
+
+  process.stdout.write(`fetching OSM in ${cols}x${rows} chunks (bbox too large for one request)\n`);
+  const chunks = [];
+  const dw = (bbox.e - bbox.w) / cols;
+  const dh = (bbox.n - bbox.s) / rows;
+  for (let j = 0; j < rows; j += 1) {
+    for (let i = 0; i < cols; i += 1) {
+      const sub = {
+        w: bbox.w + i * dw,
+        e: bbox.w + (i + 1) * dw,
+        s: bbox.s + j * dh,
+        n: bbox.s + (j + 1) * dh,
+      };
+      chunks.push(await fetchOne(sub));
+      process.stdout.write(`  chunk ${chunks.length}/${cols * rows}\n`);
+    }
+  }
+  return chunks;
 }
 
 const XML_ENTITIES = { quot: '"', apos: "'", lt: "<", gt: ">", amp: "&" };
@@ -374,11 +412,23 @@ function placeDoor(ring, roads, allRings) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const xml = args.file
-    ? await readFile(path.resolve(ROOT, args.file), "utf8")
+  const chunks = args.file
+    ? [await readFile(path.resolve(ROOT, args.file), "utf8")]
     : await fetchBbox(args.bbox);
 
-  const { nodes, ways } = parseOsmXml(xml);
+  // Chunks overlap at their edges, so ways are de-duplicated by OSM id.
+  const nodes = new Map();
+  const ways = [];
+  const seenWays = new Set();
+  for (const chunk of chunks) {
+    const part = parseOsmXml(chunk);
+    for (const [id, node] of part.nodes) if (!nodes.has(id)) nodes.set(id, node);
+    for (const w of part.ways) {
+      if (seenWays.has(w.id)) continue;
+      seenWays.add(w.id);
+      ways.push(w);
+    }
+  }
   process.stdout.write(`parsed ${nodes.size} nodes, ${ways.length} ways\n`);
 
   // ---- the ground ----
@@ -434,26 +484,47 @@ async function main() {
     const ring = simplify(pts, SIMPLIFY_TOLERANCE_M);
     if (ring.length < 3) continue;
 
-    // Found the building on the ground it actually stands on. On a slope the
-    // uphill wall would otherwise float and the downhill wall would sink, and
-    // on Steep Hill that is a several-metre error. Base goes to the LOWEST
-    // ground under the footprint, with a skirt, so the downhill side is buried
-    // rather than hanging in the air; roofs stay level, as real ones are.
+    // Found the building on the ground it actually stands on, which on a slope
+    // needs two numbers, not one:
+    //   base  — the LOWEST ground under the footprint, less a skirt. Nothing
+    //           may start above it or the downhill corner hangs in the air.
+    //   sill  — the HIGHEST ground under it. Street level, where the shopfront
+    //           starts, because anything lower is underground somewhere.
+    // The stonework between the two is a plinth, which is what buildings on a
+    // hill actually have.
     let base = 0;
+    let sill = 0;
     if (terrain) {
       let lowest = Infinity;
-      for (const p of ring) lowest = Math.min(lowest, groundAt(p.x, p.z));
-      // Big footprints can dip in the middle, not just at the corners.
+      let highest = -Infinity;
+      for (const p of ring) {
+        const g = groundAt(p.x, p.z);
+        if (g < lowest) lowest = g;
+        if (g > highest) highest = g;
+      }
+      // Big footprints can dip or rise in the middle, not just at the corners.
       const c = centroidOf(ring);
-      lowest = Math.min(lowest, groundAt(c.x, c.z));
+      const cg = groundAt(c.x, c.z);
+      lowest = Math.min(lowest, cg);
+      highest = Math.max(highest, cg);
       base = lowest - 0.6;
+      sill = highest;
     }
+
+    const area = Math.abs(ringArea(ring));
+    const spec = classifyBuilding(`way/${w.id}`, w.tags, sill, area);
 
     buildings.push({
       id: `way/${w.id}`,
       ring,
       base,
-      height: heightFor(w.id, w.tags),
+      sill,
+      height: spec.height,
+      style: spec.style,
+      ground: spec.ground,
+      roofShape: spec.roof,
+      tint: spec.tint,
+      landmark: spec.landmark,
       name: w.tags.name || null,
       tags: w.tags,
     });
@@ -557,7 +628,12 @@ async function main() {
       i: b.id,
       p: flat,
       y: round(b.base),
+      s: round(b.sill),
       h: round(b.height),
+      st: b.style,
+      g: b.ground,
+      rs: b.roofShape,
+      c: b.tint.map((v) => Math.round(v * 255)),
       ...(b.name ? { n: b.name } : {}),
     });
   }

@@ -119,10 +119,18 @@ export function createCollisionIndex() {
       const cx = Math.floor(x / CELL);
       const cz = Math.floor(z / CELL);
       const out = [];
+      // A building wider than a cell is registered in several of them, so the
+      // same one comes back once per cell without this.
+      const seen = new Set();
       for (let dz = -1; dz <= 1; dz += 1) {
         for (let dx = -1; dx <= 1; dx += 1) {
           const list = this.cells.get(`${cx + dx},${cz + dz}`);
-          if (list) out.push(...list);
+          if (!list) continue;
+          for (const b of list) {
+            if (seen.has(b)) continue;
+            seen.add(b);
+            out.push(b);
+          }
         }
       }
       return out;
@@ -522,10 +530,21 @@ export function nearestPlace(position, places) {
   return best ? { place: best, dist: bd } : null;
 }
 
-/** Player-centred, north-up street map. */
-export function drawMinimap(ctx, canvas, camera, index, places, near, THREE, dirVec, waypoint) {
+// Minimap zoom levels, in pixels per metre. Index into this with
+// minimapZoomIn/Out so the HUD and the renderer never disagree.
+export const MINIMAP_ZOOMS = [0.35, 0.6, 1.15, 2.2, 4.0];
+export const MINIMAP_DEFAULT_ZOOM = 2;
+
+/**
+ * Player-centred, north-up street map.
+ *
+ * @param {number} zoomIndex  index into MINIMAP_ZOOMS
+ * @param {object} waypoint   {x,z,name} or null
+ */
+export function drawMinimap(ctx, canvas, camera, index, places, near, THREE, dirVec, waypoint, zoomIndex = MINIMAP_DEFAULT_ZOOM) {
   const W = canvas.width, H = canvas.height;
-  const cx = W / 2, cy = H / 2, ppm = 1.15;
+  const cx = W / 2, cy = H / 2;
+  const ppm = MINIMAP_ZOOMS[Math.max(0, Math.min(MINIMAP_ZOOMS.length - 1, zoomIndex))];
   const px = camera.position.x, pz = camera.position.z;
   ctx.clearRect(0, 0, W, H);
 
@@ -577,6 +596,24 @@ export function drawMinimap(ctx, canvas, camera, index, places, near, THREE, dir
     const wz = (waypoint.z - pz) * ppm;
     const rim = Math.min(W, H) / 2 - 9;
     const dist = Math.hypot(wx, wz);
+
+    // The guide line: a dashed run from the player straight to the marker, so
+    // the direction to walk is readable at a glance without reading the arrow.
+    const reach = Math.min(dist, rim);
+    if (reach > 6) {
+      const ux = wx / (dist || 1);
+      const uz = wz / (dist || 1);
+      ctx.save();
+      ctx.setLineDash([5, 4]);
+      ctx.strokeStyle = "rgba(244,236,221,.55)";
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(cx + ux * 7, cy + uz * 7);
+      ctx.lineTo(cx + ux * reach, cy + uz * reach);
+      ctx.stroke();
+      ctx.restore();
+    }
+
     ctx.fillStyle = "#f4ecdd";
     if (dist <= rim) {
       const sx = cx + wx, sy = cy + wz;
@@ -602,9 +639,18 @@ export function drawMinimap(ctx, canvas, camera, index, places, near, THREE, dir
   ctx.beginPath(); ctx.moveTo(0, -6); ctx.lineTo(4.5, 5); ctx.lineTo(-4.5, 5); ctx.closePath(); ctx.fill();
   ctx.restore();
 
+  // Scale readout, so the zoom level means something.
+  const radiusM = Math.round((Math.min(W, H) / 2) / ppm);
+  ctx.fillStyle = "rgba(244,236,221,.5)";
+  ctx.font = "8px system-ui, sans-serif";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  ctx.fillText(`${radiusM}m`, 4, 4);
+
   // ODbL requires attribution wherever the data is shown.
   ctx.fillStyle = "rgba(244,236,221,.35)";
   ctx.font = "7px system-ui, sans-serif";
   ctx.textAlign = "right";
+  ctx.textBaseline = "alphabetic";
   ctx.fillText(MAP_ATTRIBUTION, W - 3, H - 3);
 }

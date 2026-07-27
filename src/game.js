@@ -16,6 +16,8 @@ import {
   resolveWorldCollisions,
   nearestPlace,
   drawMinimap,
+  MINIMAP_ZOOMS,
+  MINIMAP_DEFAULT_ZOOM,
   worldMood,
   ENTER_DISTANCE,
 } from "./world/freeRoamWorld";
@@ -1538,6 +1540,8 @@ let worldColliders=null, worldPlaces=[], nearPlace=null, worldStream=null;
 let waypoint=null, waypointBeacon=null, bigMap=null;
 // Ground-height lookup for the current world. Null indoors.
 let worldGroundAt=null;
+// Minimap zoom level, persisted across chapters so it stays where you left it.
+let minimapZoom=MINIMAP_DEFAULT_ZOOM;
 const _miniDir=new THREE.Vector3();
 
 // `exitFromIndex` puts the player outside the door of the chapter they just left
@@ -1682,7 +1686,7 @@ function updateWorldHud(){
     }
   }
   const cv=$('#minimap');
-  if(cv) drawMinimap(cv.getContext('2d'),cv,camera,worldColliders,worldPlaces,near,THREE,_miniDir,waypoint);
+  if(cv) drawMinimap(cv.getContext('2d'),cv,camera,worldColliders,worldPlaces,near,THREE,_miniDir,waypoint,minimapZoom);
   updateWaypointHud();
 }
 
@@ -1760,6 +1764,14 @@ function toggleMapPanel(){
   else openMapPanel();
 }
 
+function zoomMinimap(delta){
+  minimapZoom=Math.max(0,Math.min(MINIMAP_ZOOMS.length-1,minimapZoom+delta));
+  updateWorldHud();
+}
+$('#mmIn')?.addEventListener('click',()=>zoomMinimap(1));
+$('#mmOut')?.addEventListener('click',()=>zoomMinimap(-1));
+// Scroll over the dial zooms it, as it would in any other game.
+$('#minimapWrap')?.addEventListener('wheel',e=>{ e.preventDefault(); zoomMinimap(e.deltaY<0?1:-1); },{passive:false});
 $('#openMapBtn')?.addEventListener('click',toggleMapPanel);
 $('#wpClear')?.addEventListener('click',()=>setWaypoint(null));
 addEventListener('resize',()=>{
@@ -1800,6 +1812,8 @@ addEventListener('keydown',e=>{
   // M opens and closes the big map. Works while the panel has focus too, which
   // is why it is not gated on controls.enabled.
   if(e.code==='KeyM'&&mode==='world'){ e.preventDefault(); toggleMapPanel(); }
+  if(mode==='world'&&(e.code==='Equal'||e.code==='NumpadAdd')){ e.preventDefault(); zoomMinimap(1); }
+  if(mode==='world'&&(e.code==='Minus'||e.code==='NumpadSubtract')){ e.preventDefault(); zoomMinimap(-1); }
   if(e.code==='Space'){ if(controls.enabled) e.preventDefault(); tryJump(); }
 });
 addEventListener('keyup',e=>keys[e.code]=false);

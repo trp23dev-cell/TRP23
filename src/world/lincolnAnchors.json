@@ -35,6 +35,16 @@
       "lon": -0.540817,
       "sub": "Closed for now.",
       "address": "25 Corporation Street, Lincoln LN2 1HL"
+    },
+    {
+      "key": "prison",
+      "kind": "placeholder",
+      "name": "LINCOLN PRISON",
+      "osm": "way/259448186",
+      "lat": 53.235517,
+      "lon": -0.518120,
+      "sub": "Nobody walks in here by choice.",
+      "address": "Greetwell Road, Lincoln LN2 4BD"
     }
   ]
 }

@@ -17,11 +17,11 @@
 // ============================================================================
 
 import { TILE_SIZE, tileKey } from "./geo.js";
-import { extrudeBuilding, emptyBuffers } from "./buildingMesh.js";
+import { extrudeBuilding, emptyBuffers, STYLES } from "./buildingMesh.js";
 import { createTerrainIndex, buildTerrainMesh } from "./terrain.js";
 import {
   facadeAlbedo, facadeEmissive, shopfrontAlbedo, shopfrontEmissive, roofAlbedo, roadAlbedo,
-  pavementAlbedo,
+  pavementAlbedo, plinthAlbedo, residentialAlbedo, residentialEmissive,
 } from "./cityTextures.js";
 
 /** Stable 0..1 hash of an OSM id, for per-building variation that never flickers. */
@@ -115,28 +115,25 @@ export function createMapStream({
   };
 
   const textures = {
-    facade: repeating(facadeAlbedo(canvasTex)),
-    facadeLit: repeating(facadeEmissive(canvasTex)),
     shop: repeating(shopfrontAlbedo(canvasTex)),
     shopLit: repeating(shopfrontEmissive(canvasTex)),
     roof: repeating(roofAlbedo(canvasTex)),
     road: repeating(roadAlbedo(canvasTex)),
     pavement: repeating(pavementAlbedo(canvasTex)),
+    plinth: repeating(plinthAlbedo(canvasTex)),
+    home: repeating(residentialAlbedo(canvasTex)),
+    homeLit: repeating(residentialEmissive(canvasTex)),
   };
+  for (const s of STYLES) {
+    textures[`facade_${s}`] = repeating(facadeAlbedo(canvasTex, s));
+    textures[`facadeLit_${s}`] = repeating(facadeEmissive(canvasTex, s));
+  }
   textures.roof.repeat.set(1, 1);
   textures.road.repeat.set(0.35, 0.35);
 
   // emissiveIntensity is driven by the mood, so windows and shopfronts burn at
   // dusk and fade back as the sky comes up to meet them.
   const materials = {
-    wall: new THREE.MeshStandardMaterial({
-      map: textures.facade,
-      emissiveMap: textures.facadeLit,
-      emissive: 0xffd2a1, // warm bulb light, never white
-      emissiveIntensity: nightLift,
-      roughness: 0.92,
-      vertexColors: true,
-    }),
     ground: new THREE.MeshStandardMaterial({
       map: textures.shop,
       emissiveMap: textures.shopLit,
@@ -145,16 +142,42 @@ export function createMapStream({
       roughness: 0.85,
       vertexColors: true,
     }),
+    residential: new THREE.MeshStandardMaterial({
+      map: textures.home,
+      emissiveMap: textures.homeLit,
+      emissive: 0xffd2a1,
+      emissiveIntensity: nightLift,
+      roughness: 0.92,
+      vertexColors: true,
+    }),
     roof: new THREE.MeshStandardMaterial({
       map: textures.roof,
       roughness: 0.95,
       vertexColors: true,
     }),
     road: new THREE.MeshStandardMaterial({ map: textures.road, roughness: 0.96 }),
+    // The stonework between the lowest ground and street level on sloping
+    // sites. Always stone, whatever the building above it is made of — that is
+    // how it is done, and it ties a mixed terrace together on a hill.
+    plinth: new THREE.MeshStandardMaterial({
+      map: textures.plinth, roughness: 0.95, vertexColors: true,
+    }),
     // `ground` above is the shopfront band at street level; this is the actual
     // earth under the city.
     terrain: new THREE.MeshStandardMaterial({ map: textures.pavement, roughness: 0.97 }),
   };
+  // One material per architectural style for the upper walls.
+  const wallMaterials = {};
+  for (const s of STYLES) {
+    wallMaterials[s] = new THREE.MeshStandardMaterial({
+      map: textures[`facade_${s}`],
+      emissiveMap: textures[`facadeLit_${s}`],
+      emissive: 0xffd2a1, // warm bulb light, never white
+      emissiveIntensity: nightLift,
+      roughness: s === "limestone" ? 0.95 : 0.92,
+      vertexColors: true,
+    });
+  }
 
   const terrain = createTerrainIndex();
 
@@ -209,20 +232,30 @@ export function createMapStream({
 
     const buffers = emptyBuffers();
     for (const b of payload.b || []) {
-      // A stable per-building tint off the OSM id, so a terrace reads as
-      // separate properties rather than one extruded slab.
-      const tint = 0.82 + hashUnit(b.i) * 0.30;
-      // `y` is the founded base from the tiler: the lowest ground under the
-      // footprint, with a skirt. Extruding from zero instead leaves buildings
-      // on the hill buried or hanging in mid-air.
-      extrudeBuilding(b.p, b.h, tint, buffers, b.y || 0);
+      // The building's own colour, from OSM where it is tagged and from its
+      // material and period where it is not.
+      const tint = b.c
+        ? [b.c[0] / 255, b.c[1] / 255, b.c[2] / 255]
+        : [0.9, 0.86, 0.8];
+      // `y` is the lowest ground under the footprint less a skirt, `s` is street
+      // level (the highest ground under it). Extruding from zero instead leaves
+      // buildings on the hill buried or hanging in mid-air.
+      extrudeBuilding(b.p, b.h, tint, buffers, {
+        base: b.y || 0,
+        sill: b.s ?? null,
+        style: b.st || "brick",
+        ground: b.g || "shopfront",
+        roof: b.rs || "gabled",
+      });
     }
     const buildings = tileBuildings(payload);
 
     const meshes = [
-      meshFrom(buffers.ground, materials.ground),
-      meshFrom(buffers.wall, materials.wall),
+      meshFrom(buffers.plinth, materials.plinth),
+      meshFrom(buffers.shopfront, materials.ground),
+      meshFrom(buffers.residential, materials.residential),
       meshFrom(buffers.roof, materials.roof),
+      ...STYLES.map((s) => meshFrom(buffers.wall[s], wallMaterials[s])),
     ].filter(Boolean);
 
     // Roads as flat ribbons laid just above the ground plane. Ends are mitred
@@ -379,6 +412,7 @@ export function createMapStream({
   function dispose() {
     for (const key of [...resident.keys()]) unloadTile(key);
     for (const m of Object.values(materials)) m.dispose();
+    for (const m of Object.values(wallMaterials)) m.dispose();
     for (const t of Object.values(textures)) t.dispose();
     payloadCache.clear();
   }

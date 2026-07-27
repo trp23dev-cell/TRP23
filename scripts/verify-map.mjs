@@ -33,7 +33,11 @@ function check(name, ok, detail = "") {
   if (!ok) failures += 1;
 }
 
-function insideAny(x, z, buildings) {
+// `where` is either an array of buildings or the spatial index. Scanning all
+// 3000+ buildings inside the movement loops below is minutes of work; the index
+// turns it into a handful of candidates.
+function insideAny(x, z, where) {
+  const buildings = Array.isArray(where) ? where : where.near(x, z);
   for (const b of buildings) {
     if (x < b.minX || x > b.maxX || z < b.minZ || z > b.maxZ) continue;
     let inside = false;
@@ -77,16 +81,16 @@ const main = async () => {
 
   // --- anchors ---
   process.stdout.write("\nstory locations:\n");
-  const wanted = ["JD", "TRAP CENTRAL BANK", "KIMANI THE BARBER"];
+  const wanted = ["JD", "TRAP CENTRAL BANK", "KIMANI THE BARBER", "LINCOLN PRISON"];
   for (const name of wanted) {
     const a = manifest.anchors.find((x) => x.name === name);
     check(`${name} present`, !!a);
     if (!a) continue;
 
-    const stuck = insideAny(a.x, a.z, buildings);
+    const stuck = insideAny(a.x, a.z, index);
     check(`${name}: standing spot is outdoors`, !stuck, stuck ? `inside ${stuck.id}` : "");
 
-    const exitStuck = insideAny(a.exit.x, a.exit.z, buildings);
+    const exitStuck = insideAny(a.exit.x, a.exit.z, index);
     check(`${name}: exit spot is outdoors`, !exitStuck, exitStuck ? `inside ${exitStuck.id}` : "");
 
     // The exit must be far enough out that stepping through does not instantly
@@ -118,6 +122,7 @@ const main = async () => {
   // spawn and every door exit are checked to be outdoors above.
   let breached = 0;
   let approaches = 0;
+  let breach = null;
   const STEP = 0.35; // a sprint step, larger than a walk
   for (const b of buildings.filter((_, i) => i % 7 === 0)) {
     const cx = (b.minX + b.maxX) / 2;
@@ -125,19 +130,25 @@ const main = async () => {
     for (let dir = 0; dir < 8; dir += 1) {
       const ang = (dir / 8) * Math.PI * 2;
       const start = { x: cx + Math.cos(ang) * 60, z: cz + Math.sin(ang) * 60 };
-      if (insideAny(start.x, start.z, buildings)) continue;
+      if (insideAny(start.x, start.z, index)) continue;
+      // Start from a position the game could actually leave the player in. A
+      // raw 60m offset can land within a few centimetres of a wall — closer
+      // than PLAYER_RADIUS — which the resolver would never allow in play, and
+      // starting there tests a state that cannot occur.
+      resolveWorldCollisions(start, index);
+      if (insideAny(start.x, start.z, index)) continue;
       approaches += 1;
       const p = { ...start };
       for (let s = 0; s < 180; s += 1) {
         p.x -= Math.cos(ang) * STEP;
         p.z -= Math.sin(ang) * STEP;
         resolveWorldCollisions(p, index);
-        if (insideAny(p.x, p.z, buildings)) { breached += 1; break; }
+        if (insideAny(p.x, p.z, index)) { breached += 1; breach = { x: p.x, z: p.z, from: start, ang }; break; }
       }
     }
   }
   check("walking at a building never gets you inside one", breached === 0,
-    `${breached}/${approaches} approaches breached`);
+    `${breached}/${approaches} approaches breached` + (breach ? ` (e.g. ${breach.x.toFixed(1)},${breach.z.toFixed(1)})` : ""));
 
   // And a bad state must degrade gracefully rather than fling the player across
   // the city — the correction is bounded per call.
@@ -145,7 +156,7 @@ const main = async () => {
   for (const b of buildings.filter((_, i) => i % 17 === 0)) {
     const cx = (b.minX + b.maxX) / 2;
     const cz = (b.minZ + b.maxZ) / 2;
-    if (!insideAny(cx, cz, buildings)) continue;
+    if (!insideAny(cx, cz, index)) continue;
     const p = { x: cx, z: cz };
     resolveWorldCollisions(p, index);
     worst = Math.max(worst, Math.hypot(p.x - cx, p.z - cz));
@@ -165,7 +176,7 @@ const main = async () => {
   for (let t = 0; t <= 40; t += 1) {
     const x = kimani.exit.x + (t - 20) * 0.5;
     const z = kimani.exit.z;
-    if (insideAny(x, z, buildings)) continue;
+    if (insideAny(x, z, index)) continue;
     steps += 1;
     const p = { x, z };
     resolveWorldCollisions(p, index);
@@ -177,7 +188,7 @@ const main = async () => {
   // --- spawn ---
   process.stdout.write("\nspawn:\n");
   const [sx, sz] = manifest.spawn;
-  const spawnStuck = insideAny(sx, sz, buildings);
+  const spawnStuck = insideAny(sx, sz, index);
   check("spawn is outdoors", !spawnStuck, spawnStuck ? `inside ${spawnStuck.id}` : "");
   const sp = { x: sx, z: sz };
   resolveWorldCollisions(sp, index);
@@ -301,8 +312,9 @@ const main = async () => {
 
     // Every wall of every building must actually be emitted.
     const buf = emptyBuffers();
-    extrudeBuilding(b.ring, b.height, 1, buf);
-    const quads = (buf.ground.positions.length + buf.wall.positions.length) / 12;
+    extrudeBuilding(b.ring, b.height, [1,1,1], buf);
+    const quads = (buf.shopfront.positions.length + buf.residential.positions.length +
+      Object.values(buf.wall).reduce((n, w) => n + w.positions.length, 0)) / 12;
     const expected = countUsableEdges(b.ring) * (b.height > STOREY ? 2 : 1);
     if (quads !== expected) missingWalls += 1;
   }
@@ -316,9 +328,9 @@ const main = async () => {
   let normalsTested = 0;
   for (const b of buildings.filter((_, i) => i % 5 === 0)) {
     const buf = emptyBuffers();
-    extrudeBuilding(b.ring, b.height, 1, buf);
-    const P = buf.ground.positions;
-    const N = buf.ground.normals;
+    extrudeBuilding(b.ring, b.height, [1,1,1], buf);
+    const P = buf.shopfront.positions.length ? buf.shopfront.positions : buf.residential.positions;
+    const N = buf.shopfront.positions.length ? buf.shopfront.normals : buf.residential.normals;
     for (let q = 0; q < P.length; q += 12) {
       const mx = (P[q] + P[q + 3]) / 2;
       const mz = (P[q + 2] + P[q + 5]) / 2;
@@ -341,8 +353,8 @@ const main = async () => {
   let facesTested = 0;
   for (const b of buildings.filter((_, i) => i % 5 === 0)) {
     const buf = emptyBuffers();
-    extrudeBuilding(b.ring, b.height, 1, buf);
-    for (const part of [buf.ground, buf.wall, buf.roof]) {
+    extrudeBuilding(b.ring, b.height, [1,1,1], buf);
+    for (const part of [buf.shopfront, buf.residential, buf.plinth, ...Object.values(buf.wall), buf.roof]) {
       const { positions: P, normals: N, indices: I } = part;
       for (let t = 0; t < I.length; t += 3) {
         const [i0, i1, i2] = [I[t] * 3, I[t + 1] * 3, I[t + 2] * 3];
@@ -388,7 +400,7 @@ const main = async () => {
   });
   check("city textures all render without throwing", texturesDrawn >= 7, `${texturesDrawn} drawn`);
 
-  check("world exposes the three story places", built.places.length === 3,
+  check("world exposes every story place", built.places.length === manifest.anchors.length,
     built.places.map((p) => `${p.name}[${p.kind}]`).join(", "));
   check("JD is the chapter door", built.places.some((p) => p.kind === "chapter" && p.index === 0));
   check("bank is the bank door", built.places.some((p) => p.kind === "bank"));
@@ -406,7 +418,10 @@ const main = async () => {
   // buildings it holds. Counting against a fixed total just fails as the city
   // grows.
   const perTile = meshes.length / Math.max(1, built.stream.residentCount);
-  check("geometry is merged, not per-building", perTile <= 6,
+  // Higher than it was: upper walls are split by architectural style so
+  // limestone and brick can carry different surfaces, which costs a few draw
+  // calls per tile and is worth it.
+  check("geometry is merged, not per-building", perTile <= 11,
     `${perTile.toFixed(1)} meshes/tile for ${built.colliders.buildings.length} buildings`);
 
   const bad = meshes.find((m) => m.geometry && m.geometry.__maxIndex >= m.geometry.__count);

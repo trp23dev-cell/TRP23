@@ -100,7 +100,13 @@ You're viewing this in an email preview, which can't run the game.<br>
 
   <!-- THE BLOCK: radar, compass and the [E] prompt. Shown only outdoors. -->
   <div id="worldUi">
-    <canvas id="minimap" width="190" height="190"></canvas>
+    <div id="minimapWrap">
+      <canvas id="minimap" width="190" height="190"></canvas>
+      <div class="mm-zoom">
+        <button id="mmIn" title="Zoom in (+)">+</button>
+        <button id="mmOut" title="Zoom out (-)">&minus;</button>
+      </div>
+    </div>
     <div id="compass"><span id="nearName">—</span><span id="nearDist"></span></div>
     <div id="waypointBar"><span id="wpName">—</span><span id="wpDist"></span><button id="wpClear" title="Clear waypoint">✕</button></div>
     <button id="openMapBtn" class="hud-act" title="Map (M)">MAP</button>
@@ -118,7 +124,7 @@ You're viewing this in an email preview, which can't run the game.<br>
     </div>
   </div>
   <div class="controls-hint" id="desktopControlsHint">
-    <b>W A S D</b> - move<br><b>Shift</b> - sprint<br><b>Space</b> - jump<br><b>M</b> - map<br><b>Click</b> - activate mouse look<br><b>Esc</b> - release cursor
+    <b>W A S D</b> - move<br><b>Shift</b> - sprint<br><b>Space</b> - jump<br><b>M</b> - map<br><b>+ / -</b> - minimap zoom<br><b>Click</b> - activate mouse look<br><b>Esc</b> - release cursor
   </div>
   <div class="display-settings" id="displaySettings">
     <button id="displayCog" class="display-cog" aria-label="Display settings" title="Display settings">⚙</button>
