@@ -1,0 +1,95 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" editor-extension-mode="False">
+    <Style src="project://database/Assets/UI/Styles/TrapTokens.uss" />
+    <Style src="project://database/Assets/UI/Styles/TrapComponents.uss" />
+    <Style src="project://database/Assets/UI/Styles/TrapLanding.uss" />
+
+    <ui:VisualElement class="trap-root">
+        <ui:VisualElement class="landing-bg" picking-mode="Ignore" />
+        <ui:VisualElement class="landing-shade" picking-mode="Ignore" />
+
+        <ui:VisualElement class="landing-stage">
+
+            <!-- HOME -->
+            <ui:VisualElement name="screen-home" class="landing-screen">
+                <ui:Label text="CHAPTER 1" class="t-eyebrow" />
+                <ui:VisualElement class="home-logo" />
+                <ui:Label text="Build your empire. Hustle. Upgrade. Take over." class="home-tag" />
+                <ui:Button name="home-enter" text="ENTER" class="btn-gold btn-gold-lg" />
+            </ui:VisualElement>
+
+            <!-- AUTH -->
+            <ui:VisualElement name="screen-auth" class="landing-screen landing-panel" style="display: none;">
+                <ui:Label text="CLAIM YOUR NAME" class="t-headline" />
+                <ui:Label text="Create your account to start the come-up. Your coins, closet and progress are saved to it." class="t-tag" />
+
+                <ui:VisualElement class="tabs landing-tabs">
+                    <ui:Button name="tab-signup" text="SIGN UP" class="tab active" />
+                    <ui:Button name="tab-login" text="LOG IN" class="tab" />
+                </ui:VisualElement>
+
+                <!-- Sign up -->
+                <ui:VisualElement name="form-signup" class="landing-form">
+                    <ui:VisualElement class="field">
+                        <ui:Label text="USERNAME" class="field-label" />
+                        <ui:TextField name="su-username" class="trap-input" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="field">
+                        <ui:Label text="EMAIL" class="field-label" />
+                        <ui:TextField name="su-email" class="trap-input" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="field">
+                        <ui:Label text="PHONE" class="field-label" />
+                        <ui:TextField name="su-phone" class="trap-input" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="field">
+                        <ui:Label text="PASSWORD" class="field-label" />
+                        <ui:TextField name="su-password" password="true" class="trap-input" />
+                    </ui:VisualElement>
+                    <ui:Toggle name="su-2fa" label="Enable two-factor authentication (recommended)" class="check" />
+                    <ui:Button name="su-submit" text="CREATE ACCOUNT &amp; PLAY" class="btn-gold" />
+                </ui:VisualElement>
+
+                <!-- Log in -->
+                <ui:VisualElement name="form-login" class="landing-form" style="display: none;">
+                    <ui:VisualElement class="field">
+                        <ui:Label text="USERNAME OR EMAIL" class="field-label" />
+                        <ui:TextField name="li-identifier" class="trap-input" />
+                    </ui:VisualElement>
+                    <ui:VisualElement class="field">
+                        <ui:Label text="PASSWORD" class="field-label" />
+                        <ui:TextField name="li-password" password="true" class="trap-input" />
+                    </ui:VisualElement>
+                    <ui:VisualElement name="li-code-row" class="field" style="display: none;">
+                        <ui:Label text="2FA CODE" class="field-label" />
+                        <ui:TextField name="li-code" class="trap-input" />
+                    </ui:VisualElement>
+                    <ui:Button name="li-submit" text="LOG IN &amp; PLAY" class="btn-gold" />
+                </ui:VisualElement>
+
+                <ui:Label name="auth-msg" text="" class="msg" />
+                <ui:Button name="guest-btn" text="Just testing? Continue as guest — no saves" class="link guest-link" />
+                <ui:Button name="auth-back" text="← Back" class="link" />
+            </ui:VisualElement>
+
+            <!-- 2FA -->
+            <ui:VisualElement name="screen-2fa" class="landing-screen landing-panel" style="display: none;">
+                <ui:Label text="SECURE YOUR ACCOUNT" class="t-headline" />
+                <ui:Label text="Add this key to an authenticator app (Google Authenticator, Authy…), then enter the 6-digit code." class="t-tag" />
+                <ui:Label name="twofa-secret" text="" class="twofa-secret" />
+                <ui:VisualElement class="twofa-row">
+                    <ui:TextField name="twofa-code" class="trap-input" />
+                    <ui:Button name="twofa-confirm" text="CONFIRM" class="btn-outline" />
+                </ui:VisualElement>
+                <ui:Label name="twofa-msg" text="" class="msg" />
+                <ui:Button name="twofa-skip" text="Skip for now" class="link" />
+            </ui:VisualElement>
+
+            <!-- LOADING / READY overlay (shown just before the game scene loads) -->
+            <ui:VisualElement name="loading-overlay" class="overlay hidden">
+                <ui:Label text="LOADING" class="t-headline" />
+                <ui:Label name="loading-sub" text="Entering the trap…" class="t-tag" />
+            </ui:VisualElement>
+
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>

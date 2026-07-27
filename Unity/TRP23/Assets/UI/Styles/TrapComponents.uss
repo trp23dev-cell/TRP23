@@ -1,0 +1,109 @@
+/* TRAP MADE IT — shared components (buttons, inputs, tabs, panels) */
+
+/* Primary gold action button (web .big-enter / .auth-submit / .buy-btn) */
+.btn-gold {
+    background-color: var(--gold);
+    color: #171208;
+    -unity-font-style: bold;
+    font-size: 16px;
+    letter-spacing: 6px;
+    padding: 14px 22px;
+    border-width: 0;
+    border-radius: 0;
+    -unity-text-align: middle-center;
+}
+.btn-gold:hover { background-color: #d6ad74; }
+.btn-gold:disabled { opacity: 0.5; }
+
+.btn-gold-lg {
+    font-size: 20px;
+    letter-spacing: 9px;
+    padding: 15px 64px;
+}
+
+/* Outline mini button (web .mini-btn / .xbtn) */
+.btn-outline {
+    background-color: rgba(0, 0, 0, 0);
+    color: var(--gold);
+    border-color: var(--gold-dim);
+    border-width: 1px;
+    padding: 9px 18px;
+    font-size: 14px;
+    letter-spacing: 4px;
+    -unity-text-align: middle-center;
+}
+.btn-outline:hover { border-color: var(--gold); background-color: rgba(201, 160, 106, 0.08); }
+.btn-danger { border-color: #8a4b4b; color: #d29a9a; }
+
+/* Text link (web .linklike) */
+.link {
+    background-color: rgba(0, 0, 0, 0);
+    border-width: 0;
+    color: var(--bone-dim);
+    font-size: 12px;
+    letter-spacing: 2px;
+    margin-top: 12px;
+    -unity-text-align: middle-center;
+}
+.link:hover { color: var(--gold); }
+
+/* Tabs (web .auth-tab) */
+.tabs { flex-direction: row; justify-content: center; border-bottom-width: 1px; border-bottom-color: var(--line); }
+.tab {
+    background-color: rgba(0, 0, 0, 0);
+    border-width: 0;
+    border-bottom-width: 2px;
+    border-bottom-color: rgba(0, 0, 0, 0);
+    color: var(--bone-dim);
+    font-size: 16px;
+    letter-spacing: 4px;
+    padding: 8px 14px;
+}
+.tab.active { color: var(--gold); border-bottom-color: var(--gold); }
+
+/* Form fields (web .auth-form) */
+.field { margin-bottom: 12px; }
+.field-label {
+    font-size: 11px;
+    letter-spacing: 4px;
+    color: var(--bone-dim);
+    margin-bottom: 6px;
+}
+.field .unity-text-field__input,
+.trap-input .unity-text-field__input {
+    background-color: rgba(10, 9, 8, 0.6);
+    border-color: var(--line);
+    border-width: 1px;
+    color: var(--bone);
+    padding: 11px 12px;
+    font-size: 15px;
+}
+.field .unity-text-field__input:focus { border-color: var(--gold); }
+.check { flex-direction: row; }
+.check .unity-toggle__label { color: var(--bone-dim); font-size: 12px; }
+
+/* Panel (web .panel) */
+.panel {
+    background-color: var(--panel);
+    border-color: var(--line);
+    border-width: 1px;
+    padding: 22px 26px;
+}
+.panel-head { flex-direction: row; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+.panel-num { font-size: 11px; letter-spacing: 4px; color: var(--gold); }
+.panel-name { font-size: 24px; color: var(--bone); }
+
+/* Status message (web .auth-msg) */
+.msg { min-height: 16px; font-size: 12px; color: var(--bone-dim); -unity-text-align: middle-center; margin-top: 6px; }
+.msg.ok { color: var(--gold); }
+.msg.err { color: #c98a8a; }
+
+/* Fullscreen overlay (modals / loading) */
+.overlay {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-color: rgba(5, 4, 3, 0.82);
+    align-items: center;
+    justify-content: center;
+}
+.hidden { display: none; }

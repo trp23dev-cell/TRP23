@@ -1,0 +1,43 @@
+/* TRAP MADE IT — design tokens (mirrors src/styles.css :root) */
+:root {
+    --ink: #0a0908;
+    --panel: #14110d;
+    --panel2: #1b1712;
+    --gold: #c9a06a;
+    --gold-dim: #8a6f47;
+    --bone: #e8e0d0;
+    --bone-dim: #9a917f;
+    --blood: #8a2323;
+    --line: rgba(201, 160, 106, 0.22);
+}
+
+/* Root surface for every TRAP UI document */
+.trap-root {
+    flex-grow: 1;
+    background-color: var(--ink);
+    color: var(--bone);
+}
+
+/* Type scale helpers (fonts are a drop-in upgrade via UI/Fonts — see README) */
+.t-eyebrow {
+    font-size: 12px;
+    letter-spacing: 7px;
+    color: #b9ad97;
+    -unity-text-align: middle-center;
+}
+.t-headline {
+    font-size: 26px;
+    letter-spacing: 10px;
+    color: var(--bone);
+    -unity-font-style: bold;
+    -unity-text-align: middle-center;
+}
+.t-tag {
+    font-size: 13px;
+    letter-spacing: 4px;
+    color: var(--bone-dim);
+    -unity-text-align: middle-center;
+    white-space: normal;
+}
+.gold { color: var(--gold); }
+.bone-dim { color: var(--bone-dim); }

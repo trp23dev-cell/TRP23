@@ -1,0 +1,7 @@
+/* TRAP MADE IT runtime theme — assigned to TrapPanelSettings.
+   Imports Unity's default control theme, then the TRAP style system. */
+@import url("unity-theme://default");
+@import url("project://database/Assets/UI/Styles/TrapTokens.uss");
+@import url("project://database/Assets/UI/Styles/TrapComponents.uss");
+@import url("project://database/Assets/UI/Styles/TrapLanding.uss");
+@import url("project://database/Assets/UI/Styles/TrapHud.uss");
