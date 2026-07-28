@@ -464,6 +464,45 @@ const main = async () => {
   check("pedestrian areas are filled, not traced", areaCount.total >= 100,
     `${areaCount.total} paved areas, ${ribbons} ribbons`);
 
+  // A filled area must FOLLOW the ground, not cover it. Lincoln's
+  // pedestrianised streets are the ones on the hill: the worst drops 14m over
+  // 175m with only 75 outline vertices, and filled straight from that outline
+  // it becomes a flat sheet laid over the slope, hiding the hill under the
+  // exact streets you walk up. This is the check that was missing when that
+  // shipped.
+  const { createTerrainIndex: mkTerrain } = await import("../src/world/terrain.js");
+  const groundIdx = mkTerrain();
+  for (const { tx, tz, payload } of payloads) if (payload.t) groundIdx.add(tx, tz, payload.t);
+
+  let longestEdge = 0;
+  let offGround = 0;
+  let sampled = 0;
+  for (const { payload } of payloads) {
+    for (const a of payload.a || []) {
+      for (let k = 0; k < a.i.length; k += 3) {
+        const p = [a.i[k], a.i[k + 1], a.i[k + 2]].map((j) => [a.v[j * 3], a.v[j * 3 + 1], a.v[j * 3 + 2]]);
+        for (let e = 0; e < 3; e += 1) {
+          const q = p[e];
+          const r = p[(e + 1) % 3];
+          longestEdge = Math.max(longestEdge, Math.hypot(q[0] - r[0], q[2] - r[2]));
+        }
+        // Centroid of the triangle must sit on the terrain, not above it.
+        const cx = (p[0][0] + p[1][0] + p[2][0]) / 3;
+        const cy = (p[0][1] + p[1][1] + p[2][1]) / 3;
+        const cz = (p[0][2] + p[1][2] + p[2][2]) / 3;
+        const g = groundIdx.heightAt(cx, cz);
+        if (g === null) continue;
+        sampled += 1;
+        if (Math.abs(cy - g) > 1.2) offGround += 1;
+      }
+    }
+  }
+  check("paved areas are tessellated, not one flat sheet", longestEdge <= 12,
+    `longest triangle edge ${longestEdge.toFixed(1)}m`);
+  check("paved areas follow the ground rather than covering it",
+    offGround / Math.max(sampled, 1) < 0.02,
+    `${offGround}/${sampled} triangles more than 1.2m off the terrain`);
+
   // --- world build ---
   // Runs the real buildFreeRoamWorld against a stub of the three API it uses.
   // This will not tell us it looks right, but it does exercise the extrusion

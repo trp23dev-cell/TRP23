@@ -332,24 +332,19 @@ export function createMapStream({
 
     // Areas: squares, precincts and pedestrianised streets. These are polygons
     // in OSM, not centre lines — the High Street is one — so they are filled
-    // rather than traced. Drawing them as ribbons turned the main shopping
-    // street into a footpath tracing its own kerb.
+    // rather than traced. The tiler tessellates them and drops every vertex
+    // onto the real ground, because a pedestrianised street filled flat from
+    // its kerb outline is a sheet laid over the hill, and Lincoln's
+    // pedestrianised streets are exactly the ones on the hill.
     for (const a of payload.a || []) {
       const buf = bufFor(a.s);
-      const order = normalisedOrder(a.p);
-      const tris = triangulate(a.p, order);
       const base = buf.positions.length / 3;
-      for (let k = 0; k < order.length; k += 1) {
-        const i = order[k];
-        const y = a.e ? a.e[i] : 0;
-        buf.positions.push(a.p[i * 2], y, a.p[i * 2 + 1]);
+      for (let i = 0; i < a.v.length; i += 3) {
+        buf.positions.push(a.v[i], a.v[i + 1], a.v[i + 2]);
         buf.normals.push(0, 1, 0);
-        buf.uvs.push(a.p[i * 2] / 6, a.p[i * 2 + 1] / 6);
+        buf.uvs.push(a.v[i] / 6, a.v[i + 2] / 6);
       }
-      // Anticlockwise in plan faces downward once lifted, same as the roofs.
-      for (let i = 0; i < tris.length; i += 3) {
-        buf.indices.push(base + tris[i], base + tris[i + 2], base + tris[i + 1]);
-      }
+      for (const idx of a.i) buf.indices.push(base + idx);
     }
 
     // Just above the terrain, so the two do not z-fight.

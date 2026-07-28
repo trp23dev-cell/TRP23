@@ -313,8 +313,11 @@ function sendJson(res, statusCode, payload) {
 // invalidates everything; an unchanged tile costs a 304 and no body.
 const tileGzipCache = new Map();
 
-function sendMapPayload(req, res, json, builtAt) {
-  const etag = `W/"map-${builtAt}-${json.length}"`;
+function sendMapPayload(req, res, json, builtAt, key = "") {
+  // `key` identifies WHICH tile this is. Without it the cache was keyed on
+  // build time and payload length alone, so any two tiles that happened to
+  // serialise to the same number of bytes would serve each other's geometry.
+  const etag = `W/"map-${builtAt}-${key}-${json.length}"`;
   if (req.headers["if-none-match"] === etag) {
     res.writeHead(304, { ETag: etag, "Access-Control-Allow-Origin": "*" });
     res.end();
@@ -386,7 +389,7 @@ async function handleRequest(req, res) {
       sendJson(res, 503, { error: "map_not_built", hint: "run: npm run map:build" });
       return;
     }
-    sendMapPayload(req, res, JSON.stringify(manifest), manifest.builtAt);
+    sendMapPayload(req, res, JSON.stringify(manifest), manifest.builtAt, "manifest");
     return;
   }
 
@@ -400,7 +403,7 @@ async function handleRequest(req, res) {
       sendJson(res, 200, { b: [], r: [], empty: true });
       return;
     }
-    sendMapPayload(req, res, tile.payload, tile.builtAt);
+    sendMapPayload(req, res, tile.payload, tile.builtAt, `${tileRef.tileX}_${tileRef.tileZ}`);
     return;
   }
 

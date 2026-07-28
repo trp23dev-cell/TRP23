@@ -27,6 +27,7 @@ import { createSqliteStore } from "../server/storage/sqliteStore.js";
 import { project, unproject, TILE_SIZE, ORIGIN, MAP_ATTRIBUTION } from "../src/world/geo.js";
 import { fetchTerrain, TERRAIN_ATTRIBUTION } from "./lib/terrainSource.mjs";
 import { classifyBuilding } from "./lib/classify.mjs";
+import { triangulate, normalisedOrder } from "../src/world/buildingMesh.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -717,15 +718,61 @@ async function main() {
 
   // Paved areas: squares, precincts and pedestrianised streets, filled rather
   // than traced.
+  //
+  // They have to be TESSELLATED, not just triangulated. A pedestrianised street
+  // is a long thin polygon with vertices only along its kerbs, and Lincoln's
+  // are on the hill — the worst drops 14m over 175m with 75 outline vertices.
+  // Filled straight from that outline it becomes a flat sheet laid over the
+  // slope, which hides the hill under the exact streets you walk up. So every
+  // triangle is split until its edges are short enough to follow the ground,
+  // and every vertex is dropped onto the real terrain.
+  const MAX_EDGE = 10;
   for (const area of areas) {
     const c = centroidOf(area.ring);
     const flat = [];
-    for (const p of area.ring) flat.push(round(p.x), round(p.z));
-    tileFor(c.x, c.z).payload.a.push({
-      p: flat,
-      e: area.elevations.map((v) => round(v)),
-      s: area.surface,
-    });
+    for (const p of area.ring) flat.push(p.x, p.z);
+    const order = normalisedOrder(flat);
+    const tris = triangulate(flat, order);
+
+    const verts = [];
+    const indices = [];
+    const seen = new Map();
+    const vertex = (x, z) => {
+      const key = `${x.toFixed(2)},${z.toFixed(2)}`;
+      let idx = seen.get(key);
+      if (idx === undefined) {
+        idx = verts.length / 3;
+        verts.push(round(x), round(terrain ? groundAt(x, z) : 0), round(z));
+        seen.set(key, idx);
+      }
+      return idx;
+    };
+
+    const split = (ax, az, bx, bz, cx, cz, depth) => {
+      const ab = Math.hypot(bx - ax, bz - az);
+      const bc = Math.hypot(cx - bx, cz - bz);
+      const ca = Math.hypot(ax - cx, az - cz);
+      if (depth >= 5 || Math.max(ab, bc, ca) <= MAX_EDGE) {
+        indices.push(vertex(ax, az), vertex(bx, bz), vertex(cx, cz));
+        return;
+      }
+      const mab = [(ax + bx) / 2, (az + bz) / 2];
+      const mbc = [(bx + cx) / 2, (bz + cz) / 2];
+      const mca = [(cx + ax) / 2, (cz + az) / 2];
+      split(ax, az, mab[0], mab[1], mca[0], mca[1], depth + 1);
+      split(mab[0], mab[1], bx, bz, mbc[0], mbc[1], depth + 1);
+      split(mca[0], mca[1], mbc[0], mbc[1], cx, cz, depth + 1);
+      split(mab[0], mab[1], mbc[0], mbc[1], mca[0], mca[1], depth + 1);
+    };
+
+    for (let i = 0; i < tris.length; i += 3) {
+      const a = order[tris[i]];
+      const b = order[tris[i + 1]];
+      const cc = order[tris[i + 2]];
+      split(flat[a * 2], flat[a * 2 + 1], flat[b * 2], flat[b * 2 + 1], flat[cc * 2], flat[cc * 2 + 1], 0);
+    }
+
+    tileFor(c.x, c.z).payload.a.push({ v: verts, i: indices, s: area.surface });
   }
 
   // ---- per-tile heightmaps ----
