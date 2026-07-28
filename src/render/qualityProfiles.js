@@ -1,7 +1,12 @@
+// `worldTiles` is how far the city streams around the player, in 250m tiles.
+// It is the biggest single lever on outdoor cost: the city runs about twelve
+// draw calls per tile, so 1 is a 3x3 block at ~110 calls and 2 is 5x5 at ~300.
+// `viewDistance` is the camera far plane outdoors; the Cathedral is 771m from
+// the High Street, so dropping below that loses the hill entirely.
 export const QUALITY_PROFILES={
-  low:{maxPixelRatio:1.2, shadows:false, bloom:false, bloomStrength:.05, bloomRadius:.35, bloomThreshold:.95, shadowMapSize:512},
-  medium:{maxPixelRatio:1.6, shadows:true, bloom:true, bloomStrength:.16, bloomRadius:.45, bloomThreshold:.88, shadowMapSize:1024},
-  high:{maxPixelRatio:2.2, shadows:true, bloom:true, bloomStrength:.24, bloomRadius:.55, bloomThreshold:.8, shadowMapSize:2048},
+  low:{maxPixelRatio:1.2, shadows:false, bloom:false, bloomStrength:.05, bloomRadius:.35, bloomThreshold:.95, shadowMapSize:512, worldTiles:1, viewDistance:1400},
+  medium:{maxPixelRatio:1.6, shadows:true, bloom:true, bloomStrength:.16, bloomRadius:.45, bloomThreshold:.88, shadowMapSize:1024, worldTiles:2, viewDistance:2000},
+  high:{maxPixelRatio:2.2, shadows:true, bloom:true, bloomStrength:.24, bloomRadius:.55, bloomThreshold:.8, shadowMapSize:2048, worldTiles:2, viewDistance:2600},
 };
 
 export const DEFAULT_VISUAL_SETTINGS={

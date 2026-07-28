@@ -1572,6 +1572,7 @@ function loadWorld(exitFromIndex=null){
   const built=buildFreeRoamWorld({
     THREE, group:levelGroup, chapters:LEVELS, cleared:state.levelsCleared,
     canvasTex, setTextureQuality, shadows,
+    loadRadius: qualityProfile().worldTiles,
   });
   worldColliders=built.colliders; worldPlaces=built.places; nearPlace=null;
   worldStream=built.stream;
@@ -1594,6 +1595,10 @@ function loadWorld(exitFromIndex=null){
   }
   // Stand on the hill, not at a fixed height. The tiles around the spawn are
   // built synchronously above, so the ground is already known here.
+  // Outdoors the far plane has to clear the city; chapter interiors set their
+  // own when they load.
+  camera.far=qualityProfile().viewDistance||2600;
+  camera.updateProjectionMatrix();
   groundY=built.groundAt(spawnX,spawnZ)+EYE_HEIGHT; velY=0; grounded=true;
   camera.position.set(spawnX,groundY,spawnZ);
   yaw=spawnYaw; pitch=0;

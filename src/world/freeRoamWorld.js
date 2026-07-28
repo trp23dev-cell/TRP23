@@ -277,7 +277,7 @@ export function resolveWorldCollisions(position, index) {
  * @param {Function} [opts.shadows]
  * @returns {{spawn:number[],yaw:number,mood:object,colliders:object,places:Array,stream:object}}
  */
-export function buildFreeRoamWorld({ THREE, group, chapters, cleared = 0, canvasTex, setTextureQuality, shadows }) {
+export function buildFreeRoamWorld({ THREE, group, chapters, cleared = 0, canvasTex, setTextureQuality, shadows, loadRadius }) {
   const tune = (t) => { if (setTextureQuality) setTextureQuality(t); return t; };
   const mood = worldMood(cleared);
   const places = [];
@@ -337,6 +337,7 @@ export function buildFreeRoamWorld({ THREE, group, chapters, cleared = 0, canvas
     // this feeds a bloom pass, and anything above ~0.7 turns every shopfront
     // into a solid white band with no glazing bars or doorway left in it.
     nightLift: 0.12 + mood.lamp * 0.30,
+    loadRadius,
     onTilesChanged: () => index.rebuild(stream.activeBuildings(), stream.activeRoads()),
   });
 

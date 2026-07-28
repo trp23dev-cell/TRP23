@@ -525,3 +525,59 @@ export function monumentEmissive(canvasTex) {
     }
   });
 }
+
+/** Cobbles. Lincoln has real ones, and OSM says where. */
+export function cobbleAlbedo(canvasTex) {
+  return canvasTex(256, 256, (g, w, h) => {
+    const r = rand(419);
+    g.fillStyle = "#33302b";
+    g.fillRect(0, 0, w, h);
+    const s = 15;
+    for (let y = 0; y < h; y += s) {
+      const off = ((y / s) % 2) * (s / 2);
+      for (let x = -s; x < w + s; x += s) {
+        const v = 52 + r() * 26;
+        g.fillStyle = `rgb(${v},${v - 2},${v - 6})`;
+        g.beginPath();
+        g.ellipse(x + off + s / 2, y + s / 2, s * 0.42, s * 0.38, r() * 3, 0, Math.PI * 2);
+        g.fill();
+      }
+    }
+    g.fillStyle = "rgba(0,0,0,.3)";
+    for (let i = 0; i < 1200; i += 1) g.fillRect(r() * w, r() * h, 2, 2);
+  });
+}
+
+/** Poured concrete: service yards, precinct decks. */
+export function concreteAlbedo(canvasTex) {
+  return canvasTex(256, 256, (g, w, h) => {
+    const r = rand(523);
+    g.fillStyle = "#4c4a46";
+    g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 5000; i += 1) {
+      const v = 66 + r() * 20;
+      g.fillStyle = `rgba(${v},${v},${v - 3},.45)`;
+      g.fillRect(r() * w, r() * h, 2, 2);
+    }
+    // Slab joints.
+    g.strokeStyle = "rgba(28,27,25,.5)";
+    g.lineWidth = 2;
+    for (const t of [0, 128]) {
+      g.beginPath(); g.moveTo(t, 0); g.lineTo(t, h); g.moveTo(0, t); g.lineTo(w, t); g.stroke();
+    }
+  });
+}
+
+/** Loose gravel and beaten ground. */
+export function gravelAlbedo(canvasTex) {
+  return canvasTex(256, 256, (g, w, h) => {
+    const r = rand(631);
+    g.fillStyle = "#3d382f";
+    g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 9000; i += 1) {
+      const v = 52 + r() * 30;
+      g.fillStyle = `rgba(${v},${v - 4},${v - 12},.6)`;
+      g.fillRect(r() * w, r() * h, 1 + r() * 2, 1 + r() * 2);
+    }
+  });
+}

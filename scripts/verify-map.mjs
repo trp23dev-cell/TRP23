@@ -442,6 +442,28 @@ const main = async () => {
   check("landmarks ride in the manifest, not in tiles", alwaysVisible.length >= 5,
     `${alwaysVisible.length} always-visible: ${alwaysVisible.map((l) => l.n).filter(Boolean).slice(0, 3).join(", ")}`);
 
+  // --- surfaces ---
+  process.stdout.write("\nsurfaces and paved areas:\n");
+  let ribbons = 0;
+  const areaCount = { total: 0 };
+  const surfaces = {};
+  for (const { payload } of payloads) {
+    for (const r of payload.r || []) {
+      ribbons += 1;
+      surfaces[r.s || "?"] = (surfaces[r.s || "?"] || 0) + 1;
+    }
+    for (const a of payload.a || []) {
+      areaCount.total += 1;
+      surfaces[a.s || "?"] = (surfaces[a.s || "?"] || 0) + 1;
+    }
+  }
+  check("ways carry a real surface", !surfaces["?"] && Object.keys(surfaces).length >= 3,
+    Object.entries(surfaces).map(([k, v]) => `${k} ${v}`).join(", "));
+  // The High Street is tagged area=yes in OSM. Traced as a centre line it
+  // becomes a footpath following its own kerb instead of the street itself.
+  check("pedestrian areas are filled, not traced", areaCount.total >= 100,
+    `${areaCount.total} paved areas, ${ribbons} ribbons`);
+
   // --- world build ---
   // Runs the real buildFreeRoamWorld against a stub of the three API it uses.
   // This will not tell us it looks right, but it does exercise the extrusion
@@ -487,10 +509,12 @@ const main = async () => {
   // buildings it holds. Counting against a fixed total just fails as the city
   // grows.
   const perTile = meshes.length / Math.max(1, built.stream.residentCount);
-  // Higher than it was: upper walls are split by architectural style so
-  // limestone and brick can carry different surfaces, which costs a few draw
-  // calls per tile and is worth it.
-  check("geometry is merged, not per-building", perTile <= 11,
+  // Higher than it was, deliberately: upper walls are split by architectural
+  // style and ground surfaces by material, so limestone/brick and
+  // asphalt/paving/cobble each carry their own texture. That is a few more draw
+  // calls per tile in exchange for a city that is not one material. The lever
+  // if a handset struggles is worldTiles in QUALITY_PROFILES, not this.
+  check("geometry is merged, not per-building", perTile <= 13,
     `${perTile.toFixed(1)} meshes/tile for ${built.colliders.buildings.length} buildings`);
 
   const bad = meshes.find((m) => m.geometry && m.geometry.__maxIndex >= m.geometry.__count);

@@ -220,6 +220,15 @@ function simplify(points, tolerance) {
   return [...keep].sort((a, b) => a - b).map((i) => points[i]);
 }
 
+/** Shoelace area of a projected ring, for telling a loop from a line. */
+function shoelace(ring) {
+  let a = 0;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    a += ring[j].x * ring[i].z - ring[i].x * ring[j].z;
+  }
+  return a / 2;
+}
+
 function ringArea(ring) {
   let a = 0;
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
@@ -294,6 +303,37 @@ function heightFor(id, tags) {
 }
 
 // ---------------------------------------------------------------- roads
+
+// OSM tags surface on three quarters of Lincoln's ways, and it is the single
+// most useful thing about them: the High Street and Bailgate are paving stones,
+// the carriageways are asphalt, and there is real cobble up the hill. Ignoring
+// it makes every surface in the city the same sheet of grey tarmac.
+const SURFACE_KIND = {
+  asphalt: "asphalt", paved: "asphalt", tarmac: "asphalt", chipseal: "asphalt",
+  paving_stones: "paving", sett: "paving", flagstones: "paving", bricks: "paving",
+  cobblestone: "cobble", "cobblestone:flattened": "cobble", unhewn_cobblestone: "cobble",
+  concrete: "concrete", "concrete:plates": "concrete",
+  gravel: "gravel", fine_gravel: "gravel", compacted: "gravel", dirt: "gravel",
+  ground: "gravel", grass: "gravel", wood: "concrete",
+};
+
+/** Surface for a way, falling back on what that kind of way usually is. */
+function surfaceOf(tags) {
+  const tagged = SURFACE_KIND[(tags.surface || "").toLowerCase()];
+  if (tagged) return tagged;
+  const hw = tags.highway;
+  if (hw === "pedestrian" || hw === "footway" || hw === "steps") return "paving";
+  return "asphalt";
+}
+
+/** Real width where OSM gives one, otherwise the usual for the type. */
+function widthOf(tags) {
+  const explicit = Number.parseFloat(tags.width);
+  if (Number.isFinite(explicit) && explicit > 0.5) return explicit;
+  const lanes = Number.parseFloat(tags.lanes);
+  if (Number.isFinite(lanes) && lanes > 0) return lanes * 3.1 + 0.8;
+  return ROAD_WIDTH[tags.highway] || 5;
+}
 
 const ROAD_WIDTH = {
   primary: 10,
@@ -454,6 +494,7 @@ async function main() {
 
   // --- roads first: doors need them ---
   const roads = [];
+  const areas = [];
   const roadPoints = [];
   for (const w of ways) {
     const kind = w.tags?.highway;
@@ -464,7 +505,19 @@ async function main() {
     // Roads drape over the ground rather than cutting through it, so Steep Hill
     // is something you actually walk up.
     const elevations = simple.map((p) => groundAt(p.x, p.z));
-    roads.push({ points: simple, elevations, width: ROAD_WIDTH[kind] || 5, kind });
+    const surface = surfaceOf(w.tags);
+
+    // area=yes means the way is the OUTLINE of a paved space, not its centre
+    // line. Lincoln's High Street is tagged this way, along with 275 others.
+    // Drawn as a ribbon along its own outline, a pedestrianised street becomes
+    // a narrow path tracing its own edge — which is what the High Street was.
+    if (w.tags.area === "yes" && simple.length >= 4 && Math.abs(shoelace(simple)) > 12) {
+      areas.push({ ring: simple, elevations, surface });
+      roadPoints.push(...simple);
+      continue;
+    }
+
+    roads.push({ points: simple, elevations, width: widthOf(w.tags), kind, surface });
     roadPoints.push(...simple);
   }
 
@@ -530,7 +583,7 @@ async function main() {
       tags: w.tags,
     });
   }
-  process.stdout.write(`kept ${buildings.length} buildings, ${roads.length} road segments\n`);
+  process.stdout.write(`kept ${buildings.length} buildings, ${roads.length} road segments, ${areas.length} paved areas\n`);
 
   // --- anchors ---
   const anchorFile = JSON.parse(
@@ -621,7 +674,7 @@ async function main() {
     const key = `${tileX},${tileZ}`;
     let t = tiles.get(key);
     if (!t) {
-      t = { tileX, tileZ, payload: { b: [], r: [] } };
+      t = { tileX, tileZ, payload: { b: [], r: [], a: [] } };
       tiles.set(key, t);
     }
     return t;
@@ -658,6 +711,20 @@ async function main() {
       e: r.elevations.map((v) => round(v)),
       w: r.width,
       k: r.kind,
+      s: r.surface,
+    });
+  }
+
+  // Paved areas: squares, precincts and pedestrianised streets, filled rather
+  // than traced.
+  for (const area of areas) {
+    const c = centroidOf(area.ring);
+    const flat = [];
+    for (const p of area.ring) flat.push(round(p.x), round(p.z));
+    tileFor(c.x, c.z).payload.a.push({
+      p: flat,
+      e: area.elevations.map((v) => round(v)),
+      s: area.surface,
     });
   }
 

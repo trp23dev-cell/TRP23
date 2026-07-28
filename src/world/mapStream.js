@@ -17,12 +17,12 @@
 // ============================================================================
 
 import { TILE_SIZE, tileKey } from "./geo.js";
-import { extrudeBuilding, emptyBuffers, STYLES } from "./buildingMesh.js";
+import { extrudeBuilding, emptyBuffers, STYLES, triangulate, normalisedOrder } from "./buildingMesh.js";
 import { createTerrainIndex, buildTerrainMesh } from "./terrain.js";
 import {
   facadeAlbedo, facadeEmissive, shopfrontAlbedo, shopfrontEmissive, roofAlbedo, roadAlbedo,
   pavementAlbedo, plinthAlbedo, residentialAlbedo, residentialEmissive,
-  monumentAlbedo, monumentEmissive,
+  monumentAlbedo, monumentEmissive, cobbleAlbedo, concreteAlbedo, gravelAlbedo,
 } from "./cityTextures.js";
 
 /** Stable 0..1 hash of an OSM id, for per-building variation that never flickers. */
@@ -41,13 +41,14 @@ function hashUnit(id) {
 // not exist and fetch() will not take a relative URL.
 const API_BASE = `${import.meta.env?.VITE_API_ORIGIN || globalThis.__TRAP_API_ORIGIN || ""}/api`;
 
-// How many tiles out from the player stay resident. 2 = the 5x5 block around
-// the player: 1250m across, so there is real city out to ~500m in every
-// direction rather than a 250m island surrounded by nothing.
-const LOAD_RADIUS = 2;
+// How many tiles out from the player stay resident, overridable per quality
+// tier. 2 = the 5x5 block around the player, 1250m across, so there is real
+// city out to ~500m in every direction rather than a 250m island. Costs about
+// twelve draw calls per tile, which is why a low-end handset gets 1.
+const DEFAULT_LOAD_RADIUS = 2;
 // Unload one ring further out than we load, so walking back and forth across a
 // boundary does not thrash build/teardown.
-const KEEP_RADIUS = 3;
+
 
 /**
  * Fetch the map manifest: tile index, origin, spawn and the story anchors.
@@ -105,11 +106,16 @@ export function tileBuildings(payload) {
  */
 export function createMapStream({
   THREE, group, manifest, canvasTex, setTextureQuality, onTilesChanged, nightLift = 1,
+  loadRadius = DEFAULT_LOAD_RADIUS,
 }) {
+  const LOAD_RADIUS = Math.max(1, loadRadius | 0);
+  // Unload one ring beyond the load radius, so walking back and forth across a
+  // boundary does not thrash build and teardown.
+  const KEEP_RADIUS = LOAD_RADIUS + 1;
   const available = new Set((manifest?.tiles || []).map(([x, z]) => tileKey(x, z)));
   const tune = (t) => { if (setTextureQuality) setTextureQuality(t); return t; };
 
-  const resident = new Map();   // key -> { mesh, roadMesh, buildings }
+  const resident = new Map();   // key -> { meshes, buildings, roads, tileX, tileZ }
   const inflight = new Map();   // key -> Promise
   const payloadCache = new Map(); // key -> payload, so a revisit is instant
 
@@ -128,6 +134,9 @@ export function createMapStream({
     road: repeating(roadAlbedo(canvasTex)),
     pavement: repeating(pavementAlbedo(canvasTex)),
     plinth: repeating(plinthAlbedo(canvasTex)),
+    cobble: repeating(cobbleAlbedo(canvasTex)),
+    concrete: repeating(concreteAlbedo(canvasTex)),
+    gravel: repeating(gravelAlbedo(canvasTex)),
     home: repeating(residentialAlbedo(canvasTex)),
     homeLit: repeating(residentialEmissive(canvasTex)),
   };
@@ -143,6 +152,7 @@ export function createMapStream({
   }
   textures.roof.repeat.set(1, 1);
   textures.road.repeat.set(0.35, 0.35);
+  for (const k of ["cobble", "concrete", "gravel"]) textures[k].repeat.set(1, 1);
 
   // emissiveIntensity is driven by the mood, so windows and shopfronts burn at
   // dusk and fade back as the sky comes up to meet them.
@@ -168,7 +178,12 @@ export function createMapStream({
       roughness: 0.95,
       vertexColors: true,
     }),
-    road: new THREE.MeshStandardMaterial({ map: textures.road, roughness: 0.96 }),
+    // One material per real surface. OSM tags this on 75% of Lincoln's ways.
+    asphalt: new THREE.MeshStandardMaterial({ map: textures.road, roughness: 0.96 }),
+    paving: new THREE.MeshStandardMaterial({ map: textures.pavement, roughness: 0.93 }),
+    cobble: new THREE.MeshStandardMaterial({ map: textures.cobble, roughness: 0.95 }),
+    concrete: new THREE.MeshStandardMaterial({ map: textures.concrete, roughness: 0.94 }),
+    gravel: new THREE.MeshStandardMaterial({ map: textures.gravel, roughness: 0.99 }),
     // The stonework between the lowest ground and street level on sloping
     // sites. Always stone, whatever the building above it is made of — that is
     // how it is done, and it ties a mixed terrace together on a hill.
@@ -273,11 +288,17 @@ export function createMapStream({
       ...STYLES.map((s) => meshFrom(buffers.wall[s], wallMaterials[s])),
     ].filter(Boolean);
 
-    // Roads as flat ribbons laid just above the ground plane. Ends are mitred
-    // by simply overlapping quads at each vertex — at street width the joins
-    // are under the pavement furniture and nobody sees the seam.
-    const road = { positions: [], normals: [], uvs: [], colors: [], indices: [] };
+    // Ground surfaces, split by what they are actually made of. OSM tags
+    // surface on three quarters of Lincoln's ways: the High Street and Bailgate
+    // are paving stones, the carriageways asphalt, and there is real cobble.
+    const SURFACES = ["asphalt", "paving", "cobble", "concrete", "gravel"];
+    const surf = {};
+    for (const k of SURFACES) surf[k] = { positions: [], normals: [], uvs: [], colors: [], indices: [] };
+    const bufFor = (k) => surf[k] || surf.asphalt;
+
+    // Ribbons: ordinary streets, from their centre line and width.
     for (const r of payload.r || []) {
+      const buf = bufFor(r.s);
       const half = r.w / 2;
       const count = r.p.length / 2;
       let along = 0;
@@ -296,24 +317,49 @@ export function createMapStream({
         if (len < 0.01) continue;
         const nx = (ez / len) * half;
         const nz = (-ex / len) * half;
-        const base = road.positions.length / 3;
-        road.positions.push(
+        const base = buf.positions.length / 3;
+        buf.positions.push(
           ax + nx, ay, az + nz, bx + nx, by, bz + nz,
           bx - nx, by, bz - nz, ax - nx, ay, az - nz
         );
-        for (let k = 0; k < 4; k += 1) road.normals.push(0, 1, 0);
-        // UVs run along the road so the tarmac does not swim as it turns.
-        road.uvs.push(along, 0, along + len, 0, along + len, r.w, along, r.w);
+        for (let k = 0; k < 4; k += 1) buf.normals.push(0, 1, 0);
+        // UVs run along the road so the surface does not swim as it turns.
+        buf.uvs.push(along / 6, 0, (along + len) / 6, 0, (along + len) / 6, r.w / 6, along / 6, r.w / 6);
         along += len;
-        road.indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+        buf.indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+      }
+    }
+
+    // Areas: squares, precincts and pedestrianised streets. These are polygons
+    // in OSM, not centre lines — the High Street is one — so they are filled
+    // rather than traced. Drawing them as ribbons turned the main shopping
+    // street into a footpath tracing its own kerb.
+    for (const a of payload.a || []) {
+      const buf = bufFor(a.s);
+      const order = normalisedOrder(a.p);
+      const tris = triangulate(a.p, order);
+      const base = buf.positions.length / 3;
+      for (let k = 0; k < order.length; k += 1) {
+        const i = order[k];
+        const y = a.e ? a.e[i] : 0;
+        buf.positions.push(a.p[i * 2], y, a.p[i * 2 + 1]);
+        buf.normals.push(0, 1, 0);
+        buf.uvs.push(a.p[i * 2] / 6, a.p[i * 2 + 1] / 6);
+      }
+      // Anticlockwise in plan faces downward once lifted, same as the roofs.
+      for (let i = 0; i < tris.length; i += 3) {
+        buf.indices.push(base + tris[i], base + tris[i + 2], base + tris[i + 1]);
       }
     }
 
     // Just above the terrain, so the two do not z-fight.
-    const roadMesh = meshFrom(road, materials.road, 0.06);
+    const roadMeshes = SURFACES
+      .map((k) => meshFrom(surf[k], materials[k], 0.06))
+      .filter(Boolean);
+    for (const m of roadMeshes) meshes.push(m);
     if (terrainMesh) meshes.push(terrainMesh);
 
-    resident.set(key, { meshes, roadMesh, buildings, roads: payload.r || [], tileX, tileZ });
+    resident.set(key, { meshes, buildings, roads: payload.r || [], tileX, tileZ });
   }
 
   function unloadTile(key) {
@@ -322,10 +368,6 @@ export function createMapStream({
     for (const m of t.meshes) {
       group.remove(m);
       m.geometry.dispose();
-    }
-    if (t.roadMesh) {
-      group.remove(t.roadMesh);
-      t.roadMesh.geometry.dispose();
     }
     // The heightmap goes with the tile, or the index grows without bound as the
     // player walks and starts answering for ground that is no longer there.
