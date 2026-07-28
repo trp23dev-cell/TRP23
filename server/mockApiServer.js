@@ -309,8 +309,13 @@ function sendJson(res, statusCode, payload) {
 }
 
 // Map tiles are immutable between builds and are hit constantly as the player
-// walks, so they get gzip + a build-stamped ETag. A rebuild changes builtAt and
-// invalidates everything; an unchanged tile costs a 304 and no body.
+// walks, so they get gzip + a build-stamped ETag.
+//
+// MUST be no-cache, not max-age. fetch() honours the HTTP cache, so under
+// `max-age=86400` the browser served day-old tiles without ever contacting the
+// server — every `npm run map:build` landed in the database and never reached
+// the game. no-cache still caches; it just requires revalidation, which the
+// ETag answers with a 304 and no body. Same bandwidth, no staleness.
 const tileGzipCache = new Map();
 
 function sendMapPayload(req, res, json, builtAt, key = "") {
@@ -327,7 +332,7 @@ function sendMapPayload(req, res, json, builtAt, key = "") {
   const headers = {
     "Content-Type": "application/json; charset=utf-8",
     "Access-Control-Allow-Origin": "*",
-    "Cache-Control": "public, max-age=86400",
+    "Cache-Control": "no-cache",
     ETag: etag,
   };
 

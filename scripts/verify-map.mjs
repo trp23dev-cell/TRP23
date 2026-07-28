@@ -199,6 +199,25 @@ const main = async () => {
   // Close enough to read the sign, far enough to see the building it is on.
   check("spawn stands back from the bank", toBank > 6 && toBank < 30, `${toBank.toFixed(0)}m from the door`);
 
+  // --- delivery ---
+  // The map being right in the database is worthless if the browser is serving
+  // yesterday's copy. Under `Cache-Control: max-age=86400` fetch() never
+  // contacted the server at all, so every rebuild landed in SQLite and none of
+  // it reached the game — which looked exactly like the terrain not working.
+  process.stdout.write("\ndelivery:\n");
+  const [ftx, ftz] = manifest.tiles[0];
+  const head = await fetch(`${API}/map/tile/${ftx}/${ftz}`);
+  const cc = head.headers.get("cache-control") || "";
+  const etag = head.headers.get("etag") || "";
+  check("tiles are revalidated, not blindly cached", /no-cache|no-store|max-age=0/.test(cc),
+    `Cache-Control: ${cc || "(none)"}`);
+  check("tiles carry an ETag so revalidation is free", !!etag, etag);
+  if (etag) {
+    const again = await fetch(`${API}/map/tile/${ftx}/${ftz}`, { headers: { "If-None-Match": etag } });
+    check("an unchanged tile costs a 304 and no body", again.status === 304,
+      `HTTP ${again.status}`);
+  }
+
   // --- terrain ---
   // Lincoln is a hill. If this is flat, or the ground and the buildings
   // disagree about where the surface is, nothing else matters.
