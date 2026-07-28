@@ -640,10 +640,15 @@ async function main() {
     throw new Error(`only resolved ${anchors.length}/${anchorFile.anchors.length} anchors — refusing to publish a map missing story locations`);
   }
 
-  // --- spawn: out in the street, facing the bank ---
-  // Far enough back to see the building you are standing in front of. Spawning
-  // on the doorstep puts the frontage and its sign across the whole screen and
-  // tells the player nothing about where they are.
+  // --- spawn: out in the street, facing the city ---
+  // Far enough back to see the building you are standing in front of, and
+  // pointed at the hill.
+  //
+  // Facing the bank door seemed the obvious choice and was wrong: the bank
+  // fronts south, so the player arrived looking down the flat lower High
+  // Street — 10m falling to 6m over 600m — with Steep Hill and the Cathedral
+  // directly behind them. The single most recognisable thing about Lincoln was
+  // over the player's shoulder at the moment they arrived.
   const bank = anchors.find((a) => a.kind === "bank");
   let spawn = { x: 0, z: 14 };
   let spawnYaw = 0;
@@ -655,7 +660,28 @@ async function main() {
       const p = { x: bank.door.x + nx * dist, z: bank.door.z + nz * dist };
       if (!buildings.some((b) => pointInRing(p, b.ring))) { spawn = p; break; }
     }
-    spawnYaw = bank.door.yaw + Math.PI; // turn around to look back at the door
+  }
+
+  // Look toward the highest ground within sight. On this map that is the
+  // Cathedral on its escarpment, which is the view the city is known for.
+  if (terrain) {
+    let best = null;
+    for (let a = 0; a < 24; a += 1) {
+      const ang = (a / 24) * Math.PI * 2;
+      const dx = -Math.sin(ang);
+      const dz = -Math.cos(ang);
+      // Score the climb along each heading, ignoring anything too close to be
+      // a view rather than a wall.
+      let climb = 0;
+      for (const d of [150, 300, 450, 600]) {
+        const g = groundAt(spawn.x + dx * d, spawn.z + dz * d);
+        climb += g - groundAt(spawn.x, spawn.z);
+      }
+      if (!best || climb > best.climb) best = { climb, ang };
+    }
+    if (best && best.climb > 0) spawnYaw = best.ang;
+  } else if (bank) {
+    spawnYaw = bank.door.yaw + Math.PI;
   }
 
   // Things you should be able to see from across the city. They are streamed

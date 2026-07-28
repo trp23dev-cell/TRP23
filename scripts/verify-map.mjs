@@ -438,6 +438,22 @@ const main = async () => {
       `top ${top.toFixed(0)}m vs ~8m on the High Street`);
   }
 
+  // Where the player is POINTED at the moment they arrive. The hill was
+  // rendering correctly and was still invisible, because spawn faced the bank
+  // door and the bank fronts south — 162 degrees away from the escarpment,
+  // looking down the one genuinely flat street in the city.
+  const [spx, spz] = manifest.spawn;
+  const vdx = -Math.sin(manifest.spawnYaw);
+  const vdz = -Math.cos(manifest.spawnYaw);
+  const atSpawn = terrain.heightAt(spx, spz);
+  let viewClimb = null;
+  if (atSpawn !== null) {
+    const far = terrain.heightAt(spx + vdx * 500, spz + vdz * 500);
+    if (far !== null) viewClimb = far - atSpawn;
+  }
+  check("the player arrives looking at the hill", viewClimb !== null && viewClimb > 20,
+    viewClimb === null ? "could not sample" : `ground rises ${viewClimb.toFixed(0)}m over the 500m ahead`);
+
   const alwaysVisible = manifest.landmarks || [];
   check("landmarks ride in the manifest, not in tiles", alwaysVisible.length >= 5,
     `${alwaysVisible.length} always-visible: ${alwaysVisible.map((l) => l.n).filter(Boolean).slice(0, 3).join(", ")}`);
@@ -470,10 +486,6 @@ const main = async () => {
   // it becomes a flat sheet laid over the slope, hiding the hill under the
   // exact streets you walk up. This is the check that was missing when that
   // shipped.
-  const { createTerrainIndex: mkTerrain } = await import("../src/world/terrain.js");
-  const groundIdx = mkTerrain();
-  for (const { tx, tz, payload } of payloads) if (payload.t) groundIdx.add(tx, tz, payload.t);
-
   let longestEdge = 0;
   let offGround = 0;
   let sampled = 0;
@@ -490,7 +502,7 @@ const main = async () => {
         const cx = (p[0][0] + p[1][0] + p[2][0]) / 3;
         const cy = (p[0][1] + p[1][1] + p[2][1]) / 3;
         const cz = (p[0][2] + p[1][2] + p[2][2]) / 3;
-        const g = groundIdx.heightAt(cx, cz);
+        const g = terrain.heightAt(cx, cz);
         if (g === null) continue;
         sampled += 1;
         if (Math.abs(cy - g) > 1.2) offGround += 1;
