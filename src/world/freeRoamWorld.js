@@ -32,6 +32,11 @@ const GOLD = 0xc9a06a;
 // scan over a whole city every frame is not affordable.
 const CELL = 25;
 
+// Fog densities are for a CITY, not for the 320m block this started as. At the
+// old 0.012 the far side of the High Street was solid grey and the Cathedral on
+// its hill was invisible from everywhere — which read as the terrain having
+// been lost, when it was only ever hidden.
+//
 // How the block looks at each stage of the journey. Index = chapters cleared.
 // It starts at a street-lit dusk and ends in daylight.
 //
@@ -40,13 +45,13 @@ const CELL = 25;
 // player navigates, so it has to stay readable at zero progress. The arc is a
 // lift from dusk to day, not from black to day.
 const MOODS = [
-  { bg: 0x2a2f3d, fog: [0x2a2f3d, 0.012], hemi: 1.3,  sun: 1.2,  amb: 0.42, exposure: 1.25, lamp: 1.6 },
-  { bg: 0x333949, fog: [0x333949, 0.011], hemi: 1.5,  sun: 1.5,  amb: 0.46, exposure: 1.30, lamp: 1.4 },
-  { bg: 0x3d4455, fog: [0x3d4455, 0.010], hemi: 1.75, sun: 1.8,  amb: 0.50, exposure: 1.35, lamp: 1.15 },
-  { bg: 0x474f62, fog: [0x474f62, 0.009], hemi: 2.0,  sun: 2.1,  amb: 0.54, exposure: 1.40, lamp: 0.9 },
-  { bg: 0x525b70, fog: [0x525b70, 0.008], hemi: 2.2,  sun: 2.35, amb: 0.57, exposure: 1.45, lamp: 0.6 },
-  { bg: 0x5d677e, fog: [0x5d677e, 0.007], hemi: 2.4,  sun: 2.55, amb: 0.60, exposure: 1.50, lamp: 0.35 },
-  { bg: 0x6a758d, fog: [0x6a758d, 0.006], hemi: 2.6,  sun: 2.8,  amb: 0.62, exposure: 1.55, lamp: 0.2 },
+  { bg: 0x2a2f3d, fog: [0x2a2f3d, 0.00180], hemi: 1.3,  sun: 1.2,  amb: 0.42, exposure: 1.25, lamp: 1.6 },
+  { bg: 0x333949, fog: [0x333949, 0.00168], hemi: 1.5,  sun: 1.5,  amb: 0.46, exposure: 1.30, lamp: 1.4 },
+  { bg: 0x3d4455, fog: [0x3d4455, 0.00156], hemi: 1.75, sun: 1.8,  amb: 0.50, exposure: 1.35, lamp: 1.15 },
+  { bg: 0x474f62, fog: [0x474f62, 0.00144], hemi: 2.0,  sun: 2.1,  amb: 0.54, exposure: 1.40, lamp: 0.9 },
+  { bg: 0x525b70, fog: [0x525b70, 0.00132], hemi: 2.2,  sun: 2.35, amb: 0.57, exposure: 1.45, lamp: 0.6 },
+  { bg: 0x5d677e, fog: [0x5d677e, 0.00120], hemi: 2.4,  sun: 2.55, amb: 0.60, exposure: 1.50, lamp: 0.35 },
+  { bg: 0x6a758d, fog: [0x6a758d, 0.00108], hemi: 2.6,  sun: 2.8,  amb: 0.62, exposure: 1.55, lamp: 0.2 },
 ];
 
 export function worldMood(cleared) {
@@ -307,7 +312,7 @@ export function buildFreeRoamWorld({ THREE, group, chapters, cleared = 0, canvas
     g.fillRect(0, 0, w, h);
   }));
   const sky = new THREE.Mesh(
-    new THREE.SphereGeometry(WORLD_BOUND * 1.9, 24, 16),
+    new THREE.SphereGeometry(2300, 24, 16), // inside the 2600m far plane
     new THREE.MeshBasicMaterial({ map: skyTex, side: THREE.BackSide, depthWrite: false, fog: false })
   );
   sky.renderOrder = -1;
@@ -428,6 +433,10 @@ export function buildFreeRoamWorld({ THREE, group, chapters, cleared = 0, canvas
   // Seeded from the city floor and then tracked as the player walks, so a tile
   // arriving late never teleports them vertically.
   let lastKnownGround = manifest?.terrainRange?.[0] ?? 0;
+
+  // The skyline you can see from anywhere: the Cathedral, the water tower, the
+  // few tall blocks. Built once and never streamed out.
+  stream.buildLandmarks(manifest?.landmarks);
 
   // Kick off the first tiles so the street is there when the fade lifts.
   stream.update(spawn[0], spawn[1], { force: true });

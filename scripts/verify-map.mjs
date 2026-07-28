@@ -411,6 +411,37 @@ const main = async () => {
   check("archways do not wall off their road", !!gate && gate.passable,
     gate ? `${buildings.filter((b) => b.passable).length} passable gates` : "none found");
 
+  // --- can you actually SEE the hill? ---
+  // The terrain was correct for a long time and still read as "lost", because
+  // the camera far plane was 120m and the fog killed everything past ~80m. The
+  // data being right is not the same as the city being visible.
+  process.stdout.write("\nthe view:\n");
+  const CAMERA_FAR = 2600;          // src/game.js
+  const FOG_DENSITY = 0.0018;       // MOODS[0], the darkest and haziest
+  const cathedral = buildings.find((b) => /^Lincoln Cathedral$/i.test(b.name || ""));
+  const fromJd = manifest.anchors.find((a) => a.name === "JD");
+  check("the Cathedral is in the world", !!cathedral);
+  if (cathedral && fromJd) {
+    const cx = (cathedral.minX + cathedral.maxX) / 2;
+    const cz = (cathedral.minZ + cathedral.maxZ) / 2;
+    const dist = Math.hypot(cx - fromJd.x, cz - fromJd.z);
+    check("the Cathedral is inside the camera far plane", dist < CAMERA_FAR,
+      `${dist.toFixed(0)}m from JD, far plane ${CAMERA_FAR}m`);
+    // FogExp2 transmittance: exp(-(density*distance)^2).
+    const seen = Math.exp(-((FOG_DENSITY * dist) ** 2));
+    check("the Cathedral is not fogged into nothing", seen > 0.12,
+      `${(seen * 100).toFixed(0)}% visible through fog at that range`);
+    // And it has to stand above the roofline to read as being on a hill.
+    const top = (cathedral.base ?? 0) + cathedral.height;
+    const rise = top - 8; // eye height on the High Street
+    check("the Cathedral stands over the city", rise > 100,
+      `top ${top.toFixed(0)}m vs ~8m on the High Street`);
+  }
+
+  const alwaysVisible = manifest.landmarks || [];
+  check("landmarks ride in the manifest, not in tiles", alwaysVisible.length >= 5,
+    `${alwaysVisible.length} always-visible: ${alwaysVisible.map((l) => l.n).filter(Boolean).slice(0, 3).join(", ")}`);
+
   // --- world build ---
   // Runs the real buildFreeRoamWorld against a stub of the three API it uses.
   // This will not tell us it looks right, but it does exercise the extrusion

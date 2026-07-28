@@ -491,7 +491,11 @@ document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',
 
 // ---------------- RENDERER / CAMERA ----------------
 const scene=new THREE.Scene();
-const camera=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,.05,120);
+// Far plane has to clear the city, not the room. Lincoln Cathedral stands 60m
+// up and 500m from the High Street; at the old 120m far plane it was clipped
+// out of existence, which is why the hill could never be seen from below.
+// Chapter interiors reset near/far themselves in loadLevel.
+const camera=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,.1,2600);
 let yaw=0,pitch=0;
 const renderer=new THREE.WebGLRenderer({antialias:true});
 renderer.setSize(innerWidth,innerHeight);

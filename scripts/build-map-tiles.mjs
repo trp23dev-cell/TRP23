@@ -604,6 +604,15 @@ async function main() {
     spawnYaw = bank.door.yaw + Math.PI; // turn around to look back at the door
   }
 
+  // Things you should be able to see from across the city. They are streamed
+  // out with everything else once you walk away, and a cathedral that vanishes
+  // at 600m is worse than no cathedral, so these ride in the manifest and are
+  // built once, permanently.
+  const LANDMARK_HEIGHT = 22;
+  function isLandmark(b) {
+    return b.height >= LANDMARK_HEIGHT || b.massing === "cathedral";
+  }
+
   // --- bin into tiles ---
   const tiles = new Map();
   function tileFor(x, z) {
@@ -635,6 +644,7 @@ async function main() {
       g: b.ground,
       rs: b.roofShape,
       ...(b.massing ? { m: b.massing } : {}),
+      ...(isLandmark(b) ? { lm: 1 } : {}),
       c: b.tint.map((v) => Math.round(v * 255)),
       ...(b.name ? { n: b.name } : {}),
     });
@@ -703,6 +713,16 @@ async function main() {
       origin: ORIGIN,
       bbox: args.bbox,
       attribution: MAP_ATTRIBUTION,
+      landmarks: buildings.filter(isLandmark).map((b) => {
+        const flat = [];
+        for (const p of b.ring) flat.push(round(p.x), round(p.z));
+        return {
+          i: b.id, p: flat, y: round(b.base), s: round(b.sill), h: round(b.height),
+          st: b.style, g: b.ground, rs: b.roofShape, c: b.tint.map((v) => Math.round(v * 255)),
+          ...(b.massing ? { m: b.massing } : {}),
+          ...(b.name ? { n: b.name } : {}),
+        };
+      }),
       terrainAttribution: terrain ? TERRAIN_ATTRIBUTION : null,
       terrainStep: terrain ? TERRAIN_STEP : 0,
       terrainRange: terrain ? [round(terrain.min), round(terrain.max)] : null,

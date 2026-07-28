@@ -41,13 +41,13 @@ function hashUnit(id) {
 // not exist and fetch() will not take a relative URL.
 const API_BASE = `${import.meta.env?.VITE_API_ORIGIN || globalThis.__TRAP_API_ORIGIN || ""}/api`;
 
-// How many tiles out from the player stay resident. 1 = the 3x3 block around
-// the player, which at 250m tiles means geometry is always built at least 250m
-// before it can be walked into.
-const LOAD_RADIUS = 1;
+// How many tiles out from the player stay resident. 2 = the 5x5 block around
+// the player: 1250m across, so there is real city out to ~500m in every
+// direction rather than a 250m island surrounded by nothing.
+const LOAD_RADIUS = 2;
 // Unload one ring further out than we load, so walking back and forth across a
 // boundary does not thrash build/teardown.
-const KEEP_RADIUS = 2;
+const KEEP_RADIUS = 3;
 
 /**
  * Fetch the map manifest: tile index, origin, spawn and the story anchors.
@@ -245,6 +245,7 @@ export function createMapStream({
 
     const buffers = emptyBuffers();
     for (const b of payload.b || []) {
+      if (b.lm) continue; // built once from the manifest, not per tile
       // The building's own colour, from OSM where it is tagged and from its
       // material and period where it is not.
       const tint = b.c
@@ -410,6 +411,29 @@ export function createMapStream({
     return allTilesPromise;
   }
 
+  /**
+   * Build the always-visible landmarks once. Never unloaded, so the Cathedral
+   * is on its hill from anywhere in the city rather than popping in at 600m.
+   */
+  function buildLandmarks(landmarks) {
+    if (!landmarks?.length) return [];
+    const buffers = emptyBuffers();
+    for (const b of landmarks) {
+      const tint = b.c ? [b.c[0] / 255, b.c[1] / 255, b.c[2] / 255] : [0.9, 0.86, 0.8];
+      extrudeBuilding(b.p, b.h, tint, buffers, {
+        base: b.y || 0, sill: b.s ?? null, style: b.st || "brick",
+        ground: b.g || "shopfront", roof: b.rs || "gabled", massing: b.m || null,
+      });
+    }
+    return [
+      meshFrom(buffers.plinth, materials.plinth),
+      meshFrom(buffers.shopfront, materials.ground),
+      meshFrom(buffers.residential, materials.residential),
+      meshFrom(buffers.roof, materials.roof),
+      ...STYLES.map((s) => meshFrom(buffers.wall[s], wallMaterials[s])),
+    ].filter(Boolean);
+  }
+
   /** Every building currently resident, for collision and the minimap. */
   function activeBuildings() {
     const out = [];
@@ -433,6 +457,7 @@ export function createMapStream({
 
   return {
     update,
+    buildLandmarks,
     activeBuildings,
     activeRoads,
     loadWholeCity,
