@@ -126,7 +126,7 @@ export function triangulate(flat, order) {
 export function extrudeBuilding(flat, height, tint, buffers, opts = {}) {
   const n = flat.length / 2;
   if (n < 3) return;
-  const { base = 0, sill = null, style = "brick", ground = "shopfront", roof = "gabled" } = opts;
+  const { base = 0, sill = null, style = "brick", ground = "shopfront", roof = "gabled", massing = null } = opts;
   const wallBuf = buffers.wall[style] || buffers.wall.brick;
   // Only places that actually trade get a glazed shopfront. Two thirds of the
   // city centre is houses and flats, and giving those a shopfront makes the
@@ -152,6 +152,22 @@ export function extrudeBuilding(flat, height, tint, buffers, opts = {}) {
   const street = sill === null ? base : sill;
   const top = street + height;
   const groundTop = street + Math.min(STOREY, height);
+  // Monuments map one texture over the entire elevation. Repeating per storey
+  // is what turned an 83m cathedral into twenty-six floors of office windows.
+  const vSpan = style === "monument" ? height : STOREY;
+
+  // Some things are not a footprint with storeys on top, and never will be.
+  // A city gate is a hole in a wall you walk through; a cathedral is a nave
+  // with towers. Extruding their outline is not a slightly-wrong version of
+  // them, it is a different object.
+  if (massing === "gateway") {
+    gateway(flat, order, street, height, tint, buffers.wall.monument);
+    return;
+  }
+  if (massing === "cathedral") {
+    cathedral(flat, order, street, height, tint, buffers);
+    return;
+  }
 
   for (let k = 0; k < n; k += 1) {
     const i = order[k];
@@ -174,9 +190,14 @@ export function extrudeBuilding(flat, height, tint, buffers, opts = {}) {
     if (street > base + 0.02) {
       quad(buffers.plinth, ax, az, bx, bz, base, street, nx, nz, len, tint, 0.35, 0.6, base);
     }
-    quad(groundBuf, ax, az, bx, bz, street, groundTop, nx, nz, len, tint, 0.45, 1.0, street);
-    if (top > groundTop) {
-      quad(wallBuf, ax, az, bx, bz, groundTop, top, nx, nz, len, tint, 0.72, 1.0, street);
+    if (style === "monument") {
+      // One unbroken elevation, no shopfront band cutting across it.
+      quad(wallBuf, ax, az, bx, bz, street, top, nx, nz, len, tint, 0.62, 1.0, street, vSpan);
+    } else {
+      quad(groundBuf, ax, az, bx, bz, street, groundTop, nx, nz, len, tint, 0.45, 1.0, street, vSpan);
+      if (top > groundTop) {
+        quad(wallBuf, ax, az, bx, bz, groundTop, top, nx, nz, len, tint, 0.72, 1.0, street, vSpan);
+      }
     }
   }
 
@@ -190,6 +211,136 @@ export function extrudeBuilding(flat, height, tint, buffers, opts = {}) {
     pitchedRoof(buffers.roof, obb, top, tint);
   } else {
     flatRoof(buffers.roof, flat, order, top, tint);
+  }
+}
+
+/**
+ * A city gate: two piers with an archway between them.
+ *
+ * Lincoln has nine of these and OSM tags every one — historic=city_gate, or
+ * barrier=arch on Newport Arch. Extruded as plain footprints they became solid
+ * blocks sitting across the road, which is why the Stone Bow had no arch in it.
+ *
+ * Built from the oriented box rather than the ring: the passage runs through
+ * the SHORT axis (through the wall) and the opening sits in the middle of the
+ * long one. The arch head is stepped rather than curved — at these sizes a few
+ * chamfer steps read as a vault and cost four quads.
+ */
+function gateway(flat, order, street, height, tint, buf) {
+  const obb = orientedBox(flat, order);
+  if (!obb) return;
+  const { cx, cz, ux, uz, w, d } = obb;
+  const alongLong = w >= d;
+  const halfLong = (alongLong ? w : d) / 2;
+  const halfShort = (alongLong ? d : w) / 2;
+  const lx = alongLong ? ux : -uz;
+  const lz = alongLong ? uz : ux;
+  const sx = -lz;
+  const sz = lx;
+
+  // Piers take the ends; the opening is what is left in the middle.
+  const openHalf = Math.min(halfLong * 0.42, 4.2);
+  const archTop = street + Math.min(height * 0.62, 5.0);
+  const P = (l, s, y) => [cx + lx * l + sx * s, y, cz + lz * l + sz * s];
+
+  const box = (l0, l1, y0, y1) => {
+    const corners = [
+      [P(l0, -halfShort, y0), P(l1, -halfShort, y0), P(l1, -halfShort, y1), P(l0, -halfShort, y1)],
+      [P(l1, halfShort, y0), P(l0, halfShort, y0), P(l0, halfShort, y1), P(l1, halfShort, y1)],
+      [P(l1, -halfShort, y0), P(l1, halfShort, y0), P(l1, halfShort, y1), P(l1, -halfShort, y1)],
+      [P(l0, halfShort, y0), P(l0, -halfShort, y0), P(l0, -halfShort, y1), P(l0, halfShort, y1)],
+    ];
+    for (const [p0, p1, p2, p3] of corners) {
+      addQuad(buf, p0, p1, p2, p3, Math.abs(l1 - l0) || halfShort * 2, y1 - y0, tint, true);
+    }
+  };
+
+  // Two piers, full height.
+  box(-halfLong, -openHalf, street, street + height);
+  box(openHalf, halfLong, street, street + height);
+  // The span over the opening.
+  box(-openHalf, openHalf, archTop, street + height);
+  // Stepped chamfers into the arch head, so the opening is not a bare rectangle.
+  const steps = 3;
+  for (let i = 0; i < steps; i += 1) {
+    const t = (i + 1) / (steps + 1);
+    const inset = openHalf * (1 - t * 0.55);
+    const y0 = archTop - (archTop - street) * 0.06 * (i + 1);
+    box(-inset, inset, y0, archTop - (archTop - street) * 0.06 * i);
+  }
+  // Roof over the whole thing.
+  const roofTop = street + height;
+  addQuad(buf,
+    P(-halfLong, -halfShort, roofTop), P(halfLong, -halfShort, roofTop),
+    P(halfLong, halfShort, roofTop), P(-halfLong, halfShort, roofTop),
+    halfLong * 2, halfShort * 2, tint, true);
+}
+
+/**
+ * Lincoln Cathedral: a nave with a central tower and two west towers.
+ *
+ * Its outline is one big polygon, so extruding it to its real 83m produced a
+ * cliff of windows. The silhouette people actually recognise is the tower
+ * group, and that has to be built rather than inferred.
+ */
+function cathedral(flat, order, street, height, tint, buffers) {
+  const obb = orientedBox(flat, order);
+  if (!obb) {
+    flatRoof(buffers.roof, flat, order, street + height, tint);
+    return;
+  }
+  const buf = buffers.wall.monument;
+  const { cx, cz, ux, uz, w, d } = obb;
+  const alongLong = w >= d;
+  const halfLong = (alongLong ? w : d) / 2;
+  const halfShort = (alongLong ? d : w) / 2;
+  const lx = alongLong ? ux : -uz;
+  const lz = alongLong ? uz : ux;
+  const sx = -lz;
+  const sz = lx;
+  const P = (l, s, y) => [cx + lx * l + sx * s, y, cz + lz * l + sz * s];
+
+  // The nave itself is a fraction of the full height; `height` is the central
+  // tower, which is what the 83m refers to.
+  const naveTop = street + Math.min(height * 0.29, 26);
+
+  const box = (l0, l1, s0, s1, y0, y1, target) => {
+    const faces = [
+      [P(l0, s0, y0), P(l1, s0, y0), P(l1, s0, y1), P(l0, s0, y1)],
+      [P(l1, s1, y0), P(l0, s1, y0), P(l0, s1, y1), P(l1, s1, y1)],
+      [P(l1, s0, y0), P(l1, s1, y0), P(l1, s1, y1), P(l1, s0, y1)],
+      [P(l0, s1, y0), P(l0, s0, y0), P(l0, s0, y1), P(l0, s1, y1)],
+    ];
+    for (const [p0, p1, p2, p3] of faces) addQuad(target, p0, p1, p2, p3, 12, y1 - y0, tint, true);
+    addQuad(target, P(l0, s0, y1), P(l1, s0, y1), P(l1, s1, y1), P(l0, s1, y1), 12, 12, tint, true);
+  };
+
+  // Nave and transepts: the body of the church, at its real footprint.
+  for (let k = 0; k < order.length; k += 1) {
+    const i = order[k];
+    const j = order[(k + 1) % order.length];
+    const ax = flat[i * 2], az = flat[i * 2 + 1];
+    const bx = flat[j * 2], bz = flat[j * 2 + 1];
+    const ex = bx - ax, ez = bz - az;
+    const len = Math.hypot(ex, ez);
+    if (len < 0.01) continue;
+    quad(buf, ax, az, bx, bz, street, naveTop, ez / len, -ex / len, len, tint, 0.62, 1.0, street, naveTop - street);
+  }
+  flatRoof(buffers.roof, flat, order, naveTop, tint);
+
+  // Central tower — the one that carried a spire and was, for three centuries,
+  // the tallest structure in the world.
+  const tw = Math.min(halfShort * 0.72, 9);
+  box(-tw, tw, -tw, tw, naveTop - 1, street + height, buf);
+
+  // The two west towers, at the lower-x end so the west front faces west.
+  const westSign = lx < 0 ? 1 : -1;
+  const wt = Math.min(halfShort * 0.46, 6.5);
+  const wl = halfLong - wt - 1;
+  const wtTop = street + height * 0.74;
+  for (const s of [-1, 1]) {
+    const sc = s * Math.min(halfShort - wt - 0.5, wt * 2.1);
+    box(westSign * wl - wt, westSign * wl + wt, sc - wt, sc + wt, naveTop - 1, wtTop, buf);
   }
 }
 
@@ -302,20 +453,25 @@ function faceNormal(p, q, r) {
   return [nx / len, ny / len, nz / len];
 }
 
-function addQuad(b, p0, p1, p2, p3, uSpan, vSpan, tint) {
+function addQuad(b, p0, p1, p2, p3, uSpan, vSpan, tint, anyOrientation = false) {
   const base = b.positions.length / 3;
   let nrm = faceNormal(p0, p1, p2);
-  // Roof faces always point up; flip if the winding came out the other way.
-  if (nrm[1] < 0) { nrm = nrm.map((v) => -v); }
+  // Roof faces always point up, so a downward normal there means the winding
+  // came out the other way. Walls built by the massing helpers legitimately
+  // face any direction, so they keep whatever their winding gives.
+  if (!anyOrientation && nrm[1] < 0) { nrm = nrm.map((v) => -v); }
   for (const p of [p0, p1, p2, p3]) {
     b.positions.push(p[0], p[1], p[2]);
     b.normals.push(nrm[0], nrm[1], nrm[2]);
     b.colors.push(tint[0], tint[1], tint[2]);
   }
   b.uvs.push(0, 0, uSpan / 8, 0, uSpan / 8, vSpan / 8, 0, vSpan / 8);
-  const wound = faceNormal(p0, p1, p2)[1] >= 0;
-  if (wound) b.indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
-  else b.indices.push(base, base + 2, base + 1, base, base + 3, base + 2);
+  // Wind so the front face is the one the normal points at.
+  if (anyOrientation || faceNormal(p0, p1, p2)[1] >= 0) {
+    b.indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  } else {
+    b.indices.push(base, base + 2, base + 1, base, base + 3, base + 2);
+  }
 }
 
 function addTri(b, p0, p1, p2, tint) {
@@ -331,7 +487,7 @@ function addTri(b, p0, p1, p2, tint) {
 }
 
 /** One wall quad, with AO shading from `bottomShade` up to `topShade`. */
-function quad(b, ax, az, bx, bz, y0, y1, nx, nz, len, tint, bottomShade, topShade, base = 0) {
+function quad(b, ax, az, bx, bz, y0, y1, nx, nz, len, tint, bottomShade, topShade, base = 0, vSpan = STOREY) {
   const vertexBase = b.positions.length / 3;
   b.positions.push(ax, y0, az, bx, y0, bz, bx, y1, bz, ax, y1, az);
   for (let i = 0; i < 4; i += 1) b.normals.push(nx, 0, nz);
@@ -341,8 +497,8 @@ function quad(b, ax, az, bx, bz, y0, y1, nx, nz, len, tint, bottomShade, topShad
   // Texture v runs from the building's own base, not from sea level, or a shop
   // 60m up the hill starts its brickwork nineteen storeys into the pattern.
   const u = len / 6;
-  const v0 = (y0 - base) / STOREY;
-  const v1 = (y1 - base) / STOREY;
+  const v0 = (y0 - base) / vSpan;
+  const v1 = (y1 - base) / vSpan;
   b.uvs.push(0, v0, u, v0, u, v1, 0, v1);
 
   // tint is the building's own colour; the two shades bake a cheap ambient
@@ -363,7 +519,7 @@ function quad(b, ax, az, bx, bz, y0, y1, nx, nz, len, tint, bottomShade, topShad
   );
 }
 
-export const STYLES = ["brick", "limestone", "render", "modern"];
+export const STYLES = ["brick", "limestone", "render", "modern", "monument"];
 
 /**
  * Upper walls are split by architectural style so each can carry its own

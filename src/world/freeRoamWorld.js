@@ -101,6 +101,7 @@ export function createCollisionIndex() {
       this.roads = roads;
       this.cells.clear();
       for (const b of buildings) {
+        if (b.passable) continue; // archways are walked through, not into
         const x0 = Math.floor(b.minX / CELL);
         const x1 = Math.floor(b.maxX / CELL);
         const z0 = Math.floor(b.minZ / CELL);

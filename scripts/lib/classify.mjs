@@ -80,12 +80,35 @@ function groundFloorOf(tags, type) {
   return "residential";
 }
 
+/**
+ * Buildings that are not "a building with storeys" at all.
+ *
+ * A city gate is a hole in a wall you walk through, and a cathedral is a nave
+ * with towers. Extruding their footprint into a box with rows of windows is not
+ * a slightly-wrong version of them, it is a different object entirely — which
+ * is exactly what Stonebow and the Cathedral looked like.
+ */
+function massingOf(tags, name) {
+  if (/^Lincoln Cathedral$/i.test(name)) return "cathedral";
+  // OSM tags Lincoln's medieval gates explicitly, and there are nine of them:
+  // Stone Bow, Newport Arch, Pottergate, Exchequergate, West Gate, South Gate,
+  // Priory Gate and two unnamed stretches of the city wall.
+  if (tags.historic === "city_gate" || tags.barrier === "arch") return "gateway";
+  return null;
+}
+
 function styleOf(tags, type, century, elevation) {
   const material = (tags["building:material"] || "").toLowerCase();
   if (/stone|limestone|sandstone|granite/.test(material)) return "limestone";
   if (/brick/.test(material)) return "brick";
   if (/concrete|metal|glass|panel/.test(material)) return "modern";
   if (/plaster|render|stucco/.test(material)) return "render";
+
+  // Ecclesiastical and monumental fabric gets its own treatment: tall openings
+  // running the full height, not floor after floor of domestic windows.
+  if (type === "cathedral" || type === "church" || type === "chapel") return "monument";
+  if (tags.historic === "city_gate" || tags.barrier === "arch") return "monument";
+  if (tags.amenity === "place_of_worship") return "monument";
 
   // Listed and historic fabric in Lincoln is stone almost without exception.
   const listed = tags.listed_status || "";
@@ -182,6 +205,10 @@ function tintOf(tags, style, id) {
   if (style === "render") {
     return [0.84 + v * 0.32, 0.84 + w * 0.30, 0.80 + v * 0.26];
   }
+  if (style === "monument") {
+    // Lincoln limestone, weathered. Narrow range: these are one material.
+    return [0.94 + v * 0.12, 0.92 + v * 0.10, 0.84 + w * 0.10];
+  }
   return [0.86 + v * 0.20, 0.87 + v * 0.20, 0.90 + w * 0.18];
 }
 
@@ -195,7 +222,8 @@ const LANDMARKS = [
   [/^Lincoln Cathedral$/i, { height: 83, style: "limestone", roof: "flat", tint: [1.02, 1.0, 0.92] }],
   [/^Lincoln Castle$/i, { height: 18, style: "limestone", roof: "flat" }],
   [/Westgate Water Tower/i, { height: 40, style: "limestone", roof: "flat" }],
-  [/^Stonebow/i, { height: 16, style: "limestone", roof: "flat" }],
+  [/^Stone ?Bow$/i, { height: 13, style: "monument", roof: "flat" }],
+  [/^Newport Arch$/i, { height: 8, style: "monument", roof: "flat" }],
   [/Guildhall$/i, { height: 16, style: "limestone", roof: "gabled" }],
   [/St Mary'?s Guildhall/i, { height: 11, style: "limestone", roof: "gabled" }],
   [/^Lincoln Prison|^HM Prison Lincoln/i, { height: 14, style: "limestone", roof: "gabled" }],
@@ -208,6 +236,7 @@ export function classifyBuilding(id, tags, elevation, footprintArea) {
   const type = (tags.building || "yes").toLowerCase();
   const century = centuryOf(tags.start_date);
   const name = tags.name || "";
+  const massing = massingOf(tags, name);
 
   let style = styleOf(tags, type, century, elevation);
   if (style === null) {
@@ -228,13 +257,25 @@ export function classifyBuilding(id, tags, elevation, footprintArea) {
     break;
   }
 
+  if (massing === "gateway") {
+    // A gate is one storey of wall over an archway, not a tower block.
+    style = "monument";
+    roof = "flat";
+    if (!Number.isFinite(Number.parseFloat(tags.height))) height = Math.max(7, Math.min(height, 12));
+  }
+  if (massing === "cathedral") {
+    style = "monument";
+    roof = "gabled";
+  }
+
   const tint = tintOf(tags, style, id);
   const landmarkSpec = landmark && LANDMARKS.find(([p]) => p.test(name))?.[1];
   return {
     style,
-    ground: groundFloorOf(tags, type),
+    ground: massing ? "blank" : groundFloorOf(tags, type),
     roof,
     height,
+    massing,
     tint: landmarkSpec?.tint || tint,
     landmark,
   };

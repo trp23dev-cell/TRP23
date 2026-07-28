@@ -22,6 +22,7 @@ import { createTerrainIndex, buildTerrainMesh } from "./terrain.js";
 import {
   facadeAlbedo, facadeEmissive, shopfrontAlbedo, shopfrontEmissive, roofAlbedo, roadAlbedo,
   pavementAlbedo, plinthAlbedo, residentialAlbedo, residentialEmissive,
+  monumentAlbedo, monumentEmissive,
 } from "./cityTextures.js";
 
 /** Stable 0..1 hash of an OSM id, for per-building variation that never flickers. */
@@ -82,7 +83,13 @@ export function tileBuildings(payload) {
       if (b.p[i + 1] < minZ) minZ = b.p[i + 1];
       if (b.p[i + 1] > maxZ) maxZ = b.p[i + 1];
     }
-    out.push({ id: b.i, ring: b.p, height: b.h, base: b.y ?? null, name: b.n || null, minX, maxX, minZ, maxZ });
+    out.push({
+      id: b.i, ring: b.p, height: b.h, base: b.y ?? null, name: b.n || null,
+      // A city gate is an archway over a road. Colliding its footprint puts an
+      // invisible wall across the street you are supposed to walk down.
+      passable: b.m === "gateway",
+      minX, maxX, minZ, maxZ,
+    });
   }
   return out;
 }
@@ -125,8 +132,14 @@ export function createMapStream({
     homeLit: repeating(residentialEmissive(canvasTex)),
   };
   for (const s of STYLES) {
-    textures[`facade_${s}`] = repeating(facadeAlbedo(canvasTex, s));
-    textures[`facadeLit_${s}`] = repeating(facadeEmissive(canvasTex, s));
+    // Monuments get their own sheet, mapped over the whole elevation rather
+    // than repeated per storey.
+    textures[`facade_${s}`] = s === "monument"
+      ? repeating(monumentAlbedo(canvasTex))
+      : repeating(facadeAlbedo(canvasTex, s));
+    textures[`facadeLit_${s}`] = s === "monument"
+      ? repeating(monumentEmissive(canvasTex))
+      : repeating(facadeEmissive(canvasTex, s));
   }
   textures.roof.repeat.set(1, 1);
   textures.road.repeat.set(0.35, 0.35);
@@ -246,6 +259,7 @@ export function createMapStream({
         style: b.st || "brick",
         ground: b.g || "shopfront",
         roof: b.rs || "gabled",
+        massing: b.m || null,
       });
     }
     const buildings = tileBuildings(payload);

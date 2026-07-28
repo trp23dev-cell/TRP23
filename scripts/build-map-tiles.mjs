@@ -523,6 +523,7 @@ async function main() {
       style: spec.style,
       ground: spec.ground,
       roofShape: spec.roof,
+      massing: spec.massing,
       tint: spec.tint,
       landmark: spec.landmark,
       name: w.tags.name || null,
@@ -633,6 +634,7 @@ async function main() {
       st: b.style,
       g: b.ground,
       rs: b.roofShape,
+      ...(b.massing ? { m: b.massing } : {}),
       c: b.tint.map((v) => Math.round(v * 255)),
       ...(b.name ? { n: b.name } : {}),
     });

@@ -440,3 +440,88 @@ export function residentialEmissive(canvasTex) {
     g.fillRect(w - 87, 23, 36, 12);
   });
 }
+
+/**
+ * Gothic stonework: tall lancet windows, buttresses, no floor divisions.
+ *
+ * This one is UV-mapped over the WHOLE height of the building rather than per
+ * storey. A cathedral is not a stack of floors — mapping it per storey gave
+ * Lincoln Cathedral twenty-six rows of office windows, which is how it ended up
+ * looking like everything else on the street.
+ */
+export function monumentAlbedo(canvasTex) {
+  return canvasTex(256, 512, (g, w, h) => {
+    const r = rand(307);
+    // Ashlar, laid in much bigger courses than domestic work.
+    g.fillStyle = "#6f6a58";
+    g.fillRect(0, 0, w, h);
+    const bh = 26;
+    const bw = 62;
+    for (let y = 0; y < h; y += bh) {
+      const offset = ((y / bh) % 2) * (bw / 2);
+      for (let x = -bw; x < w + bw; x += bw) {
+        const v = 120 + r() * 26;
+        g.fillStyle = `rgb(${v},${v - 5},${v - 24})`;
+        g.fillRect(x + offset + 0.8, y + 0.8, bw - 1.6, bh - 1.6);
+      }
+    }
+
+    // Buttresses: vertical piers standing proud, with their shadows.
+    for (const bx of [8, 122, 236]) {
+      g.fillStyle = "rgba(255,250,235,.10)";
+      g.fillRect(bx, 0, 26, h);
+      g.fillStyle = "rgba(30,28,22,.34)";
+      g.fillRect(bx + 26, 0, 9, h);
+    }
+
+    // Two tall lancets between the buttresses, pointed at the head.
+    for (const cx of [78, 192]) {
+      const top = h * 0.22;
+      const bottom = h * 0.88;
+      const ww = 34;
+      g.fillStyle = "rgba(26,24,28,.92)";
+      g.beginPath();
+      g.moveTo(cx - ww / 2, bottom);
+      g.lineTo(cx - ww / 2, top + 26);
+      g.quadraticCurveTo(cx, top - 16, cx + ww / 2, top + 26);
+      g.lineTo(cx + ww / 2, bottom);
+      g.closePath();
+      g.fill();
+      // Tracery.
+      g.strokeStyle = "rgba(150,144,124,.85)";
+      g.lineWidth = 3;
+      g.stroke();
+      g.beginPath();
+      g.moveTo(cx, top + 4); g.lineTo(cx, bottom);
+      g.moveTo(cx - ww / 2, bottom - 60); g.lineTo(cx + ww / 2, bottom - 60);
+      g.stroke();
+    }
+
+    // Weathering down the stone.
+    for (let i = 0; i < 44; i += 1) {
+      g.fillStyle = `rgba(44,42,34,${r() * 0.13})`;
+      g.fillRect(r() * w, 0, 3 + r() * 10, h);
+    }
+  });
+}
+
+export function monumentEmissive(canvasTex) {
+  return canvasTex(256, 512, (g, w, h) => {
+    g.fillStyle = "#000";
+    g.fillRect(0, 0, w, h);
+    // Candlelight through the glass, dim and warm.
+    for (const cx of [78, 192]) {
+      const top = h * 0.22;
+      const bottom = h * 0.88;
+      const ww = 34;
+      g.fillStyle = "rgba(201,160,106,.34)";
+      g.beginPath();
+      g.moveTo(cx - ww / 2, bottom);
+      g.lineTo(cx - ww / 2, top + 26);
+      g.quadraticCurveTo(cx, top - 16, cx + ww / 2, top + 26);
+      g.lineTo(cx + ww / 2, bottom);
+      g.closePath();
+      g.fill();
+    }
+  });
+}

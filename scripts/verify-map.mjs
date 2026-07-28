@@ -373,6 +373,44 @@ const main = async () => {
   check("triangle winding agrees with the normals", flipped === 0,
     `${flipped}/${facesTested} faces wound inside out`);
 
+  // The massing helpers (city gates, the cathedral) build their walls by hand
+  // and opt out of the automatic normal flip, so they need the same check
+  // rather than inheriting confidence from the footprint path.
+  const massed = [];
+  for (const { payload } of payloads) {
+    for (const b of payload.b || []) if (b.m) massed.push(b);
+  }
+  let massFlipped = 0;
+  let massFaces = 0;
+  for (const b of massed) {
+    const buf = emptyBuffers();
+    extrudeBuilding(b.p, b.h, [1, 1, 1], buf, {
+      base: b.y || 0, sill: b.s ?? null, style: "monument",
+      ground: "blank", roof: b.rs, massing: b.m,
+    });
+    for (const part of [...Object.values(buf.wall), buf.roof]) {
+      const { positions: P, normals: N, indices: I } = part;
+      for (let t = 0; t < I.length; t += 3) {
+        const [i0, i1, i2] = [I[t] * 3, I[t + 1] * 3, I[t + 2] * 3];
+        const ux = P[i1] - P[i0], uy = P[i1 + 1] - P[i0 + 1], uz = P[i1 + 2] - P[i0 + 2];
+        const vx = P[i2] - P[i0], vy = P[i2 + 1] - P[i0 + 1], vz = P[i2 + 2] - P[i0 + 2];
+        const gx = uy * vz - uz * vy, gy = uz * vx - ux * vz, gz = ux * vy - uy * vx;
+        if (Math.hypot(gx, gy, gz) < 1e-9) continue;
+        massFaces += 1;
+        if (gx * N[i0] + gy * N[i0 + 1] + gz * N[i0 + 2] < 0) massFlipped += 1;
+      }
+    }
+  }
+  check("city gates and the cathedral are built, not extruded", massed.length >= 12,
+    `${massed.length} with bespoke massing`);
+  check("massing geometry is wound correctly", massFlipped === 0,
+    `${massFlipped}/${massFaces} faces inside out`);
+
+  // The whole point of an archway is walking through it.
+  const gate = buildings.find((b) => b.passable);
+  check("archways do not wall off their road", !!gate && gate.passable,
+    gate ? `${buildings.filter((b) => b.passable).length} passable gates` : "none found");
+
   // --- world build ---
   // Runs the real buildFreeRoamWorld against a stub of the three API it uses.
   // This will not tell us it looks right, but it does exercise the extrusion
