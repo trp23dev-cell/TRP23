@@ -23,6 +23,7 @@ import {
   facadeAlbedo, facadeEmissive, shopfrontAlbedo, shopfrontEmissive, roofAlbedo, roadAlbedo,
   pavementAlbedo, plinthAlbedo, residentialAlbedo, residentialEmissive,
   monumentAlbedo, monumentEmissive, cobbleAlbedo, concreteAlbedo, gravelAlbedo,
+  grassAlbedo, woodAlbedo, waterAlbedo, wallAlbedo, hedgeAlbedo, foliageAlbedo,
 } from "./cityTextures.js";
 
 /** Stable 0..1 hash of an OSM id, for per-building variation that never flickers. */
@@ -137,6 +138,12 @@ export function createMapStream({
     cobble: repeating(cobbleAlbedo(canvasTex)),
     concrete: repeating(concreteAlbedo(canvasTex)),
     gravel: repeating(gravelAlbedo(canvasTex)),
+    grass: repeating(grassAlbedo(canvasTex)),
+    wood: repeating(woodAlbedo(canvasTex)),
+    water: repeating(waterAlbedo(canvasTex)),
+    wall: repeating(wallAlbedo(canvasTex)),
+    hedge: repeating(hedgeAlbedo(canvasTex)),
+    foliage: repeating(foliageAlbedo(canvasTex)),
     home: repeating(residentialAlbedo(canvasTex)),
     homeLit: repeating(residentialEmissive(canvasTex)),
   };
@@ -184,6 +191,20 @@ export function createMapStream({
     cobble: new THREE.MeshStandardMaterial({ map: textures.cobble, roughness: 0.95 }),
     concrete: new THREE.MeshStandardMaterial({ map: textures.concrete, roughness: 0.94 }),
     gravel: new THREE.MeshStandardMaterial({ map: textures.gravel, roughness: 0.99 }),
+    // Land cover. Without these the entire city floor is paving slabs.
+    grass: new THREE.MeshStandardMaterial({ map: textures.grass, roughness: 0.98 }),
+    wood: new THREE.MeshStandardMaterial({ map: textures.wood, roughness: 0.98 }),
+    // Water is the one smooth thing in the city, so it is the one thing that
+    // catches the sky. That reflection is what reads as water at dusk.
+    water: new THREE.MeshStandardMaterial({
+      map: textures.water, roughness: 0.12, metalness: 0.65, envMapIntensity: 1,
+    }),
+    wall: new THREE.MeshStandardMaterial({ map: textures.wall, roughness: 0.95 }),
+    hedge: new THREE.MeshStandardMaterial({ map: textures.hedge, roughness: 1 }),
+    bark: new THREE.MeshStandardMaterial({ color: 0x2e2519, roughness: 0.95 }),
+    foliage: new THREE.MeshStandardMaterial({
+      map: textures.foliage, roughness: 0.95, transparent: false,
+    }),
     // The stonework between the lowest ground and street level on sloping
     // sites. Always stone, whatever the building above it is made of — that is
     // how it is done, and it ties a mixed terrace together on a hill.
@@ -245,6 +266,51 @@ export function createMapStream({
     mesh.receiveShadow = true;
     group.add(mesh);
     return mesh;
+  }
+
+  // One trunk and one canopy geometry, instanced across every tree in a tile.
+  // 225 trees as separate meshes would cost more draw calls than the entire
+  // rest of the city; instanced it is two.
+  let treeGeo = null;
+  function treeGeometries() {
+    if (!treeGeo) {
+      treeGeo = {
+        trunk: new THREE.CylinderGeometry(0.16, 0.26, 3.4, 6),
+        canopy: new THREE.SphereGeometry(2.5, 8, 6),
+      };
+      treeGeo.trunk.translate(0, 1.7, 0);
+      treeGeo.canopy.translate(0, 4.6, 0);
+      // Squash the canopy slightly: a perfect sphere reads as a lollipop.
+      treeGeo.canopy.scale(1, 0.82, 1);
+    }
+    return treeGeo;
+  }
+
+  function buildTrees(points) {
+    if (!points || points.length < 3) return null;
+    const count = points.length / 3;
+    const { trunk, canopy } = treeGeometries();
+    const trunks = new THREE.InstancedMesh(trunk, materials.bark, count);
+    const canopies = new THREE.InstancedMesh(canopy, materials.foliage, count);
+    const m = new THREE.Matrix4();
+    for (let i = 0; i < count; i += 1) {
+      const x = points[i * 3];
+      const y = points[i * 3 + 1];
+      const z = points[i * 3 + 2];
+      // Deterministic variation so a row of street trees is not a row of clones.
+      const seed = Math.abs(Math.sin(x * 12.9898 + z * 78.233) * 43758.5453) % 1;
+      const scale = 0.78 + seed * 0.55;
+      m.makeScale(scale, scale, scale);
+      m.setPosition(x, y, z);
+      trunks.setMatrixAt(i, m);
+      canopies.setMatrixAt(i, m);
+    }
+    trunks.instanceMatrix.needsUpdate = true;
+    canopies.instanceMatrix.needsUpdate = true;
+    trunks.castShadow = canopies.castShadow = false;
+    group.add(trunks);
+    group.add(canopies);
+    return [trunks, canopies];
   }
 
   function buildTile(key, payload, tileX, tileZ) {
@@ -347,11 +413,88 @@ export function createMapStream({
       for (const idx of a.i) buf.indices.push(base + idx);
     }
 
+    // Land cover: grass, woodland and water, sitting on the terrain.
+    const coverBufs = { grass: null, wood: null, water: null };
+    for (const c of payload.c || []) {
+      const k = coverBufs[c.k] ? c.k : (coverBufs[c.k] === null ? c.k : "grass");
+      if (!coverBufs[k]) coverBufs[k] = { positions: [], normals: [], uvs: [], colors: [], indices: [] };
+      const buf = coverBufs[k];
+      const base = buf.positions.length / 3;
+      for (let i = 0; i < c.v.length; i += 3) {
+        buf.positions.push(c.v[i], c.v[i + 1], c.v[i + 2]);
+        buf.normals.push(0, 1, 0);
+        buf.uvs.push(c.v[i] / 10, c.v[i + 2] / 10);
+      }
+      for (const idx of c.i) buf.indices.push(base + idx);
+    }
+
+    // Boundary walls and hedges, as thin ribbons standing on the ground.
+    const wallBufs = { wall: null, hedge: null };
+    const WALL_SPEC = { wall: [1.9, 0.32], city: [4.2, 0.9], hedge: [1.6, 0.55] };
+    for (const l of payload.l || []) {
+      const [wh, halfW] = WALL_SPEC[l.k] || WALL_SPEC.wall;
+      // City wall and garden wall are the same stone; only their dimensions
+      // differ, and those are baked into the vertices. One buffer, one call.
+      const slot = l.k === "hedge" ? "hedge" : "wall";
+      if (!wallBufs[slot]) wallBufs[slot] = { positions: [], normals: [], uvs: [], colors: [], indices: [] };
+      const buf = wallBufs[slot];
+      const count = l.p.length / 2;
+      let along = 0;
+      for (let i = 0; i < count - 1; i += 1) {
+        const ax = l.p[i * 2], az = l.p[i * 2 + 1];
+        const bx = l.p[i * 2 + 2], bz = l.p[i * 2 + 3];
+        const ay = l.e ? l.e[i] : 0;
+        const by = l.e ? l.e[i + 1] : 0;
+        const ex = bx - ax, ez = bz - az;
+        const len = Math.hypot(ex, ez);
+        if (len < 0.05) continue;
+        const nx = (ez / len) * halfW;
+        const nz = (-ex / len) * halfW;
+        // Both faces plus a cap, so a wall reads as solid from either side.
+        for (const side of [1, -1]) {
+          const base = buf.positions.length / 3;
+          const ox = nx * side, oz = nz * side;
+          buf.positions.push(
+            ax + ox, ay, az + oz, bx + ox, by, bz + oz,
+            bx + ox, by + wh, bz + oz, ax + ox, ay + wh, az + oz
+          );
+          for (let k = 0; k < 4; k += 1) buf.normals.push(ox / halfW, 0, oz / halfW);
+          buf.uvs.push(along / 3, 0, (along + len) / 3, 0, (along + len) / 3, wh / 3, along / 3, wh / 3);
+          if (side > 0) buf.indices.push(base, base + 2, base + 1, base, base + 3, base + 2);
+          else buf.indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+        }
+        const cap = buf.positions.length / 3;
+        buf.positions.push(
+          ax + nx, ay + wh, az + nz, bx + nx, by + wh, bz + nz,
+          bx - nx, by + wh, bz - nz, ax - nx, ay + wh, az - nz
+        );
+        for (let k = 0; k < 4; k += 1) buf.normals.push(0, 1, 0);
+        buf.uvs.push(along / 3, 0, (along + len) / 3, 0, (along + len) / 3, 1, along / 3, 1);
+        buf.indices.push(cap, cap + 1, cap + 2, cap, cap + 2, cap + 3);
+        along += len;
+      }
+    }
+
     // Just above the terrain, so the two do not z-fight.
     const roadMeshes = SURFACES
       .map((k) => meshFrom(surf[k], materials[k], 0.06))
       .filter(Boolean);
     for (const m of roadMeshes) meshes.push(m);
+    // Land cover goes UNDER the paving, so a path across a park wins.
+    for (const k of ["grass", "wood", "water"]) {
+      if (coverBufs[k]) {
+        const m = meshFrom(coverBufs[k], materials[k], k === "water" ? 0 : 0.03);
+        if (m) meshes.push(m);
+      }
+    }
+    for (const k of ["wall", "hedge"]) {
+      if (wallBufs[k]) {
+        const m = meshFrom(wallBufs[k], k === "hedge" ? materials.hedge : materials.wall);
+        if (m) meshes.push(m);
+      }
+    }
+    const treeMesh = buildTrees(payload.w);
+    if (treeMesh) meshes.push(...treeMesh);
     if (terrainMesh) meshes.push(terrainMesh);
 
     resident.set(key, { meshes, buildings, roads: payload.r || [], tileX, tileZ });
@@ -487,6 +630,7 @@ export function createMapStream({
   function dispose() {
     for (const key of [...resident.keys()]) unloadTile(key);
     for (const m of Object.values(materials)) m.dispose();
+    if (treeGeo) { treeGeo.trunk.dispose(); treeGeo.canopy.dispose(); treeGeo = null; }
     for (const m of Object.values(wallMaterials)) m.dispose();
     for (const t of Object.values(textures)) t.dispose();
     payloadCache.clear();

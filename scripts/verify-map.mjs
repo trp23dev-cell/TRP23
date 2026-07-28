@@ -534,6 +534,40 @@ const main = async () => {
     offGround / Math.max(sampled, 1) < 0.02,
     `${offGround}/${sampled} triangles more than 1.2m off the terrain`);
 
+  // --- land cover ---
+  process.stdout.write("\nland cover:\n");
+  const coverKinds = {};
+  let treeCount = 0;
+  let wallCount = 0;
+  const water = [];
+  for (const { payload } of payloads) {
+    for (const c of payload.c || []) {
+      coverKinds[c.k] = (coverKinds[c.k] || 0) + 1;
+      if (c.k === "water") water.push(c);
+    }
+    treeCount += (payload.w || []).length / 3;
+    wallCount += (payload.l || []).length;
+  }
+  check("the ground is not all pavement", Object.keys(coverKinds).length >= 2,
+    Object.entries(coverKinds).map(([k, v]) => `${k} ${v}`).join(", "));
+  check("there are trees", treeCount > 100, `${treeCount} trees`);
+  check("there are boundary walls", wallCount > 200, `${wallCount} walls and hedges`);
+
+  // Water is the one surface that must NOT follow the heightmap. A pool draped
+  // over a hill is a hillside.
+  let slopedWater = 0;
+  for (const c of water) {
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (let i = 1; i < c.v.length; i += 3) {
+      if (c.v[i] < lo) lo = c.v[i];
+      if (c.v[i] > hi) hi = c.v[i];
+    }
+    if (hi - lo > 0.05) slopedWater += 1;
+  }
+  check("water is level, not draped over the hill", slopedWater === 0,
+    `${water.length} bodies of water, ${slopedWater} sloping`);
+
   // --- world build ---
   // Runs the real buildFreeRoamWorld against a stub of the three API it uses.
   // This will not tell us it looks right, but it does exercise the extrusion
@@ -584,7 +618,7 @@ const main = async () => {
   // asphalt/paving/cobble each carry their own texture. That is a few more draw
   // calls per tile in exchange for a city that is not one material. The lever
   // if a handset struggles is worldTiles in QUALITY_PROFILES, not this.
-  check("geometry is merged, not per-building", perTile <= 13,
+  check("geometry is merged, not per-building", perTile <= 16,
     `${perTile.toFixed(1)} meshes/tile for ${built.colliders.buildings.length} buildings`);
 
   const bad = meshes.find((m) => m.geometry && m.geometry.__maxIndex >= m.geometry.__count);
@@ -630,6 +664,8 @@ function stubThree() {
     setIndex(idx) { this.__maxIndex = idx.length ? Math.max(...idx) : -1; }
     computeVertexNormals() {}
     computeBoundingSphere() {}
+    translate() { return this; }
+    scale() { return this; }
     dispose() {}
   }
   class Mesh extends Obj {
@@ -654,6 +690,14 @@ function stubThree() {
     AmbientLight: Obj,
     PointLight: Obj,
     RingGeometry: BufferGeometry,
+    InstancedMesh: class extends Mesh {
+      constructor(g, m, count) { super(g, m); this.count = count; this.instanceMatrix = { needsUpdate: false }; }
+      setMatrixAt() {}
+    },
+    Matrix4: class {
+      makeScale() { return this; }
+      setPosition() { return this; }
+    },
     RepeatWrapping: 1000,
     DoubleSide: 2,
     BackSide: 1,

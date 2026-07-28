@@ -581,3 +581,115 @@ export function gravelAlbedo(canvasTex) {
     }
   });
 }
+
+// ---------------------------------------------------------------- land cover
+
+/** Mown grass: parks, gardens, the Castle grounds. */
+export function grassAlbedo(canvasTex) {
+  return canvasTex(256, 256, (g, w, h) => {
+    const r = rand(733);
+    g.fillStyle = "#2f3a24";
+    g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 14000; i += 1) {
+      const v = 44 + r() * 34;
+      g.fillStyle = `rgba(${v * 0.7},${v},${v * 0.5},.55)`;
+      const x = r() * w;
+      const y = r() * h;
+      g.fillRect(x, y, 1 + r(), 2 + r() * 3);
+    }
+    // Wear patches and mower stripes.
+    for (let i = 0; i < 10; i += 1) {
+      g.fillStyle = `rgba(70,74,48,${r() * 0.13})`;
+      g.fillRect(0, r() * h, w, 8 + r() * 22);
+    }
+  });
+}
+
+/** Woodland floor, under the canopy. */
+export function woodAlbedo(canvasTex) {
+  return canvasTex(256, 256, (g, w, h) => {
+    const r = rand(811);
+    g.fillStyle = "#26301c";
+    g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 9000; i += 1) {
+      const v = 32 + r() * 30;
+      g.fillStyle = `rgba(${v * 0.8},${v},${v * 0.45},.6)`;
+      g.fillRect(r() * w, r() * h, 2 + r() * 3, 2 + r() * 3);
+    }
+  });
+}
+
+/**
+ * Standing water: the Brayford Pool and the Witham.
+ *
+ * Drawn dark with a broken highlight rather than blue — an inland pool under a
+ * dusk sky is nearly black, and it is the reflection that reads as water.
+ */
+export function waterAlbedo(canvasTex) {
+  return canvasTex(256, 256, (g, w, h) => {
+    const r = rand(907);
+    g.fillStyle = "#141c22";
+    g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 190; i += 1) {
+      const y = r() * h;
+      g.strokeStyle = `rgba(150,180,200,${r() * 0.10})`;
+      g.lineWidth = 1 + r() * 2;
+      g.beginPath();
+      const x0 = r() * w;
+      g.moveTo(x0, y);
+      g.bezierCurveTo(x0 + 30, y - 3, x0 + 60, y + 3, x0 + 96, y);
+      g.stroke();
+    }
+  });
+}
+
+/** Coursed rubble: boundary walls, and the city wall itself. */
+export function wallAlbedo(canvasTex) {
+  return canvasTex(256, 128, (g, w, h) => {
+    const r = rand(1013);
+    g.fillStyle = "#3a3730";
+    g.fillRect(0, 0, w, h);
+    for (let y = 0; y < h; y += 13) {
+      let x = -10 + r() * 8;
+      while (x < w) {
+        const bw = 14 + r() * 22;
+        const v = 78 + r() * 30;
+        g.fillStyle = `rgb(${v},${v - 4},${v - 14})`;
+        g.fillRect(x + 1, y + 1, bw - 2, 11);
+        x += bw;
+      }
+    }
+    g.fillStyle = "rgba(28,30,22,.22)";
+    for (let i = 0; i < 400; i += 1) g.fillRect(r() * w, r() * h, 3, 3);
+  });
+}
+
+/** Hedge: clipped, dense, dark. */
+export function hedgeAlbedo(canvasTex) {
+  return canvasTex(128, 128, (g, w, h) => {
+    const r = rand(1117);
+    g.fillStyle = "#1e2a17";
+    g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 5000; i += 1) {
+      const v = 30 + r() * 34;
+      g.fillStyle = `rgba(${v * 0.65},${v},${v * 0.4},.7)`;
+      g.fillRect(r() * w, r() * h, 2 + r() * 3, 2 + r() * 3);
+    }
+  });
+}
+
+/** Canopy, seen from below and from across the street. */
+export function foliageAlbedo(canvasTex) {
+  return canvasTex(128, 128, (g, w, h) => {
+    const r = rand(1223);
+    g.fillStyle = "#243016";
+    g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 2600; i += 1) {
+      const v = 36 + r() * 40;
+      g.fillStyle = `rgba(${v * 0.62},${v},${v * 0.36},.75)`;
+      g.beginPath();
+      g.arc(r() * w, r() * h, 2 + r() * 5, 0, Math.PI * 2);
+      g.fill();
+    }
+  });
+}

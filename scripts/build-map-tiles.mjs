@@ -522,6 +522,50 @@ async function main() {
     roadPoints.push(...simple);
   }
 
+  // --- land cover, water, trees and walls ---
+  const COVER = {
+    grass: "grass", meadow: "grass", village_green: "grass", recreation_ground: "grass",
+    allotments: "grass", farmland: "grass", greenfield: "grass", cemetery: "grass",
+    heath: "grass", grassland: "grass", park: "grass", garden: "grass",
+    pitch: "grass", golf_course: "grass", playground: "grass", nature_reserve: "grass",
+    forest: "wood", wood: "wood", scrub: "wood",
+    water: "water", bay: "water", wetland: "water",
+  };
+  const cover = [];
+  const trees = [];
+  const walls = [];
+  for (const w of ways) {
+    const t = w.tags;
+    if (!t || t.building) continue;
+
+    const kind = COVER[t.landuse] || COVER[t.natural] || COVER[t.leisure]
+      || (t.waterway === "riverbank" ? "water" : null);
+    if (kind) {
+      const pts = w.refs.map((r) => nodes.get(r)).filter(Boolean).map((n) => project(n.lat, n.lon));
+      if (pts.length >= 4) {
+        const ring = simplify(pts, SIMPLIFY_TOLERANCE_M);
+        if (ring.length >= 3 && Math.abs(shoelace(ring)) > 20) cover.push({ ring, kind });
+      }
+      continue;
+    }
+
+    if (t.barrier && /^(wall|city_wall|retaining_wall|hedge)$/.test(t.barrier)) {
+      const pts = w.refs.map((r) => nodes.get(r)).filter(Boolean).map((n) => project(n.lat, n.lon));
+      if (pts.length >= 2) {
+        walls.push({
+          points: simplify(pts, SIMPLIFY_TOLERANCE_M),
+          kind: t.barrier === "hedge" ? "hedge" : t.barrier === "city_wall" ? "city" : "wall",
+        });
+      }
+    }
+  }
+  for (const [, n] of nodes) {
+    if (n.tags?.natural === "tree") trees.push(project(n.lat, n.lon));
+  }
+  process.stdout.write(
+    `land cover: ${cover.length} polygons, ${trees.length} trees, ${walls.length} walls\n`
+  );
+
   // --- buildings ---
   const buildings = [];
   for (const w of ways) {
@@ -701,7 +745,7 @@ async function main() {
     const key = `${tileX},${tileZ}`;
     let t = tiles.get(key);
     if (!t) {
-      t = { tileX, tileZ, payload: { b: [], r: [], a: [] } };
+      t = { tileX, tileZ, payload: { b: [], r: [], a: [], c: [], w: [], l: [] } };
       tiles.set(key, t);
     }
     return t;
@@ -753,13 +797,19 @@ async function main() {
   // triangle is split until its edges are short enough to follow the ground,
   // and every vertex is dropped onto the real terrain.
   const MAX_EDGE = 10;
-  for (const area of areas) {
-    const c = centroidOf(area.ring);
+
+  /**
+   * Fill a ring with triangles small enough to follow the ground, dropping
+   * every vertex onto the terrain.
+   *
+   * `level` overrides the height for things that are flat in reality: water
+   * draped over a heightmap is a hillside, not a lake.
+   */
+  function tessellate(ring, level = null, maxEdge = MAX_EDGE) {
     const flat = [];
-    for (const p of area.ring) flat.push(p.x, p.z);
+    for (const p of ring) flat.push(p.x, p.z);
     const order = normalisedOrder(flat);
     const tris = triangulate(flat, order);
-
     const verts = [];
     const indices = [];
     const seen = new Map();
@@ -768,38 +818,87 @@ async function main() {
       let idx = seen.get(key);
       if (idx === undefined) {
         idx = verts.length / 3;
-        verts.push(round(x), round(terrain ? groundAt(x, z) : 0), round(z));
+        const y = level !== null ? level : (terrain ? groundAt(x, z) : 0);
+        verts.push(round(x), round(y), round(z));
         seen.set(key, idx);
       }
       return idx;
     };
-
     const split = (ax, az, bx, bz, cx, cz, depth) => {
-      const ab = Math.hypot(bx - ax, bz - az);
-      const bc = Math.hypot(cx - bx, cz - bz);
-      const ca = Math.hypot(ax - cx, az - cz);
-      if (depth >= 5 || Math.max(ab, bc, ca) <= MAX_EDGE) {
+      const longest = Math.max(
+        Math.hypot(bx - ax, bz - az),
+        Math.hypot(cx - bx, cz - bz),
+        Math.hypot(ax - cx, az - cz)
+      );
+      if (depth >= 5 || longest <= maxEdge) {
         indices.push(vertex(ax, az), vertex(bx, bz), vertex(cx, cz));
         return;
       }
-      const mab = [(ax + bx) / 2, (az + bz) / 2];
-      const mbc = [(bx + cx) / 2, (bz + cz) / 2];
-      const mca = [(cx + ax) / 2, (cz + az) / 2];
-      split(ax, az, mab[0], mab[1], mca[0], mca[1], depth + 1);
-      split(mab[0], mab[1], bx, bz, mbc[0], mbc[1], depth + 1);
-      split(mca[0], mca[1], mbc[0], mbc[1], cx, cz, depth + 1);
-      split(mab[0], mab[1], mbc[0], mbc[1], mca[0], mca[1], depth + 1);
+      const m1 = [(ax + bx) / 2, (az + bz) / 2];
+      const m2 = [(bx + cx) / 2, (bz + cz) / 2];
+      const m3 = [(cx + ax) / 2, (cz + az) / 2];
+      split(ax, az, m1[0], m1[1], m3[0], m3[1], depth + 1);
+      split(m1[0], m1[1], bx, bz, m2[0], m2[1], depth + 1);
+      split(m3[0], m3[1], m2[0], m2[1], cx, cz, depth + 1);
+      split(m1[0], m1[1], m2[0], m2[1], m3[0], m3[1], depth + 1);
     };
-
     for (let i = 0; i < tris.length; i += 3) {
       const a = order[tris[i]];
       const b = order[tris[i + 1]];
-      const cc = order[tris[i + 2]];
-      split(flat[a * 2], flat[a * 2 + 1], flat[b * 2], flat[b * 2 + 1], flat[cc * 2], flat[cc * 2 + 1], 0);
+      const c = order[tris[i + 2]];
+      split(flat[a * 2], flat[a * 2 + 1], flat[b * 2], flat[b * 2 + 1], flat[c * 2], flat[c * 2 + 1], 0);
     }
-
-    tileFor(c.x, c.z).payload.a.push({ v: verts, i: indices, s: area.surface });
+    return { v: verts, i: indices };
   }
+
+  for (const area of areas) {
+    const mesh = tessellate(area.ring);
+    if (!mesh.i.length) continue;
+    const c = centroidOf(area.ring);
+    tileFor(c.x, c.z).payload.a.push({ ...mesh, s: area.surface });
+  }
+
+  // Land cover: grass, parks, gardens, woodland and water. Without it the whole
+  // city floor is one paving-slab texture — the Castle grounds, every garden
+  // and the Brayford Pool all rendered as pavement.
+  for (const c of cover) {
+    let level = null;
+    if (c.kind === "water" && terrain) {
+      // Water sits at one height. Take the low end of its own shoreline so the
+      // banks read as banks rather than the pool climbing them.
+      const hs = c.ring.map((p) => groundAt(p.x, p.z)).sort((a, b) => a - b);
+      level = hs[Math.floor(hs.length * 0.2)] - 0.15;
+    }
+    // Water is level, so it needs no subdivision at all; grass and woodland
+    // only need to follow the ground loosely. Tessellating these as finely as a
+    // pavement tripled the map payload for no visible gain.
+    const mesh = tessellate(c.ring, level, c.kind === "water" ? 1e9 : 22);
+    if (!mesh.i.length) continue;
+    const mid = centroidOf(c.ring);
+    tileFor(mid.x, mid.z).payload.c.push({ ...mesh, k: c.kind });
+  }
+
+  // Trees as points; the client instances one model across all of them.
+  for (const t of trees) {
+    tileFor(t.x, t.z).payload.w.push(
+      round(t.x), round(terrain ? groundAt(t.x, t.z) : 0), round(t.z)
+    );
+  }
+
+  // Boundary walls and hedges. Lincoln's uphill lanes and the Castle precinct
+  // are defined by them, and the city wall is a scheduled monument.
+  for (const w of walls) {
+    if (w.points.length < 2) continue;
+    const mid = centroidOf(w.points);
+    const flat = [];
+    for (const p of w.points) flat.push(round(p.x), round(p.z));
+    tileFor(mid.x, mid.z).payload.l.push({
+      p: flat,
+      e: w.points.map((p) => round(terrain ? groundAt(p.x, p.z) : 0)),
+      k: w.kind,
+    });
+  }
+
 
   // ---- per-tile heightmaps ----
   // Every tile carries the ground beneath it. Samples land exactly on tile
