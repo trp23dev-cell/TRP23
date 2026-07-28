@@ -277,7 +277,10 @@ export function resolveWorldCollisions(position, index) {
  * @param {Function} [opts.shadows]
  * @returns {{spawn:number[],yaw:number,mood:object,colliders:object,places:Array,stream:object}}
  */
-export function buildFreeRoamWorld({ THREE, group, chapters, cleared = 0, canvasTex, setTextureQuality, shadows, loadRadius }) {
+export function buildFreeRoamWorld({
+  THREE, group, chapters, cleared = 0, canvasTex, setTextureQuality, shadows,
+  loadRadius, shadowsEnabled = false, shadowMapSize = 1024,
+}) {
   const tune = (t) => { if (setTextureQuality) setTextureQuality(t); return t; };
   const mood = worldMood(cleared);
   const places = [];
@@ -323,6 +326,26 @@ export function buildFreeRoamWorld({ THREE, group, chapters, cleared = 0, canvas
   const sun = new THREE.DirectionalLight(0xfff0dc, mood.sun);
   sun.position.set(-40, 60, -20);
   group.add(sun);
+  group.add(sun.target);
+  // Shadows for a whole city cannot be done with one map, so this one follows
+  // the player and covers the street they are standing in. Beyond that the
+  // ambient and hemisphere lights carry it, which at this fog density is
+  // where everything turns to haze anyway.
+  if (shadowsEnabled) {
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(shadowMapSize, shadowMapSize);
+    const half = 90;
+    sun.shadow.camera.left = -half;
+    sun.shadow.camera.right = half;
+    sun.shadow.camera.top = half;
+    sun.shadow.camera.bottom = -half;
+    sun.shadow.camera.near = 1;
+    sun.shadow.camera.far = 420;
+    // Buildings are big and the map is stretched over 180m, so the bias has to
+    // be generous or every wall shadow-acnes.
+    sun.shadow.bias = -0.0016;
+    sun.shadow.normalBias = 0.9;
+  }
   group.add(new THREE.AmbientLight(0xffffff, mood.amb));
 
   // ---- streamed city geometry ----
@@ -338,6 +361,7 @@ export function buildFreeRoamWorld({ THREE, group, chapters, cleared = 0, canvas
     // into a solid white band with no glazing bars or doorway left in it.
     nightLift: 0.12 + mood.lamp * 0.30,
     loadRadius,
+    castShadows: shadowsEnabled,
     onTilesChanged: () => index.rebuild(stream.activeBuildings(), stream.activeRoads()),
   });
 

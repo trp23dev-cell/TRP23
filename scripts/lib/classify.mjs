@@ -90,6 +90,10 @@ function groundFloorOf(tags, type) {
  */
 function massingOf(tags, name) {
   if (/^Lincoln Cathedral$/i.test(name)) return "cathedral";
+  // A castle is a curtain wall around a bailey, not a solid block. Lincoln's
+  // is tagged historic=castle with the whole precinct as one polygon, so
+  // extruded it becomes a featureless slab the size of a district.
+  if (tags.historic === "castle" || tags.castle_type) return "castle";
   // OSM tags Lincoln's medieval gates explicitly, and there are nine of them:
   // Stone Bow, Newport Arch, Pottergate, Exchequergate, West Gate, South Gate,
   // Priory Gate and two unnamed stretches of the city wall.
@@ -266,6 +270,11 @@ export function classifyBuilding(id, tags, elevation, footprintArea) {
   if (massing === "cathedral") {
     style = "monument";
     roof = "gabled";
+  }
+  if (massing === "castle") {
+    style = "monument";
+    roof = "flat";
+    height = 12;
   }
 
   const tint = tintOf(tags, style, id);

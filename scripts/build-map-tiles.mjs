@@ -505,7 +505,29 @@ async function main() {
     const simple = simplify(pts, SIMPLIFY_TOLERANCE_M);
     // Roads drape over the ground rather than cutting through it, so Steep Hill
     // is something you actually walk up.
-    const elevations = simple.map((p) => groundAt(p.x, p.z));
+    // A bridge deck does NOT follow the ground. Sampling terrain under High
+    // Bridge or the Brayford crossings drops the carriageway into the water.
+    // Decks run straight between their abutments, lifted clear.
+    const isBridge = w.tags.bridge === "yes" || w.tags.man_made === "bridge";
+    let elevations;
+    if (isBridge && terrain && simple.length >= 2) {
+      const a = groundAt(simple[0].x, simple[0].z);
+      const b = groundAt(simple[simple.length - 1].x, simple[simple.length - 1].z);
+      const deck = Math.max(a, b) + 1.2;
+      let run = 0;
+      const spans = [0];
+      for (let i = 1; i < simple.length; i += 1) {
+        run += Math.hypot(simple[i].x - simple[i - 1].x, simple[i].z - simple[i - 1].z);
+        spans.push(run);
+      }
+      elevations = spans.map((d) => {
+        const t = run > 0 ? d / run : 0;
+        // A slight camber, so the deck reads as a bridge rather than a plank.
+        return deck + Math.sin(t * Math.PI) * 0.5;
+      });
+    } else {
+      elevations = simple.map((p) => groundAt(p.x, p.z));
+    }
     const surface = surfaceOf(w.tags);
 
     // area=yes means the way is the OUTLINE of a paved space, not its centre
@@ -518,7 +540,7 @@ async function main() {
       continue;
     }
 
-    roads.push({ points: simple, elevations, width: widthOf(w.tags), kind, surface });
+    roads.push({ points: simple, elevations, width: widthOf(w.tags), kind, surface, bridge: isBridge });
     roadPoints.push(...simple);
   }
 
@@ -559,11 +581,31 @@ async function main() {
       }
     }
   }
+  // Street furniture. All tagged, none of it read until now: the things that
+  // make a street look inhabited rather than modelled.
+  const FURNITURE = {
+    "amenity=bench": "bench",
+    "amenity=post_box": "postbox",
+    "amenity=waste_basket": "bin",
+    "barrier=bollard": "bollard",
+    "highway=street_lamp": "lamp",
+    "highway=bus_stop": "stop",
+  };
+  const furniture = [];
   for (const [, n] of nodes) {
-    if (n.tags?.natural === "tree") trees.push(project(n.lat, n.lon));
+    if (!n.tags) continue;
+    if (n.tags.natural === "tree") { trees.push(project(n.lat, n.lon)); continue; }
+    for (const [key, kind] of Object.entries(FURNITURE)) {
+      const [k, v] = key.split("=");
+      if (n.tags[k] === v) {
+        furniture.push({ ...project(n.lat, n.lon), kind });
+        break;
+      }
+    }
   }
   process.stdout.write(
-    `land cover: ${cover.length} polygons, ${trees.length} trees, ${walls.length} walls\n`
+    `land cover: ${cover.length} polygons, ${trees.length} trees, ${walls.length} walls, `
+    + `${furniture.length} pieces of street furniture\n`
   );
 
   // --- buildings ---
@@ -745,7 +787,7 @@ async function main() {
     const key = `${tileX},${tileZ}`;
     let t = tiles.get(key);
     if (!t) {
-      t = { tileX, tileZ, payload: { b: [], r: [], a: [], c: [], w: [], l: [] } };
+      t = { tileX, tileZ, payload: { b: [], r: [], a: [], c: [], w: [], l: [], f: [] } };
       tiles.set(key, t);
     }
     return t;
@@ -783,6 +825,7 @@ async function main() {
       w: r.width,
       k: r.kind,
       s: r.surface,
+      ...(r.bridge ? { br: 1 } : {}),
     });
   }
 
@@ -883,6 +926,12 @@ async function main() {
     tileFor(t.x, t.z).payload.w.push(
       round(t.x), round(terrain ? groundAt(t.x, t.z) : 0), round(t.z)
     );
+  }
+
+  for (const f of furniture) {
+    tileFor(f.x, f.z).payload.f.push({
+      x: round(f.x), y: round(terrain ? groundAt(f.x, f.z) : 0), z: round(f.z), k: f.kind,
+    });
   }
 
   // Boundary walls and hedges. Lincoln's uphill lanes and the Castle precinct

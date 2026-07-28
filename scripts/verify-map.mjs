@@ -64,6 +64,25 @@ const main = async () => {
     `origin ${manifest.origin.lat},${manifest.origin.lon}\n\n`
   );
 
+  // --- delivery ---
+  // The map being right in the database is worthless if the browser is serving
+  // yesterday's copy. Under `Cache-Control: max-age=86400` fetch() never
+  // contacted the server at all, so every rebuild landed in SQLite and none of
+  // it reached the game — which looked exactly like the terrain not working.
+  process.stdout.write("\ndelivery:\n");
+  const [ftx, ftz] = manifest.tiles[0];
+  const head = await fetch(`${API}/map/tile/${ftx}/${ftz}`);
+  const cc = head.headers.get("cache-control") || "";
+  const etag = head.headers.get("etag") || "";
+  check("tiles are revalidated, not blindly cached", /no-cache|no-store|max-age=0/.test(cc),
+    `Cache-Control: ${cc || "(none)"}`);
+  check("tiles carry an ETag so revalidation is free", !!etag, etag);
+  if (etag) {
+    const again = await fetch(`${API}/map/tile/${ftx}/${ftz}`, { headers: { "If-None-Match": etag } });
+    check("an unchanged tile costs a 304 and no body", again.status === 304,
+      `HTTP ${again.status}`);
+  }
+
   // Pull every tile once so the checks below see the whole city, not a 3x3
   // window. Payloads are kept: re-fetching all 43 for each section exhausts the
   // connection pool.
@@ -198,25 +217,6 @@ const main = async () => {
   const toBank = Math.hypot(sx - bank.door.x, sz - bank.door.z);
   // Close enough to read the sign, far enough to see the building it is on.
   check("spawn stands back from the bank", toBank > 6 && toBank < 30, `${toBank.toFixed(0)}m from the door`);
-
-  // --- delivery ---
-  // The map being right in the database is worthless if the browser is serving
-  // yesterday's copy. Under `Cache-Control: max-age=86400` fetch() never
-  // contacted the server at all, so every rebuild landed in SQLite and none of
-  // it reached the game — which looked exactly like the terrain not working.
-  process.stdout.write("\ndelivery:\n");
-  const [ftx, ftz] = manifest.tiles[0];
-  const head = await fetch(`${API}/map/tile/${ftx}/${ftz}`);
-  const cc = head.headers.get("cache-control") || "";
-  const etag = head.headers.get("etag") || "";
-  check("tiles are revalidated, not blindly cached", /no-cache|no-store|max-age=0/.test(cc),
-    `Cache-Control: ${cc || "(none)"}`);
-  check("tiles carry an ETag so revalidation is free", !!etag, etag);
-  if (etag) {
-    const again = await fetch(`${API}/map/tile/${ftx}/${ftz}`, { headers: { "If-None-Match": etag } });
-    check("an unchanged tile costs a 304 and no body", again.status === 304,
-      `HTTP ${again.status}`);
-  }
 
   // --- terrain ---
   // Lincoln is a hill. If this is flat, or the ground and the buildings
@@ -568,6 +568,32 @@ const main = async () => {
   check("water is level, not draped over the hill", slopedWater === 0,
     `${water.length} bodies of water, ${slopedWater} sloping`);
 
+  // --- street furniture and bridges ---
+  process.stdout.write("\nstreet furniture and bridges:\n");
+  const kinds = {};
+  let bridges = 0;
+  const sunkBridges = [];
+  for (const { payload } of payloads) {
+    for (const f of payload.f || []) kinds[f.k] = (kinds[f.k] || 0) + 1;
+    for (const r of payload.r || []) {
+      if (!r.br) continue;
+      bridges += 1;
+      // A bridge deck must NOT follow the ground: sampling terrain under High
+      // Bridge drops the carriageway into the Witham.
+      if (!r.e) continue;
+      let below = 0;
+      for (let i = 0; i < r.e.length; i += 1) {
+        const g = terrain.heightAt(r.p[i * 2], r.p[i * 2 + 1]);
+        if (g !== null && r.e[i] < g + 0.3) below += 1;
+      }
+      if (below === r.e.length) sunkBridges.push(r);
+    }
+  }
+  check("the street is furnished", Object.keys(kinds).length >= 3,
+    Object.entries(kinds).map(([k, v]) => `${k} ${v}`).join(", "));
+  check("bridge decks stand clear of the ground", sunkBridges.length === 0,
+    `${bridges} bridges, ${sunkBridges.length} sunk into the terrain`);
+
   // --- world build ---
   // Runs the real buildFreeRoamWorld against a stub of the three API it uses.
   // This will not tell us it looks right, but it does exercise the extrusion
@@ -605,7 +631,7 @@ const main = async () => {
 
   // Let the streamed tiles land, then confirm real geometry was produced.
   await new Promise((r) => setTimeout(r, 800));
-  const meshes = group.children.filter((c) => c.__isMesh);
+  const meshes = group.children.filter((c) => c && c.__isMesh);
   const verts = meshes.reduce((n, m) => n + (m.geometry?.__count || 0), 0);
   check("tiles produced merged geometry", verts > 10000, `${verts} vertices in ${meshes.length} meshes`);
   // What matters is meshes per TILE, not in total: a tile emits a fixed handful
@@ -618,7 +644,7 @@ const main = async () => {
   // asphalt/paving/cobble each carry their own texture. That is a few more draw
   // calls per tile in exchange for a city that is not one material. The lever
   // if a handset struggles is worldTiles in QUALITY_PROFILES, not this.
-  check("geometry is merged, not per-building", perTile <= 16,
+  check("geometry is merged, not per-building", perTile <= 19,
     `${perTile.toFixed(1)} meshes/tile for ${built.colliders.buildings.length} buildings`);
 
   const bad = meshes.find((m) => m.geometry && m.geometry.__maxIndex >= m.geometry.__count);
@@ -686,7 +712,16 @@ function stubThree() {
     MeshStandardMaterial: Mat,
     MeshBasicMaterial: Mat,
     HemisphereLight: Obj,
-    DirectionalLight: Obj,
+    DirectionalLight: class extends Obj {
+      constructor() {
+        super();
+        this.target = new Obj();
+        this.shadow = {
+          mapSize: { set() {} },
+          camera: {},
+        };
+      }
+    },
     AmbientLight: Obj,
     PointLight: Obj,
     RingGeometry: BufferGeometry,

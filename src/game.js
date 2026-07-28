@@ -1541,7 +1541,7 @@ let mode='room';
 let worldColliders=null, worldPlaces=[], nearPlace=null, worldStream=null;
 // The waypoint survives going into a chapter and coming back out, so you can
 // mark where you are headed, do a job, and still be pointed at it afterwards.
-let waypoint=null, waypointBeacon=null, bigMap=null;
+let waypoint=null, waypointBeacon=null, bigMap=null, worldSun=null;
 // Ground-height lookup for the current world. Null indoors.
 let worldGroundAt=null;
 // Minimap zoom level, persisted across chapters so it stays where you left it.
@@ -1573,9 +1573,11 @@ function loadWorld(exitFromIndex=null){
     THREE, group:levelGroup, chapters:LEVELS, cleared:state.levelsCleared,
     canvasTex, setTextureQuality, shadows,
     loadRadius: qualityProfile().worldTiles,
+    shadowsEnabled: qualityProfile().shadows,
+    shadowMapSize: qualityProfile().shadowMapSize,
   });
   worldColliders=built.colliders; worldPlaces=built.places; nearPlace=null;
-  worldStream=built.stream;
+  worldStream=built.stream; worldSun=built.sun;
   worldGroundAt=built.groundAt;
   // Rebuilt with the world, because the old one went out with the old group.
   waypointBeacon=createWaypointBeacon({THREE,group:levelGroup,groundAt:built.groundAt});
@@ -2653,6 +2655,13 @@ function loop(now){
   if(mode==='world'){
     updateWorldHud();
     waypointBeacon?.tick(now*.001);
+    // Walk the sun's shadow camera along with the player: one 180m shadow map
+    // cannot cover a city, so it covers wherever you are standing.
+    if(worldSun?.castShadow){
+      worldSun.position.set(camera.position.x-60,camera.position.y+95,camera.position.z-35);
+      worldSun.target.position.set(camera.position.x,camera.position.y,camera.position.z);
+      worldSun.target.updateMatrixWorld();
+    }
     // Re-seat once the tile under a distant waypoint has streamed in.
     if(waypoint) waypointBeacon?.reseat(waypoint);
   } else if(controls.enabled&&!dragging){

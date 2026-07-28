@@ -168,6 +168,10 @@ export function extrudeBuilding(flat, height, tint, buffers, opts = {}) {
     cathedral(flat, order, street, height, tint, buffers);
     return;
   }
+  if (massing === "castle") {
+    curtainWall(flat, order, street, height, tint, buffers.wall.monument);
+    return;
+  }
 
   for (let k = 0; k < n; k += 1) {
     const i = order[k];
@@ -342,6 +346,92 @@ function cathedral(flat, order, street, height, tint, buffers) {
     const sc = s * Math.min(halfShort - wt - 0.5, wt * 2.1);
     box(westSign * wl - wt, westSign * wl + wt, sc - wt, sc + wt, naveTop - 1, wtTop, buf);
   }
+}
+
+/**
+ * A castle: curtain wall around the perimeter, with towers at the corners.
+ *
+ * OSM gives Lincoln Castle as one polygon covering the whole precinct. Extruded
+ * it is a featureless block the size of a district, sitting where the bailey
+ * should be. What is actually there is a wall you walk around, so that is what
+ * gets built — the inside stays open ground.
+ */
+function curtainWall(flat, order, street, height, tint, buf) {
+  const n = order.length;
+  const thickness = 1.6;
+  const centre = { x: 0, z: 0 };
+  for (const i of order) { centre.x += flat[i * 2]; centre.z += flat[i * 2 + 1]; }
+  centre.x /= n;
+  centre.z /= n;
+
+  for (let k = 0; k < n; k += 1) {
+    const i = order[k];
+    const j = order[(k + 1) % n];
+    const ax = flat[i * 2], az = flat[i * 2 + 1];
+    const bx = flat[j * 2], bz = flat[j * 2 + 1];
+    const ex = bx - ax, ez = bz - az;
+    const len = Math.hypot(ex, ez);
+    if (len < 0.5) continue;
+    // Inward offset, so the wall sits on the boundary rather than outside it.
+    const nx = (ez / len) * thickness;
+    const nz = (-ex / len) * thickness;
+    const top = street + height;
+
+    for (const s of [0, 1]) {
+      const ox = nx * s, oz = nz * s;
+      const base = buf.positions.length / 3;
+      buf.positions.push(
+        ax - ox, street, az - oz, bx - ox, street, bz - oz,
+        bx - ox, top, bz - oz, ax - ox, top, az - oz
+      );
+      const sign = s ? -1 : 1;
+      for (let q = 0; q < 4; q += 1) buf.normals.push((nx / thickness) * sign, 0, (nz / thickness) * sign);
+      buf.uvs.push(0, 0, len / 8, 0, len / 8, height / 8, 0, height / 8);
+      for (let q = 0; q < 4; q += 1) buf.colors.push(tint[0], tint[1], tint[2]);
+      if (s) buf.indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+      else buf.indices.push(base, base + 2, base + 1, base, base + 3, base + 2);
+    }
+
+    // Wall-walk along the top.
+    const cap = buf.positions.length / 3;
+    buf.positions.push(ax, top, az, bx, top, bz, bx - nx, top, bz - nz, ax - nx, top, az - nz);
+    for (let q = 0; q < 4; q += 1) { buf.normals.push(0, 1, 0); buf.colors.push(tint[0], tint[1], tint[2]); }
+    buf.uvs.push(0, 0, len / 8, 0, len / 8, 0.3, 0, 0.3);
+    buf.indices.push(cap, cap + 1, cap + 2, cap, cap + 2, cap + 3);
+
+    // A tower every so often along the wall, as a real curtain has.
+    if (k % 3 === 0 && len > 8) {
+      towerAt(buf, ax, az, street, height * 1.5, 3.2, tint);
+    }
+  }
+}
+
+/** A square tower, for castle walls. */
+function towerAt(buf, cx, cz, street, height, half, tint) {
+  const top = street + height;
+  const c = [[-half, -half], [half, -half], [half, half], [-half, half]];
+  for (let i = 0; i < 4; i += 1) {
+    const [x0, z0] = c[i];
+    const [x1, z1] = c[(i + 1) % 4];
+    const base = buf.positions.length / 3;
+    buf.positions.push(
+      cx + x0, street, cz + z0, cx + x1, street, cz + z1,
+      cx + x1, top, cz + z1, cx + x0, top, cz + z0
+    );
+    const nx = (z1 - z0) / (2 * half);
+    const nz = -(x1 - x0) / (2 * half);
+    for (let q = 0; q < 4; q += 1) { buf.normals.push(nx, 0, nz); buf.colors.push(tint[0], tint[1], tint[2]); }
+    buf.uvs.push(0, 0, half * 2 / 8, 0, half * 2 / 8, height / 8, 0, height / 8);
+    buf.indices.push(base, base + 2, base + 1, base, base + 3, base + 2);
+  }
+  const cap = buf.positions.length / 3;
+  for (const [x, z] of c) {
+    buf.positions.push(cx + x, top, cz + z);
+    buf.normals.push(0, 1, 0);
+    buf.uvs.push(0, 0);
+    buf.colors.push(tint[0], tint[1], tint[2]);
+  }
+  buf.indices.push(cap, cap + 1, cap + 2, cap, cap + 2, cap + 3);
 }
 
 function flatRoof(b, flat, order, top, tint) {

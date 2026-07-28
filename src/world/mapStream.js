@@ -107,7 +107,7 @@ export function tileBuildings(payload) {
  */
 export function createMapStream({
   THREE, group, manifest, canvasTex, setTextureQuality, onTilesChanged, nightLift = 1,
-  loadRadius = DEFAULT_LOAD_RADIUS,
+  loadRadius = DEFAULT_LOAD_RADIUS, castShadows = false,
 }) {
   const LOAD_RADIUS = Math.max(1, loadRadius | 0);
   // Unload one ring beyond the load radius, so walking back and forth across a
@@ -202,6 +202,10 @@ export function createMapStream({
     wall: new THREE.MeshStandardMaterial({ map: textures.wall, roughness: 0.95 }),
     hedge: new THREE.MeshStandardMaterial({ map: textures.hedge, roughness: 1 }),
     bark: new THREE.MeshStandardMaterial({ color: 0x2e2519, roughness: 0.95 }),
+    furniture: new THREE.MeshStandardMaterial({ roughness: 0.7, metalness: 0.35, vertexColors: true }),
+    // Lamp heads. Emissive and unlit, so they read after dark and feed the
+    // bloom pass the same way the shopfronts do.
+    lampGlow: new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false }),
     foliage: new THREE.MeshStandardMaterial({
       map: textures.foliage, roughness: 0.95, transparent: false,
     }),
@@ -249,7 +253,7 @@ export function createMapStream({
   }
 
   /** Turn one buffer set into a mesh, or null if nothing was written to it. */
-  function meshFrom(buf, material, y = 0) {
+  function meshFrom(buf, material, y = 0, caster = false) {
     if (!buf.positions.length) return null;
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.Float32BufferAttribute(buf.positions, 3));
@@ -260,9 +264,10 @@ export function createMapStream({
     geo.computeBoundingSphere();
     const mesh = new THREE.Mesh(geo, material);
     mesh.position.y = y;
-    // A whole city casting shadows is not affordable on a handset; the sun
-    // shadow is spent on the player and the street furniture instead.
-    mesh.castShadow = false;
+    // Only the things with real bulk cast: walls, roofs and monuments. Ground,
+    // roads and land cover only receive, which halves what the shadow pass has
+    // to draw for no visible difference.
+    mesh.castShadow = castShadows && caster;
     mesh.receiveShadow = true;
     group.add(mesh);
     return mesh;
@@ -313,6 +318,74 @@ export function createMapStream({
     return [trunks, canopies];
   }
 
+  /**
+   * Street furniture, merged into a single buffer per tile rather than
+   * instanced per type. There are only a few hundred pieces in the whole city,
+   * and merging them costs one draw call instead of one per kind.
+   *
+   * Colour comes from vertex colours; lamp heads go into a separate emissive
+   * buffer so they light up at dusk with the windows.
+   */
+  function addFurniture(items, solid, glow) {
+    const box = (buf, cx, cy, cz, sx, sy, sz, col) => {
+      const hx = sx / 2;
+      const hz = sz / 2;
+      const c = [[-hx, -hz], [hx, -hz], [hx, hz], [-hx, hz]];
+      for (let i = 0; i < 4; i += 1) {
+        const [x0, z0] = c[i];
+        const [x1, z1] = c[(i + 1) % 4];
+        const b = buf.positions.length / 3;
+        buf.positions.push(
+          cx + x0, cy, cz + z0, cx + x1, cy, cz + z1,
+          cx + x1, cy + sy, cz + z1, cx + x0, cy + sy, cz + z0
+        );
+        const len = Math.hypot(x1 - x0, z1 - z0) || 1;
+        for (let q = 0; q < 4; q += 1) {
+          buf.normals.push((z1 - z0) / len, 0, -(x1 - x0) / len);
+          buf.colors.push(col[0], col[1], col[2]);
+          buf.uvs.push(0, 0);
+        }
+        buf.indices.push(b, b + 2, b + 1, b, b + 3, b + 2);
+      }
+      const cap = buf.positions.length / 3;
+      for (const [x, z] of c) {
+        buf.positions.push(cx + x, cy + sy, cz + z);
+        buf.normals.push(0, 1, 0);
+        buf.colors.push(col[0], col[1], col[2]);
+        buf.uvs.push(0, 0);
+      }
+      buf.indices.push(cap, cap + 1, cap + 2, cap, cap + 2, cap + 3);
+    };
+
+    const IRON = [0.16, 0.16, 0.17];
+    const TIMBER = [0.34, 0.24, 0.15];
+    const RED = [0.42, 0.09, 0.08];
+
+    for (const f of items) {
+      const { x, y, z, k } = f;
+      if (k === "bench") {
+        box(solid, x, y, z, 1.7, 0.42, 0.16, TIMBER);          // seat
+        box(solid, x - 0.7, y, z, 0.1, 0.42, 0.5, IRON);        // legs
+        box(solid, x + 0.7, y, z, 0.1, 0.42, 0.5, IRON);
+        box(solid, x, y + 0.42, z + 0.2, 1.7, 0.4, 0.08, TIMBER); // back
+      } else if (k === "bollard") {
+        box(solid, x, y, z, 0.22, 0.95, 0.22, IRON);
+      } else if (k === "postbox") {
+        box(solid, x, y, z, 0.6, 1.35, 0.6, RED);
+      } else if (k === "bin") {
+        box(solid, x, y, z, 0.45, 0.85, 0.45, IRON);
+      } else if (k === "stop") {
+        box(solid, x, y, z, 0.12, 2.5, 0.12, IRON);
+        box(solid, x, y + 2.1, z, 1.1, 0.5, 0.1, IRON);
+      } else if (k === "lamp") {
+        box(solid, x, y, z, 0.16, 5.2, 0.16, IRON);
+        box(solid, x, y + 5.2, z, 0.5, 0.28, 0.5, IRON);
+        // The lit head, which is what you actually see after dark.
+        box(glow, x, y + 5.05, z, 0.36, 0.2, 0.36, [1, 0.86, 0.62]);
+      }
+    }
+  }
+
   function buildTile(key, payload, tileX, tileZ) {
     // Ground first: everything else stands on it.
     let terrainMesh = null;
@@ -347,17 +420,20 @@ export function createMapStream({
     const buildings = tileBuildings(payload);
 
     const meshes = [
-      meshFrom(buffers.plinth, materials.plinth),
-      meshFrom(buffers.shopfront, materials.ground),
-      meshFrom(buffers.residential, materials.residential),
-      meshFrom(buffers.roof, materials.roof),
-      ...STYLES.map((s) => meshFrom(buffers.wall[s], wallMaterials[s])),
+      meshFrom(buffers.plinth, materials.plinth, 0, true),
+      meshFrom(buffers.shopfront, materials.ground, 0, true),
+      meshFrom(buffers.residential, materials.residential, 0, true),
+      meshFrom(buffers.roof, materials.roof, 0, true),
+      ...STYLES.map((s) => meshFrom(buffers.wall[s], wallMaterials[s], 0, true)),
     ].filter(Boolean);
 
     // Ground surfaces, split by what they are actually made of. OSM tags
     // surface on three quarters of Lincoln's ways: the High Street and Bailgate
     // are paving stones, the carriageways asphalt, and there is real cobble.
     const SURFACES = ["asphalt", "paving", "cobble", "concrete", "gravel"];
+    // Only real carriageways get kerbs; footways and precincts do not have them.
+    const KERBED = new Set(["primary", "secondary", "tertiary", "unclassified", "residential", "primary_link"]);
+    const KERB_H = 0.13;
     const surf = {};
     for (const k of SURFACES) surf[k] = { positions: [], normals: [], uvs: [], colors: [], indices: [] };
     const bufFor = (k) => surf[k] || surf.asphalt;
@@ -391,8 +467,31 @@ export function createMapStream({
         for (let k = 0; k < 4; k += 1) buf.normals.push(0, 1, 0);
         // UVs run along the road so the surface does not swim as it turns.
         buf.uvs.push(along / 6, 0, (along + len) / 6, 0, (along + len) / 6, r.w / 6, along / 6, r.w / 6);
-        along += len;
         buf.indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+
+        // Kerbs: a raised lip down each side of a carriageway. Emitted into the
+        // paving buffer rather than one of their own, so they are free. Only
+        // carriageways get them — a footpath has no kerb, and a bridge deck has
+        // a parapet instead.
+        if (KERBED.has(r.k) && !r.br) {
+          const kerb = surf.paving;
+          for (const side of [1, -1]) {
+            const ox = nx * side;
+            const oz = nz * side;
+            const kb = kerb.positions.length / 3;
+            kerb.positions.push(
+              ax + ox, ay, az + oz, bx + ox, by, bz + oz,
+              bx + ox, by + KERB_H, bz + oz, ax + ox, ay + KERB_H, az + oz
+            );
+            const ux = (ez / len) * side;
+            const uz = (-ex / len) * side;
+            for (let k = 0; k < 4; k += 1) kerb.normals.push(ux, 0, uz);
+            kerb.uvs.push(along / 3, 0, (along + len) / 3, 0, (along + len) / 3, 0.4, along / 3, 0.4);
+            if (side > 0) kerb.indices.push(kb, kb + 2, kb + 1, kb, kb + 3, kb + 2);
+            else kerb.indices.push(kb, kb + 1, kb + 2, kb, kb + 2, kb + 3);
+          }
+        }
+        along += len;
       }
     }
 
@@ -495,6 +594,16 @@ export function createMapStream({
     }
     const treeMesh = buildTrees(payload.w);
     if (treeMesh) meshes.push(...treeMesh);
+
+    if (payload.f?.length) {
+      const solid = { positions: [], normals: [], uvs: [], colors: [], indices: [] };
+      const glow = { positions: [], normals: [], uvs: [], colors: [], indices: [] };
+      addFurniture(payload.f, solid, glow);
+      const sm = meshFrom(solid, materials.furniture);
+      if (sm) meshes.push(sm);
+      const gm = meshFrom(glow, materials.lampGlow);
+      if (gm) meshes.push(gm);
+    }
     if (terrainMesh) meshes.push(terrainMesh);
 
     resident.set(key, { meshes, buildings, roads: payload.r || [], tileX, tileZ });
@@ -606,11 +715,11 @@ export function createMapStream({
       });
     }
     return [
-      meshFrom(buffers.plinth, materials.plinth),
-      meshFrom(buffers.shopfront, materials.ground),
-      meshFrom(buffers.residential, materials.residential),
-      meshFrom(buffers.roof, materials.roof),
-      ...STYLES.map((s) => meshFrom(buffers.wall[s], wallMaterials[s])),
+      meshFrom(buffers.plinth, materials.plinth, 0, true),
+      meshFrom(buffers.shopfront, materials.ground, 0, true),
+      meshFrom(buffers.residential, materials.residential, 0, true),
+      meshFrom(buffers.roof, materials.roof, 0, true),
+      ...STYLES.map((s) => meshFrom(buffers.wall[s], wallMaterials[s], 0, true)),
     ].filter(Boolean);
   }
 
