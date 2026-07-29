@@ -3,7 +3,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash, randomUUID, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
-import { gzipSync } from "node:zlib";
+import { gzipSync, gunzipSync } from "node:zlib";
 import { defaultContent } from "../src/data/defaultContent.js";
 import { defaultWorld } from "../src/data/defaultWorld.js";
 import { createSqliteStore, STARTING_COINS } from "./storage/sqliteStore.js";
@@ -90,6 +90,34 @@ async function serveStatic(res, pathname) {
     return false;
   }
 }
+/**
+ * Load the shipped map into whatever database this server came up against.
+ *
+ * The map is built offline and travels with the code as map-export.json.gz,
+ * not inside the database — that file also holds player accounts, and is not
+ * something to rewrite on every map rebuild. On boot the export wins if it is
+ * newer than whatever the database has, so a fresh deploy comes up with the
+ * map that was actually tested and no network fetch at start-up.
+ */
+async function importShippedMap() {
+  const file = path.join(storageDir, "map-export.json.gz");
+  let raw;
+  try {
+    raw = await fs.readFile(file);
+  } catch {
+    return; // no export shipped; whatever is in the database stands
+  }
+  try {
+    const { meta, tiles } = JSON.parse(gunzipSync(raw).toString("utf8"));
+    const current = store.getMapManifest();
+    if (current && current.builtAt >= meta.builtAt) return;
+    store.replaceMapTiles(tiles, meta, meta.builtAt);
+    console.log(`[map] imported ${tiles.length} tiles from the shipped export`);
+  } catch (err) {
+    console.error("[map] could not import the shipped map:", err.message);
+  }
+}
+
 let store;
 const LEGACY_DEFAULT_ADMIN_EMAIL = "admin@trapmadeit.local";
 

@@ -1701,6 +1701,54 @@ function updateWorldHud(){
   updateWaypointHud();
 }
 
+// ==================== PERFORMANCE READOUT ====================
+// Toggled with F3. Exists because the outdoor world has grown from 88 draw
+// calls to over 400 across a run of graphics work, none of it ever measured on
+// a real device. This is the instrument that settles whether the quality tiers
+// are set anywhere near right.
+//
+// The phone is the number that matters: run `npm run dev` (it binds to the
+// network) and open http://<this machine's IP>:5173 on a handset.
+let perfOn=false;
+const perfSamples=[];
+let perfWorst=Infinity, perfLastPaint=0;
+
+function togglePerf(){
+  perfOn=!perfOn;
+  $('#perfHud')?.classList.toggle('on',perfOn);
+  if(perfOn){ perfSamples.length=0; perfWorst=Infinity; }
+}
+
+function updatePerf(dt,now){
+  if(!perfOn) return;
+  const fps=1/Math.max(dt,1e-4);
+  perfSamples.push(fps);
+  if(perfSamples.length>120) perfSamples.shift();
+  if(perfSamples.length>20) perfWorst=Math.min(perfWorst,fps);
+
+  // Repaint at 5Hz: formatting this every frame is itself a cost.
+  if(now-perfLastPaint<200) return;
+  perfLastPaint=now;
+  const el=$('#perfHud');
+  if(!el) return;
+
+  const avg=perfSamples.reduce((a,b)=>a+b,0)/perfSamples.length;
+  const sorted=[...perfSamples].sort((a,b)=>a-b);
+  const p1=sorted[Math.floor(sorted.length*0.01)]||sorted[0];
+  const info=renderer.info;
+  const q=visualSettings.quality;
+  const cls=(v,warn,bad)=>v<bad?'bad':v<warn?'warn':'';
+
+  el.innerHTML=
+    `<b>${avg.toFixed(0)} fps</b>  <span class="${cls(p1,45,25)}">1% low ${p1.toFixed(0)}</span>  `
+    +`worst ${perfWorst===Infinity?'-':perfWorst.toFixed(0)}\n`
+    +`draw calls  <span class="${cls(500-info.render.calls,300,120)}">${info.render.calls}</span>\n`
+    +`triangles   ${(info.render.triangles/1000).toFixed(0)}k\n`
+    +`geometries  ${info.memory.geometries}   textures ${info.memory.textures}\n`
+    +`tiles       ${worldStream?worldStream.residentCount:0}   quality ${q}\n`
+    +`pixel ratio ${renderer.getPixelRatio().toFixed(2)}   ${innerWidth}x${innerHeight}`;
+}
+
 // ==================== THE MAP + WAYPOINTS ====================
 
 function updateWaypointHud(){
@@ -1823,6 +1871,7 @@ addEventListener('keydown',e=>{
   // M opens and closes the big map. Works while the panel has focus too, which
   // is why it is not gated on controls.enabled.
   if(e.code==='KeyM'&&mode==='world'){ e.preventDefault(); toggleMapPanel(); }
+  if(e.code==='F3'){ e.preventDefault(); togglePerf(); }
   if(mode==='world'&&(e.code==='Equal'||e.code==='NumpadAdd')){ e.preventDefault(); zoomMinimap(1); }
   if(mode==='world'&&(e.code==='Minus'||e.code==='NumpadSubtract')){ e.preventDefault(); zoomMinimap(-1); }
   if(e.code==='Space'){ if(controls.enabled) e.preventDefault(); tryJump(); }
@@ -2675,6 +2724,8 @@ function loop(now){
   }
   if(composer) composer.render();
   else renderer.render(scene,camera);
+  // After the render, so renderer.info reflects the frame just drawn.
+  updatePerf(dt,now);
   if($('#shopPanel').classList.contains('open')&&vSuit){
     if(vAuto) vSpin+=dt*.7;
     vSuit.rotation.y=vSpin; vDisc.rotation.y=vSpin;

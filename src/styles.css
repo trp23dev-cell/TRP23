@@ -238,6 +238,17 @@ src:url(data:font/woff2;base64,d09GMgABAAAAAFesABEAAAAA00QAAFdIAAEAAAAAAAAAAAAAA
     #waypointBar{font-size:9px;letter-spacing:.12em;padding:4px 6px 4px 8px}
   }
 
+  /* Performance readout. Off by default, F3 toggles it. Deliberately plain
+     and monospaced: this is an instrument, not part of the game. */
+  #perfHud{position:absolute;top:8px;left:50%;transform:translateX(-50%);display:none;
+    background:rgba(6,6,8,.86);border:1px solid rgba(201,160,106,.35);padding:8px 12px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;line-height:1.55;
+    color:#cfe3c8;white-space:pre;pointer-events:none;z-index:30;text-align:left}
+  #perfHud.on{display:block}
+  #perfHud b{color:#f4ecdd;font-weight:600}
+  #perfHud .warn{color:#e8b06a}
+  #perfHud .bad{color:#e07a6a}
+
   /* ---------- THE BIG MAP ---------- */
   .map-panel{width:min(1200px,96vw)}
   .map-body{display:flex;min-height:0;flex:1}
