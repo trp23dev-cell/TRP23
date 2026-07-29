@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "node server/mockApiServer.js",
-    "dev": "vite",
+    "dev": "vite --host",
     "dev:api": "node server/mockApiServer.js",
     "dev:full": "node server/dev-full.js",
     "validate:rooms": "node scripts/validate-room-assets.mjs",
@@ -19,7 +19,10 @@
     "ios:prepare": "npm run build && npm run ios:sync",
     "android:sync": "npx cap sync android",
     "android:open": "npx cap open android",
-    "android:prepare": "npm run build && npm run android:sync"
+    "android:prepare": "npm run build && npm run android:sync",
+    "map:build": "node scripts/build-map-tiles.mjs",
+    "map:verify": "node scripts/verify-map.mjs",
+    "map:export": "node scripts/export-map.mjs"
   },
   "dependencies": {
     "@capacitor/core": "^7.4.2",

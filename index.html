@@ -100,9 +100,18 @@ You're viewing this in an email preview, which can't run the game.<br>
 
   <!-- THE BLOCK: radar, compass and the [E] prompt. Shown only outdoors. -->
   <div id="worldUi">
-    <canvas id="minimap" width="190" height="190"></canvas>
+    <div id="minimapWrap">
+      <canvas id="minimap" width="190" height="190"></canvas>
+      <div class="mm-zoom">
+        <button id="mmIn" title="Zoom in (+)">+</button>
+        <button id="mmOut" title="Zoom out (-)">&minus;</button>
+      </div>
+    </div>
     <div id="compass"><span id="nearName">—</span><span id="nearDist"></span></div>
+    <div id="waypointBar"><span id="wpName">—</span><span id="wpDist"></span><button id="wpClear" title="Clear waypoint">✕</button></div>
+    <button id="openMapBtn" class="hud-act" title="Map (M)">MAP</button>
   </div>
+  <div id="perfHud"></div>
   <div id="prompt"></div>
   <div class="hud-bottom">
     <div class="objective">
@@ -116,7 +125,7 @@ You're viewing this in an email preview, which can't run the game.<br>
     </div>
   </div>
   <div class="controls-hint" id="desktopControlsHint">
-    <b>W A S D</b> - move<br><b>Shift</b> - sprint<br><b>Space</b> - jump<br><b>Click</b> - activate mouse look<br><b>Esc</b> - release cursor
+    <b>W A S D</b> - move<br><b>Shift</b> - sprint<br><b>Space</b> - jump<br><b>M</b> - map<br><b>F3</b> - performance<br><b>+ / -</b> - minimap zoom<br><b>Click</b> - activate mouse look<br><b>Esc</b> - release cursor
   </div>
   <div class="display-settings" id="displaySettings">
     <button id="displayCog" class="display-cog" aria-label="Display settings" title="Display settings">⚙</button>
@@ -350,6 +359,31 @@ You're viewing this in an email preview, which can't run the game.<br>
   </div>
 </div>
 
+
+<!-- THE BLOCK, full size. Opened with M. Click anywhere on it to drop a waypoint. -->
+<div class="panel-wrap" id="mapPanel">
+  <div class="panel map-panel">
+    <div class="panel-head">
+      <div class="ph-title"><span class="ph-num">MAP</span><span class="ph-name display">The Block</span></div>
+      <button class="xbtn" data-close="mapPanel">✕</button>
+    </div>
+    <div class="map-body">
+      <canvas id="bigMap"></canvas>
+      <div class="map-side">
+        <div class="ms-title">Places</div>
+        <div id="mapPlaces" class="ms-list"></div>
+        <div class="ms-title">Waypoint</div>
+        <div id="mapWaypoint" class="ms-wp">None set</div>
+        <button id="mapClearWp" class="ms-btn">Clear waypoint</button>
+        <div class="ms-hint">
+          Click the map to drop a waypoint.<br>
+          Drag to pan · scroll to zoom.
+        </div>
+        <div class="ms-attrib">© OpenStreetMap contributors</div>
+      </div>
+    </div>
+  </div>
+</div>
 
 <script type="module" src="/src/main.js"></script>
 </body>

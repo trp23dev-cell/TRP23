@@ -245,6 +245,29 @@ const MIGRATIONS = [
 
     db.prepare("DELETE FROM kv WHERE k IN ('players','rewardClaims','discounts')").run();
   },
+
+  // v2 — real-world map tiles (OpenStreetMap, ODbL) for the free-roam world.
+  //
+  // The client never talks to OSM directly; the tiler writes pre-projected,
+  // pre-simplified geometry here and the server hands out one tile at a time.
+  // Rebuilding the map is a DELETE + re-INSERT, so `builtAt` doubles as the
+  // ETag the client caches against.
+  (db) => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS map_tiles (
+        tileX INTEGER NOT NULL,
+        tileZ INTEGER NOT NULL,
+        payload TEXT NOT NULL,
+        builtAt INTEGER NOT NULL,
+        PRIMARY KEY (tileX, tileZ)
+      );
+
+      CREATE TABLE IF NOT EXISTS map_meta (
+        k TEXT PRIMARY KEY,
+        v TEXT NOT NULL
+      );
+    `);
+  },
 ];
 
 // Apply any migrations the DB has not yet seen, each in its own transaction.
@@ -851,6 +874,50 @@ export function createSqliteStore({ dbPath }) {
     return true;
   });
 
+  // ---- map tiles (OpenStreetMap-derived free-roam geometry) ----
+  const insertTile = db.prepare(
+    "INSERT INTO map_tiles(tileX, tileZ, payload, builtAt) VALUES(?, ?, ?, ?) " +
+    "ON CONFLICT(tileX, tileZ) DO UPDATE SET payload = excluded.payload, builtAt = excluded.builtAt"
+  );
+  const selectTile = db.prepare("SELECT payload, builtAt FROM map_tiles WHERE tileX = ? AND tileZ = ?");
+  const selectTileIndex = db.prepare("SELECT tileX, tileZ FROM map_tiles ORDER BY tileZ, tileX");
+  const deleteAllTiles = db.prepare("DELETE FROM map_tiles");
+  const upsertMapMeta = db.prepare(
+    "INSERT INTO map_meta(k, v) VALUES(?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v"
+  );
+  const selectMapMeta = db.prepare("SELECT v FROM map_meta WHERE k = ?");
+
+  /**
+   * Replace the whole tile set in one transaction. A partial map is worse than
+   * no map — the player would walk into a void — so a failed build must leave
+   * the previous map serving.
+   */
+  const replaceMapTiles = db.transaction((tiles, meta, builtAt) => {
+    deleteAllTiles.run();
+    for (const t of tiles) {
+      insertTile.run(t.tileX, t.tileZ, JSON.stringify(t.payload), builtAt);
+    }
+    upsertMapMeta.run("manifest", JSON.stringify({ ...meta, builtAt, tileCount: tiles.length }));
+  });
+
+  function getMapTile(tileX, tileZ) {
+    const row = selectTile.get(tileX, tileZ);
+    if (!row) return null;
+    return { payload: row.payload, builtAt: row.builtAt };
+  }
+
+  function getMapManifest() {
+    const row = selectMapMeta.get("manifest");
+    if (!row) return null;
+    try {
+      const manifest = JSON.parse(row.v);
+      manifest.tiles = selectTileIndex.all().map((r) => [r.tileX, r.tileZ]);
+      return manifest;
+    } catch {
+      return null;
+    }
+  }
+
   function hydrateLocation(r) {
     let data = {};
     try {
@@ -895,6 +962,10 @@ export function createSqliteStore({ dbPath }) {
     seedLocations,
     getLocations,
     getLocation,
+    // map tiles
+    replaceMapTiles,
+    getMapTile,
+    getMapManifest,
     // player accounts + sessions
     ensurePlayerAccount,
     playerAccountExists,

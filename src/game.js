@@ -8,11 +8,16 @@ import { DEFAULT_VISUAL_SETTINGS, QUALITY_PROFILES, ROOM_LIGHT_PROFILES } from "
 import { applyRoomAssetLayer, ROOM_ASSET_REGISTRY } from "./render/roomAssetRegistry";
 import { formatRegistryValidationReport, validateRoomAssetRegistry } from "./render/roomAssetValidation";
 import { getContent, getContentRemoteFirst } from "./data/contentStore";
+import { createBigMap } from "./world/bigMap";
 import {
   buildFreeRoamWorld,
+  prepareMap,
+  createWaypointBeacon,
   resolveWorldCollisions,
   nearestPlace,
   drawMinimap,
+  MINIMAP_ZOOMS,
+  MINIMAP_DEFAULT_ZOOM,
   worldMood,
   ENTER_DISTANCE,
 } from "./world/freeRoamWorld";
@@ -486,7 +491,11 @@ document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',
 
 // ---------------- RENDERER / CAMERA ----------------
 const scene=new THREE.Scene();
-const camera=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,.05,120);
+// Far plane has to clear the city, not the room. Lincoln Cathedral stands 60m
+// up and 500m from the High Street; at the old 120m far plane it was clipped
+// out of existence, which is why the hill could never be seen from below.
+// Chapter interiors reset near/far themselves in loadLevel.
+const camera=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,.1,2600);
 let yaw=0,pitch=0;
 const renderer=new THREE.WebGLRenderer({antialias:true});
 renderer.setSize(innerWidth,innerHeight);
@@ -1529,7 +1538,14 @@ function loadLevel(i, showIntro=true){
 // old `nextLevel`, which is why progression now advances there instead of here.
 // mode 'world' = walking the block outside; mode 'room' = inside a chapter.
 let mode='room';
-let worldColliders=[], worldPlaces=[], nearPlace=null;
+let worldColliders=null, worldPlaces=[], nearPlace=null, worldStream=null;
+// The waypoint survives going into a chapter and coming back out, so you can
+// mark where you are headed, do a job, and still be pointed at it afterwards.
+let waypoint=null, waypointBeacon=null, bigMap=null, worldSun=null;
+// Ground-height lookup for the current world. Null indoors.
+let worldGroundAt=null;
+// Minimap zoom level, persisted across chapters so it stays where you left it.
+let minimapZoom=MINIMAP_DEFAULT_ZOOM;
 const _miniDir=new THREE.Vector3();
 
 // `exitFromIndex` puts the player outside the door of the chapter they just left
@@ -1539,6 +1555,9 @@ function loadWorld(exitFromIndex=null){
   const roomAssetRequest=++activeRoomAssetRequest;
   void roomAssetRequest;                       // invalidates any in-flight room GLB load
   doorLocked=false; doorGlowRef=null; heroSpinRef=null; tvTexRef=null; dustRef=null; bulbRef=null;
+  // loadWorld() runs again on every return from a chapter, so the previous
+  // stream's shared materials and textures have to go with its geometry.
+  if(worldStream){ worldStream.dispose(); worldStream=null; }
   if(levelGroup){
     levelGroup.traverse(o=>{ if(o.geometry) o.geometry.dispose(); });
     scene.remove(levelGroup);
@@ -1553,8 +1572,17 @@ function loadWorld(exitFromIndex=null){
   const built=buildFreeRoamWorld({
     THREE, group:levelGroup, chapters:LEVELS, cleared:state.levelsCleared,
     canvasTex, setTextureQuality, shadows,
+    loadRadius: qualityProfile().worldTiles,
+    shadowsEnabled: qualityProfile().shadows,
+    shadowMapSize: qualityProfile().shadowMapSize,
   });
   worldColliders=built.colliders; worldPlaces=built.places; nearPlace=null;
+  worldStream=built.stream; worldSun=built.sun;
+  worldGroundAt=built.groundAt;
+  // Rebuilt with the world, because the old one went out with the old group.
+  waypointBeacon=createWaypointBeacon({THREE,group:levelGroup,groundAt:built.groundAt});
+  waypointBeacon.set(waypoint);
+  updateWaypointHud();
   levelGroup.traverse(applyLightQuality);
 
   scene.environment=null;
@@ -1567,7 +1595,13 @@ function loadWorld(exitFromIndex=null){
     const from=built.places.find(p=>p.index===exitFromIndex);
     if(from?.exit){ spawnX=from.exit.x; spawnZ=from.exit.z; spawnYaw=from.exit.yaw; }
   }
-  groundY=1.7; velY=0; grounded=true;
+  // Stand on the hill, not at a fixed height. The tiles around the spawn are
+  // built synchronously above, so the ground is already known here.
+  // Outdoors the far plane has to clear the city; chapter interiors set their
+  // own when they load.
+  camera.far=qualityProfile().viewDistance||2600;
+  camera.updateProjectionMatrix();
+  groundY=built.groundAt(spawnX,spawnZ)+EYE_HEIGHT; velY=0; grounded=true;
   camera.position.set(spawnX,groundY,spawnZ);
   yaw=spawnYaw; pitch=0;
   $('#levelLabel').textContent='THE BLOCK';
@@ -1618,6 +1652,13 @@ function tryEnterNearest(){
   if(!nearPlace||nearPlace.dist>=ENTER_DISTANCE) return;
   const pl=nearPlace.place;
   if(pl.kind==='bank'){ openBankPanel(); return; }
+  // Kimani's is a real door on a real building with nothing behind it yet. It
+  // is deliberately walkable-to and interactable so the block reads as lived
+  // in; the barber's functions land later.
+  if(pl.kind==='placeholder'){
+    toast(`<span class="gold">${pl.name}</span> — ${pl.sub||'CLOSED FOR NOW'}`,3200);
+    return;
+  }
   if(pl.locked){
     const need=LEVELS[state.levelsCleared];
     toast(`<span class="gold">${pl.name}</span> IS SHUT — FINISH ${need?need.name:'THE CHAPTER BEFORE IT'} FIRST`,3600);
@@ -1656,8 +1697,145 @@ function updateWorldHud(){
     }
   }
   const cv=$('#minimap');
-  if(cv) drawMinimap(cv.getContext('2d'),cv,camera,worldColliders,worldPlaces,near,THREE,_miniDir);
+  if(cv) drawMinimap(cv.getContext('2d'),cv,camera,worldColliders,worldPlaces,near,THREE,_miniDir,waypoint,minimapZoom);
+  updateWaypointHud();
 }
+
+// ==================== PERFORMANCE READOUT ====================
+// Toggled with F3. Exists because the outdoor world has grown from 88 draw
+// calls to over 400 across a run of graphics work, none of it ever measured on
+// a real device. This is the instrument that settles whether the quality tiers
+// are set anywhere near right.
+//
+// The phone is the number that matters: run `npm run dev` (it binds to the
+// network) and open http://<this machine's IP>:5173 on a handset.
+let perfOn=false;
+const perfSamples=[];
+let perfWorst=Infinity, perfLastPaint=0;
+
+function togglePerf(){
+  perfOn=!perfOn;
+  $('#perfHud')?.classList.toggle('on',perfOn);
+  if(perfOn){ perfSamples.length=0; perfWorst=Infinity; }
+}
+
+function updatePerf(dt,now){
+  if(!perfOn) return;
+  const fps=1/Math.max(dt,1e-4);
+  perfSamples.push(fps);
+  if(perfSamples.length>120) perfSamples.shift();
+  if(perfSamples.length>20) perfWorst=Math.min(perfWorst,fps);
+
+  // Repaint at 5Hz: formatting this every frame is itself a cost.
+  if(now-perfLastPaint<200) return;
+  perfLastPaint=now;
+  const el=$('#perfHud');
+  if(!el) return;
+
+  const avg=perfSamples.reduce((a,b)=>a+b,0)/perfSamples.length;
+  const sorted=[...perfSamples].sort((a,b)=>a-b);
+  const p1=sorted[Math.floor(sorted.length*0.01)]||sorted[0];
+  const info=renderer.info;
+  const q=visualSettings.quality;
+  const cls=(v,warn,bad)=>v<bad?'bad':v<warn?'warn':'';
+
+  el.innerHTML=
+    `<b>${avg.toFixed(0)} fps</b>  <span class="${cls(p1,45,25)}">1% low ${p1.toFixed(0)}</span>  `
+    +`worst ${perfWorst===Infinity?'-':perfWorst.toFixed(0)}\n`
+    +`draw calls  <span class="${cls(500-info.render.calls,300,120)}">${info.render.calls}</span>\n`
+    +`triangles   ${(info.render.triangles/1000).toFixed(0)}k\n`
+    +`geometries  ${info.memory.geometries}   textures ${info.memory.textures}\n`
+    +`tiles       ${worldStream?worldStream.residentCount:0}   quality ${q}\n`
+    +`pixel ratio ${renderer.getPixelRatio().toFixed(2)}   ${innerWidth}x${innerHeight}`;
+}
+
+// ==================== THE MAP + WAYPOINTS ====================
+
+function updateWaypointHud(){
+  const bar=$('#worldUi');
+  if(bar) bar.classList.toggle('has-wp',!!waypoint);
+  if(!waypoint) return;
+  const d=Math.hypot(camera.position.x-waypoint.x,camera.position.z-waypoint.z);
+  const n=$('#wpName'), dEl=$('#wpDist');
+  if(n) n.textContent=waypoint.name||'Waypoint';
+  if(dEl) dEl.textContent=`· ${Math.round(d)}m`;
+  // Arriving clears it: a marker you are standing on is just clutter.
+  if(d<4) setWaypoint(null);
+}
+
+function setWaypoint(wp){
+  waypoint=wp;
+  waypointBeacon?.set(wp);
+  bigMap?.setWaypoint(wp);
+  updateWaypointHud();
+  const label=$('#mapWaypoint');
+  if(label) label.textContent=wp?(wp.name||'Marked spot'):'None set';
+  if(wp) toast(`WAYPOINT SET — <span class="gold">${wp.name||'MARKED SPOT'}</span>`,2200);
+}
+
+function ensureBigMap(){
+  if(bigMap) return bigMap;
+  const cv=$('#bigMap');
+  if(!cv) return null;
+  bigMap=createBigMap({canvas:cv,onWaypoint:wp=>setWaypoint(wp)});
+  $('#mapClearWp')?.addEventListener('click',()=>setWaypoint(null));
+  return bigMap;
+}
+
+async function openMapPanel(){
+  if(mode!=='world') return;
+  const map=ensureBigMap();
+  if(!map) return;
+  openPanel('mapPanel');
+  map.setPlaces(worldPlaces);
+  map.setPlayer({x:camera.position.x,z:camera.position.z,yaw:yaw});
+  map.setWaypoint(waypoint);
+  map.recentre();
+  // Sizing has to wait for the panel to actually be laid out.
+  requestAnimationFrame(()=>map.resize());
+  renderMapPlaceList();
+  // The whole city, not just the tiles currently streamed in for rendering.
+  try{ map.setData(await worldStream.loadWholeCity()); }
+  catch(err){ console.warn('[map]',err); }
+}
+
+function renderMapPlaceList(){
+  const host=$('#mapPlaces');
+  if(!host) return;
+  host.innerHTML='';
+  for(const pl of worldPlaces){
+    const d=Math.round(Math.hypot(camera.position.x-pl.x,camera.position.z-pl.z));
+    const b=document.createElement('button');
+    b.innerHTML=`<span>${pl.locked?'🔒 ':''}${pl.name}</span><span class="msd">${d}m</span>`;
+    if(pl.locked) b.classList.add('locked');
+    b.addEventListener('click',()=>{
+      setWaypoint({x:pl.x,z:pl.z,name:pl.name});
+      bigMap?.recentre();
+    });
+    host.appendChild(b);
+  }
+}
+
+function toggleMapPanel(){
+  const wrap=$('#mapPanel');
+  if(!wrap) return;
+  if(wrap.classList.contains('open')) closePanel('mapPanel');
+  else openMapPanel();
+}
+
+function zoomMinimap(delta){
+  minimapZoom=Math.max(0,Math.min(MINIMAP_ZOOMS.length-1,minimapZoom+delta));
+  updateWorldHud();
+}
+$('#mmIn')?.addEventListener('click',()=>zoomMinimap(1));
+$('#mmOut')?.addEventListener('click',()=>zoomMinimap(-1));
+// Scroll over the dial zooms it, as it would in any other game.
+$('#minimapWrap')?.addEventListener('wheel',e=>{ e.preventDefault(); zoomMinimap(e.deltaY<0?1:-1); },{passive:false});
+$('#openMapBtn')?.addEventListener('click',toggleMapPanel);
+$('#wpClear')?.addEventListener('click',()=>setWaypoint(null));
+addEventListener('resize',()=>{
+  if($('#mapPanel')?.classList.contains('open')) bigMap?.resize();
+});
 
 // ==================== CONTROLS ====================
 const controls={enabled:false};
@@ -1690,6 +1868,12 @@ addEventListener('keydown',e=>{
   keys[e.code]=true;
   if(e.code==='Escape') unlockMouseLook();
   if(e.code==='KeyE'&&mode==='world') tryEnterNearest();
+  // M opens and closes the big map. Works while the panel has focus too, which
+  // is why it is not gated on controls.enabled.
+  if(e.code==='KeyM'&&mode==='world'){ e.preventDefault(); toggleMapPanel(); }
+  if(e.code==='F3'){ e.preventDefault(); togglePerf(); }
+  if(mode==='world'&&(e.code==='Equal'||e.code==='NumpadAdd')){ e.preventDefault(); zoomMinimap(1); }
+  if(mode==='world'&&(e.code==='Minus'||e.code==='NumpadSubtract')){ e.preventDefault(); zoomMinimap(-1); }
   if(e.code==='Space'){ if(controls.enabled) e.preventDefault(); tryJump(); }
 });
 addEventListener('keyup',e=>keys[e.code]=false);
@@ -1716,6 +1900,8 @@ let joystickActive=false,joystickX=0,joystickY=0;
 // what falls. Gravity is a touch heavier than real so the hop feels snappy
 // rather than floaty at this scale.
 const GRAVITY=24, JUMP_VELOCITY=6.4;
+// Eye height outdoors. Indoors the chapter scenes set their own floor.
+const EYE_HEIGHT=1.7;
 let groundY=1.7, velY=0, grounded=true;
 let sprintHeld=false;                 // set by Shift on desktop, the pad on touch
 
@@ -1972,12 +2158,22 @@ function moveStep(dt){
     camera.position.add(v);
     if(mode==='world'){
       resolveWorldCollisions(camera.position,worldColliders);
+      // Stream the city in around the player. Cheap to call every step: it
+      // early-outs unless they have crossed into a new tile.
+      worldStream?.update(camera.position.x,camera.position.z);
     } else {
       camera.position.x=Math.max(-ROOM.w/2+bounds.insetX,Math.min(ROOM.w/2-bounds.insetX,camera.position.x));
       camera.position.z=Math.max(-ROOM.d/2+bounds.insetZ,Math.min(ROOM.d/2-bounds.insetZ,camera.position.z));
       state.walked+=sp;
       if(state.walked>6) clearMission('walk');
     }
+  }
+
+  // Outdoors the floor is the hill, not a number. Re-read it every frame: the
+  // player is walking across a LIDAR heightmap, and on Steep Hill the ground
+  // drops about a metre for every seven walked.
+  if(mode==='world'&&worldGroundAt){
+    groundY=worldGroundAt(camera.position.x,camera.position.z)+EYE_HEIGHT;
   }
 
   // Vertical: runs every frame, not just when moving, so a standing jump works.
@@ -2364,6 +2560,18 @@ landingShow('home');   // always open on the home screen
 async function startGame(){
   if(gameStarted) return; gameStarted=true;
   await hydrateProgress();
+  // The map manifest carries the spawn point and the story doors, so it has to
+  // land before the world can be built; the tile geometry still streams in
+  // afterwards. Held ahead of the loader dismissing so a failure reads as
+  // "still loading" rather than dropping the player into an empty void.
+  try{
+    await prepareMap();
+  }catch(err){
+    console.error('[map]',err);
+    gameStarted=false;
+    toast('<span class="gold">CANNOT REACH THE BLOCK</span> — MAP DATA UNAVAILABLE',6000);
+    return;
+  }
   $('#loader').classList.add('done');
   $('#hud').classList.add('on');
   controls.enabled=true;
@@ -2495,6 +2703,16 @@ function loop(now){
   if(heroSpinRef) heroSpinRef.rotation.y+=dt*.25;
   if(mode==='world'){
     updateWorldHud();
+    waypointBeacon?.tick(now*.001);
+    // Walk the sun's shadow camera along with the player: one 180m shadow map
+    // cannot cover a city, so it covers wherever you are standing.
+    if(worldSun?.castShadow){
+      worldSun.position.set(camera.position.x-60,camera.position.y+95,camera.position.z-35);
+      worldSun.target.position.set(camera.position.x,camera.position.y,camera.position.z);
+      worldSun.target.updateMatrixWorld();
+    }
+    // Re-seat once the tile under a distant waypoint has streamed in.
+    if(waypoint) waypointBeacon?.reseat(waypoint);
   } else if(controls.enabled&&!dragging){
     const o=castCenter();
     if(o!==hoverObj){
@@ -2506,6 +2724,8 @@ function loop(now){
   }
   if(composer) composer.render();
   else renderer.render(scene,camera);
+  // After the render, so renderer.info reflects the frame just drawn.
+  updatePerf(dt,now);
   if($('#shopPanel').classList.contains('open')&&vSuit){
     if(vAuto) vSpin+=dt*.7;
     vSuit.rotation.y=vSpin; vDisc.rotation.y=vSpin;

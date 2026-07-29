@@ -1,0 +1,50 @@
+{
+  "_comment": [
+    "Story locations pinned to real Lincoln buildings (OpenStreetMap, ODbL).",
+    "Pinned by OSM element id, NEVER resolved by name at runtime: OSM already",
+    "has Kimani's shop tagged under a previous occupant ('Mankind'), and an",
+    "upstream rename must not be able to break mission one.",
+    "lat/lon is the fallback the tiler uses if an id is deleted upstream."
+  ],
+  "anchors": [
+    {
+      "key": 0,
+      "kind": "chapter",
+      "name": "JD",
+      "osm": "way/241764018",
+      "lat": 53.227914,
+      "lon": -0.540746,
+      "address": "311-312 High Street, Lincoln"
+    },
+    {
+      "key": "bank",
+      "kind": "bank",
+      "name": "TRAP CENTRAL BANK",
+      "osm": "way/399631226",
+      "lat": 53.2294,
+      "lon": -0.540793,
+      "sub": "Deposit, withdraw, top up.",
+      "address": "Mint Street, Lincoln"
+    },
+    {
+      "key": "barber",
+      "kind": "placeholder",
+      "name": "KIMANI THE BARBER",
+      "osm": "way/723251372",
+      "lat": 53.230559,
+      "lon": -0.540817,
+      "sub": "Closed for now.",
+      "address": "25 Corporation Street, Lincoln LN2 1HL"
+    },
+    {
+      "key": "prison",
+      "kind": "placeholder",
+      "name": "LINCOLN PRISON",
+      "osm": "way/259448186",
+      "lat": 53.235517,
+      "lon": -0.518120,
+      "sub": "Nobody walks in here by choice.",
+      "address": "Greetwell Road, Lincoln LN2 4BD"
+    }
+  ]
+}

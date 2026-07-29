@@ -1,0 +1,773 @@
+#!/usr/bin/env node
+// ============================================================================
+// VERIFY MAP — exercise the shipped map against the shipped collision code.
+//
+// Runs headlessly against a running API server, so it checks the real data the
+// game will get rather than a fixture. Imports the actual physics from
+// freeRoamWorld.js: if this passes and the game still walls the player into a
+// building, the bug is in rendering, not in geometry.
+//
+//   npm run map:verify              (expects the API on :8787)
+//   MAP_API=http://localhost:8799 npm run map:verify
+// ============================================================================
+
+// Must be set before the client modules are imported: they read it when their
+// API base is first evaluated.
+globalThis.__TRAP_API_ORIGIN = process.env.MAP_API || "http://localhost:8787";
+
+const { tileBuildings } = await import("../src/world/mapStream.js");
+const {
+  createCollisionIndex,
+  resolveWorldCollisions,
+  nearestPlace,
+  prepareMap,
+  PLAYER_RADIUS,
+  ENTER_DISTANCE,
+} = await import("../src/world/freeRoamWorld.js");
+
+const API = globalThis.__TRAP_API_ORIGIN + "/api";
+
+let failures = 0;
+function check(name, ok, detail = "") {
+  process.stdout.write(`${ok ? "  ok  " : "FAIL  "}${name}${detail ? ` — ${detail}` : ""}\n`);
+  if (!ok) failures += 1;
+}
+
+// `where` is either an array of buildings or the spatial index. Scanning all
+// 3000+ buildings inside the movement loops below is minutes of work; the index
+// turns it into a handful of candidates.
+function insideAny(x, z, where) {
+  const buildings = Array.isArray(where) ? where : where.near(x, z);
+  for (const b of buildings) {
+    if (x < b.minX || x > b.maxX || z < b.minZ || z > b.maxZ) continue;
+    let inside = false;
+    const n = b.ring.length / 2;
+    for (let i = 0, j = n - 1; i < n; j = i++) {
+      const xi = b.ring[i * 2];
+      const zi = b.ring[i * 2 + 1];
+      const xj = b.ring[j * 2];
+      const zj = b.ring[j * 2 + 1];
+      if (zi > z !== zj > z && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside;
+    }
+    if (inside) return b;
+  }
+  return null;
+}
+
+const main = async () => {
+  // Same entry point the game uses at boot: it also widens WORLD_BOUND to the
+  // real map extent, without which the resolver clamps the player to the old
+  // 150m box and the checks below are meaningless.
+  const manifest = await prepareMap();
+  process.stdout.write(
+    `manifest: ${manifest.tiles.length} tiles, ${manifest.buildingCount} buildings, ` +
+    `origin ${manifest.origin.lat},${manifest.origin.lon}\n\n`
+  );
+
+  // --- delivery ---
+  // The map being right in the database is worthless if the browser is serving
+  // yesterday's copy. Under `Cache-Control: max-age=86400` fetch() never
+  // contacted the server at all, so every rebuild landed in SQLite and none of
+  // it reached the game — which looked exactly like the terrain not working.
+  process.stdout.write("\ndelivery:\n");
+  const [ftx, ftz] = manifest.tiles[0];
+  const head = await fetch(`${API}/map/tile/${ftx}/${ftz}`);
+  const cc = head.headers.get("cache-control") || "";
+  const etag = head.headers.get("etag") || "";
+  check("tiles are revalidated, not blindly cached", /no-cache|no-store|max-age=0/.test(cc),
+    `Cache-Control: ${cc || "(none)"}`);
+  check("tiles carry an ETag so revalidation is free", !!etag, etag);
+  if (etag) {
+    const again = await fetch(`${API}/map/tile/${ftx}/${ftz}`, { headers: { "If-None-Match": etag } });
+    check("an unchanged tile costs a 304 and no body", again.status === 304,
+      `HTTP ${again.status}`);
+  }
+
+  // Pull every tile once so the checks below see the whole city, not a 3x3
+  // window. Payloads are kept: re-fetching all 43 for each section exhausts the
+  // connection pool.
+  const buildings = [];
+  const payloads = [];
+  for (const [tx, tz] of manifest.tiles) {
+    const payload = await (await fetch(`${API}/map/tile/${tx}/${tz}`)).json();
+    payloads.push({ tx, tz, payload });
+    buildings.push(...tileBuildings(payload));
+  }
+  const index = createCollisionIndex();
+  index.rebuild(buildings, []);
+  check("all tiles fetched and indexed", buildings.length === manifest.buildingCount,
+    `${buildings.length} of ${manifest.buildingCount}`);
+
+  // --- anchors ---
+  process.stdout.write("\nstory locations:\n");
+  const wanted = ["JD", "TRAP CENTRAL BANK", "KIMANI THE BARBER", "LINCOLN PRISON"];
+  for (const name of wanted) {
+    const a = manifest.anchors.find((x) => x.name === name);
+    check(`${name} present`, !!a);
+    if (!a) continue;
+
+    const stuck = insideAny(a.x, a.z, index);
+    check(`${name}: standing spot is outdoors`, !stuck, stuck ? `inside ${stuck.id}` : "");
+
+    const exitStuck = insideAny(a.exit.x, a.exit.z, index);
+    check(`${name}: exit spot is outdoors`, !exitStuck, exitStuck ? `inside ${exitStuck.id}` : "");
+
+    // The exit must be far enough out that stepping through does not instantly
+    // re-offer the door you just came out of.
+    const exitDist = Math.hypot(a.exit.x - a.door.x, a.exit.z - a.door.z);
+    check(`${name}: exit clears the enter radius`, exitDist > ENTER_DISTANCE,
+      `${exitDist.toFixed(1)}m vs ${ENTER_DISTANCE}m`);
+
+    // Standing spot must actually trigger the prompt.
+    const standDist = Math.hypot(a.x - a.door.x, a.z - a.door.z);
+    check(`${name}: standing spot is inside the enter radius`, standDist < ENTER_DISTANCE,
+      `${standDist.toFixed(1)}m`);
+  }
+
+  // --- the three are distinguishable: nearestPlace must pick the right door ---
+  process.stdout.write("\nnearest-place resolution:\n");
+  const places = manifest.anchors.map((a) => ({ ...a, locked: false }));
+  for (const a of manifest.anchors) {
+    const near = nearestPlace({ x: a.x, z: a.z }, places);
+    check(`standing at ${a.name} resolves to itself`, near.place.name === a.name,
+      `got ${near.place.name}`);
+  }
+
+  // --- collision ---
+  process.stdout.write("\ncollision:\n");
+  // The case the game actually produces: walk at a building from outside, one
+  // movement step at a time, and confirm the player never ends up inside it.
+  // Teleporting into the middle of a footprint is not a state play can reach —
+  // spawn and every door exit are checked to be outdoors above.
+  let breached = 0;
+  let approaches = 0;
+  let breach = null;
+  const STEP = 0.35; // a sprint step, larger than a walk
+  for (const b of buildings.filter((_, i) => i % 7 === 0)) {
+    const cx = (b.minX + b.maxX) / 2;
+    const cz = (b.minZ + b.maxZ) / 2;
+    for (let dir = 0; dir < 8; dir += 1) {
+      const ang = (dir / 8) * Math.PI * 2;
+      const start = { x: cx + Math.cos(ang) * 60, z: cz + Math.sin(ang) * 60 };
+      if (insideAny(start.x, start.z, index)) continue;
+      // Start from a position the game could actually leave the player in. A
+      // raw 60m offset can land within a few centimetres of a wall — closer
+      // than PLAYER_RADIUS — which the resolver would never allow in play, and
+      // starting there tests a state that cannot occur.
+      resolveWorldCollisions(start, index);
+      if (insideAny(start.x, start.z, index)) continue;
+      approaches += 1;
+      const p = { ...start };
+      for (let s = 0; s < 180; s += 1) {
+        p.x -= Math.cos(ang) * STEP;
+        p.z -= Math.sin(ang) * STEP;
+        resolveWorldCollisions(p, index);
+        if (insideAny(p.x, p.z, index)) { breached += 1; breach = { x: p.x, z: p.z, from: start, ang }; break; }
+      }
+    }
+  }
+  check("walking at a building never gets you inside one", breached === 0,
+    `${breached}/${approaches} approaches breached` + (breach ? ` (e.g. ${breach.x.toFixed(1)},${breach.z.toFixed(1)})` : ""));
+
+  // And a bad state must degrade gracefully rather than fling the player across
+  // the city — the correction is bounded per call.
+  let worst = 0;
+  for (const b of buildings.filter((_, i) => i % 17 === 0)) {
+    const cx = (b.minX + b.maxX) / 2;
+    const cz = (b.minZ + b.maxZ) / 2;
+    if (!insideAny(cx, cz, index)) continue;
+    const p = { x: cx, z: cz };
+    resolveWorldCollisions(p, index);
+    worst = Math.max(worst, Math.hypot(p.x - cx, p.z - cz));
+  }
+  check("recovery from inside a building is bounded", worst <= 6.01, `worst jump ${worst.toFixed(1)}m`);
+
+  // Kimani's building sits on Corporation Street at an angle to the axes — the
+  // case a bounding-box resolver gets wrong by walling off open road.
+  const kimani = manifest.anchors.find((a) => a.name === "KIMANI THE BARBER");
+  const kb = buildings.find((b) => b.id === kimani.buildingId);
+  check("Kimani's footprint is not axis-aligned", !!kb && isDiagonal(kb),
+    kb ? `${kb.ring.length / 2} vertices` : "not found");
+
+  // Walking the street outside a diagonal building must not be blocked.
+  let blocked = 0;
+  let steps = 0;
+  for (let t = 0; t <= 40; t += 1) {
+    const x = kimani.exit.x + (t - 20) * 0.5;
+    const z = kimani.exit.z;
+    if (insideAny(x, z, index)) continue;
+    steps += 1;
+    const p = { x, z };
+    resolveWorldCollisions(p, index);
+    if (Math.hypot(p.x - x, p.z - z) > 0.01) blocked += 1;
+  }
+  check("open street outside Kimani's is walkable", blocked === 0,
+    `${blocked}/${steps} points shoved`);
+
+  // --- spawn ---
+  process.stdout.write("\nspawn:\n");
+  const [sx, sz] = manifest.spawn;
+  const spawnStuck = insideAny(sx, sz, index);
+  check("spawn is outdoors", !spawnStuck, spawnStuck ? `inside ${spawnStuck.id}` : "");
+  const sp = { x: sx, z: sz };
+  resolveWorldCollisions(sp, index);
+  check("spawn survives collision resolve", Math.hypot(sp.x - sx, sp.z - sz) < PLAYER_RADIUS,
+    `moved ${Math.hypot(sp.x - sx, sp.z - sz).toFixed(2)}m`);
+  const bank = manifest.anchors.find((a) => a.kind === "bank");
+  const toBank = Math.hypot(sx - bank.door.x, sz - bank.door.z);
+  // Close enough to read the sign, far enough to see the building it is on.
+  check("spawn stands back from the bank", toBank > 6 && toBank < 30, `${toBank.toFixed(0)}m from the door`);
+
+  // --- terrain ---
+  // Lincoln is a hill. If this is flat, or the ground and the buildings
+  // disagree about where the surface is, nothing else matters.
+  process.stdout.write("\nterrain:\n");
+  const { createTerrainIndex } = await import("../src/world/terrain.js");
+  const terrain = createTerrainIndex();
+  let tilesWithGround = 0;
+  for (const { tx, tz, payload } of payloads) {
+    if (payload.t) { terrain.add(tx, tz, payload.t); tilesWithGround += 1; }
+  }
+  check("every tile carries ground", tilesWithGround === manifest.tiles.length,
+    `${tilesWithGround}/${manifest.tiles.length}`);
+
+  const [lo, hi] = manifest.terrainRange || [0, 0];
+  check("the city is actually on a hill", hi - lo > 40, `${lo}m to ${hi}m = ${(hi - lo).toFixed(0)}m`);
+
+  // Known ground truth, straight off the Environment Agency's own service.
+  const landmarks = [
+    ["JD, High Street", 53.2279, -0.5407, 6.3],
+    ["NatWest, Mint Street", 53.2294, -0.54079, 9.7],
+    ["Cathedral quarter", 53.23440, -0.53640, 65.3],
+  ];
+  const { project } = await import("../src/world/geo.js");
+  let worstLandmark = 0;
+  for (const [name, lat, lon, truth] of landmarks) {
+    const p = project(lat, lon);
+    const got = terrain.heightAt(p.x, p.z);
+    const err = got === null ? Infinity : Math.abs(got - truth);
+    worstLandmark = Math.max(worstLandmark, err);
+    check(`${name} sits at the right height`, err < 2.5,
+      got === null ? "no tile loaded" : `${got.toFixed(1)}m vs ${truth}m surveyed`);
+  }
+
+  // The climb is the whole point.
+  const jd = project(53.2279, -0.5407);
+  const cath = project(53.23440, -0.53640);
+  const climb = terrain.heightAt(cath.x, cath.z) - terrain.heightAt(jd.x, jd.z);
+  check("Steep Hill climbs from the High Street to the Cathedral", climb > 45,
+    `${climb.toFixed(0)}m of climb`);
+
+  // Seams: neighbouring tiles must agree exactly on their shared edge, or the
+  // player walks off a step every 250m.
+  let worstSeam = 0;
+  for (const [tx, tz] of manifest.tiles) {
+    if (!terrain.has(tx + 1, tz)) continue;
+    const edgeX = (tx + 1) * 250;
+    for (let s = 0; s <= 250; s += 25) {
+      const z = tz * 250 + s;
+      const a = terrain.heightAt(edgeX - 0.001, z);
+      const b = terrain.heightAt(edgeX + 0.001, z);
+      if (a !== null && b !== null) worstSeam = Math.max(worstSeam, Math.abs(a - b));
+    }
+  }
+  check("tiles line up at their seams", worstSeam < 0.25, `worst step ${worstSeam.toFixed(3)}m`);
+
+  // Buildings must stand ON the ground, not float above it or sink out of sight.
+  let floating = 0;
+  let checkedFooting = 0;
+  for (const b of buildings) {
+    if (b.base === undefined || b.base === null) continue;
+    checkedFooting += 1;
+    let maxGround = -Infinity;
+    for (let i = 0; i < b.ring.length; i += 2) {
+      const g = terrain.heightAt(b.ring[i], b.ring[i + 1]);
+      if (g !== null) maxGround = Math.max(maxGround, g);
+    }
+    // The base is the lowest ground under the footprint minus a skirt, so it
+    // must always be below the highest ground the walls pass through.
+    if (maxGround > -Infinity && b.base > maxGround) floating += 1;
+  }
+  check("no building floats above its ground", floating === 0,
+    `${floating}/${checkedFooting} founded above the surface`);
+
+  // --- geometry correctness: walls and roofs ---
+  // Both of these were shipped broken once. Mixed OSM ring winding built two
+  // fifths of the city inside out (see-through walls under backface culling),
+  // and a triangle-fan roof spills outside the walls on the 58% of footprints
+  // that are concave.
+  process.stdout.write("\nwalls and roofs:\n");
+  const { normalisedOrder, triangulate, ringSignedArea, extrudeBuilding, emptyBuffers, STOREY } =
+    await import("../src/world/buildingMesh.js");
+
+  let wrongWinding = 0;
+  let roofErr = 0;
+  let worstRoof = 0;
+  let missingWalls = 0;
+  for (const b of buildings) {
+    const order = normalisedOrder(b.ring);
+
+    // Every ring must come out anticlockwise, whatever OSM did.
+    let a2 = 0;
+    for (let i = 0, j = order.length - 1; i < order.length; j = i++) {
+      a2 += b.ring[order[j] * 2] * b.ring[order[i] * 2 + 1] - b.ring[order[i] * 2] * b.ring[order[j] * 2 + 1];
+    }
+    if (a2 / 2 <= 0) wrongWinding += 1;
+
+    // The roof must cover exactly the footprint: no gaps, no overspill.
+    const tris = triangulate(b.ring, order);
+    let area = 0;
+    for (let i = 0; i < tris.length; i += 3) {
+      const p = order[tris[i]], q = order[tris[i + 1]], r = order[tris[i + 2]];
+      area += Math.abs(
+        (b.ring[q * 2] - b.ring[p * 2]) * (b.ring[r * 2 + 1] - b.ring[p * 2 + 1]) -
+        (b.ring[r * 2] - b.ring[p * 2]) * (b.ring[q * 2 + 1] - b.ring[p * 2 + 1])
+      ) / 2;
+    }
+    const truth = Math.abs(ringSignedArea(b.ring));
+    const err = Math.abs(area - truth) / Math.max(truth, 1);
+    worstRoof = Math.max(worstRoof, err);
+    if (err > 0.01) roofErr += 1;
+
+    // Every wall of every building must actually be emitted.
+    const buf = emptyBuffers();
+    extrudeBuilding(b.ring, b.height, [1,1,1], buf);
+    const quads = (buf.shopfront.positions.length + buf.residential.positions.length +
+      Object.values(buf.wall).reduce((n, w) => n + w.positions.length, 0)) / 12;
+    const expected = countUsableEdges(b.ring) * (b.height > STOREY ? 2 : 1);
+    if (quads !== expected) missingWalls += 1;
+  }
+  check("every footprint is wound anticlockwise", wrongWinding === 0, `${wrongWinding} inside out`);
+  check("roofs cover their footprint exactly", roofErr === 0,
+    `worst ${(worstRoof * 100).toFixed(2)}% area error`);
+  check("every wall is emitted", missingWalls === 0, `${missingWalls} buildings short of walls`);
+
+  // Outward normals: a point nudged along a wall normal must land outside.
+  let inwardNormals = 0;
+  let normalsTested = 0;
+  for (const b of buildings.filter((_, i) => i % 5 === 0)) {
+    const buf = emptyBuffers();
+    extrudeBuilding(b.ring, b.height, [1,1,1], buf);
+    const P = buf.shopfront.positions.length ? buf.shopfront.positions : buf.residential.positions;
+    const N = buf.shopfront.positions.length ? buf.shopfront.normals : buf.residential.normals;
+    for (let q = 0; q < P.length; q += 12) {
+      const mx = (P[q] + P[q + 3]) / 2;
+      const mz = (P[q + 2] + P[q + 5]) / 2;
+      normalsTested += 1;
+      // Probe just off the wall. A longer step crosses narrow alcoves in
+      // concave footprints and lands back inside the same building, which reads
+      // as an inward normal when the normal is perfectly correct.
+      if (insideAny(mx + N[q] * 0.05, mz + N[q + 2] * 0.05, [b])) inwardNormals += 1;
+    }
+  }
+  check("wall normals point outward", inwardNormals === 0,
+    `${inwardNormals}/${normalsTested} faced inward`);
+
+  // The check above passes on geometry that is completely invisible. Backface
+  // culling uses the TRIANGLE WINDING, not the normal attribute, and shipping
+  // these disagreeing deleted every wall in the city while every assertion
+  // still went green. So: derive the geometric normal from the vertex order and
+  // require it to agree with the normal we declared.
+  let flipped = 0;
+  let facesTested = 0;
+  for (const b of buildings.filter((_, i) => i % 5 === 0)) {
+    const buf = emptyBuffers();
+    extrudeBuilding(b.ring, b.height, [1,1,1], buf);
+    for (const part of [buf.shopfront, buf.residential, buf.plinth, ...Object.values(buf.wall), buf.roof]) {
+      const { positions: P, normals: N, indices: I } = part;
+      for (let t = 0; t < I.length; t += 3) {
+        const [i0, i1, i2] = [I[t] * 3, I[t + 1] * 3, I[t + 2] * 3];
+        const ux = P[i1] - P[i0], uy = P[i1 + 1] - P[i0 + 1], uz = P[i1 + 2] - P[i0 + 2];
+        const vx = P[i2] - P[i0], vy = P[i2 + 1] - P[i0 + 1], vz = P[i2 + 2] - P[i0 + 2];
+        // Geometric normal from the winding, right-hand rule.
+        const gx = uy * vz - uz * vy;
+        const gy = uz * vx - ux * vz;
+        const gz = ux * vy - uy * vx;
+        if (Math.hypot(gx, gy, gz) < 1e-9) continue;
+        facesTested += 1;
+        if (gx * N[i0] + gy * N[i0 + 1] + gz * N[i0 + 2] < 0) flipped += 1;
+      }
+    }
+  }
+  check("triangle winding agrees with the normals", flipped === 0,
+    `${flipped}/${facesTested} faces wound inside out`);
+
+  // The massing helpers (city gates, the cathedral) build their walls by hand
+  // and opt out of the automatic normal flip, so they need the same check
+  // rather than inheriting confidence from the footprint path.
+  const massed = [];
+  for (const { payload } of payloads) {
+    for (const b of payload.b || []) if (b.m) massed.push(b);
+  }
+  let massFlipped = 0;
+  let massFaces = 0;
+  for (const b of massed) {
+    const buf = emptyBuffers();
+    extrudeBuilding(b.p, b.h, [1, 1, 1], buf, {
+      base: b.y || 0, sill: b.s ?? null, style: "monument",
+      ground: "blank", roof: b.rs, massing: b.m,
+    });
+    for (const part of [...Object.values(buf.wall), buf.roof]) {
+      const { positions: P, normals: N, indices: I } = part;
+      for (let t = 0; t < I.length; t += 3) {
+        const [i0, i1, i2] = [I[t] * 3, I[t + 1] * 3, I[t + 2] * 3];
+        const ux = P[i1] - P[i0], uy = P[i1 + 1] - P[i0 + 1], uz = P[i1 + 2] - P[i0 + 2];
+        const vx = P[i2] - P[i0], vy = P[i2 + 1] - P[i0 + 1], vz = P[i2 + 2] - P[i0 + 2];
+        const gx = uy * vz - uz * vy, gy = uz * vx - ux * vz, gz = ux * vy - uy * vx;
+        if (Math.hypot(gx, gy, gz) < 1e-9) continue;
+        massFaces += 1;
+        if (gx * N[i0] + gy * N[i0 + 1] + gz * N[i0 + 2] < 0) massFlipped += 1;
+      }
+    }
+  }
+  check("city gates and the cathedral are built, not extruded", massed.length >= 12,
+    `${massed.length} with bespoke massing`);
+  check("massing geometry is wound correctly", massFlipped === 0,
+    `${massFlipped}/${massFaces} faces inside out`);
+
+  // The whole point of an archway is walking through it.
+  const gate = buildings.find((b) => b.passable);
+  check("archways do not wall off their road", !!gate && gate.passable,
+    gate ? `${buildings.filter((b) => b.passable).length} passable gates` : "none found");
+
+  // --- can you actually SEE the hill? ---
+  // The terrain was correct for a long time and still read as "lost", because
+  // the camera far plane was 120m and the fog killed everything past ~80m. The
+  // data being right is not the same as the city being visible.
+  process.stdout.write("\nthe view:\n");
+  const CAMERA_FAR = 2600;          // src/game.js
+  const FOG_DENSITY = 0.0018;       // MOODS[0], the darkest and haziest
+  const cathedral = buildings.find((b) => /^Lincoln Cathedral$/i.test(b.name || ""));
+  const fromJd = manifest.anchors.find((a) => a.name === "JD");
+  check("the Cathedral is in the world", !!cathedral);
+  if (cathedral && fromJd) {
+    const cx = (cathedral.minX + cathedral.maxX) / 2;
+    const cz = (cathedral.minZ + cathedral.maxZ) / 2;
+    const dist = Math.hypot(cx - fromJd.x, cz - fromJd.z);
+    check("the Cathedral is inside the camera far plane", dist < CAMERA_FAR,
+      `${dist.toFixed(0)}m from JD, far plane ${CAMERA_FAR}m`);
+    // FogExp2 transmittance: exp(-(density*distance)^2).
+    const seen = Math.exp(-((FOG_DENSITY * dist) ** 2));
+    check("the Cathedral is not fogged into nothing", seen > 0.12,
+      `${(seen * 100).toFixed(0)}% visible through fog at that range`);
+    // And it has to stand above the roofline to read as being on a hill.
+    const top = (cathedral.base ?? 0) + cathedral.height;
+    const rise = top - 8; // eye height on the High Street
+    check("the Cathedral stands over the city", rise > 100,
+      `top ${top.toFixed(0)}m vs ~8m on the High Street`);
+  }
+
+  // Where the player is POINTED at the moment they arrive. The hill was
+  // rendering correctly and was still invisible, because spawn faced the bank
+  // door and the bank fronts south — 162 degrees away from the escarpment,
+  // looking down the one genuinely flat street in the city.
+  const [spx, spz] = manifest.spawn;
+  const vdx = -Math.sin(manifest.spawnYaw);
+  const vdz = -Math.cos(manifest.spawnYaw);
+  const atSpawn = terrain.heightAt(spx, spz);
+  let viewClimb = null;
+  if (atSpawn !== null) {
+    const far = terrain.heightAt(spx + vdx * 500, spz + vdz * 500);
+    if (far !== null) viewClimb = far - atSpawn;
+  }
+  check("the player arrives looking at the hill", viewClimb !== null && viewClimb > 20,
+    viewClimb === null ? "could not sample" : `ground rises ${viewClimb.toFixed(0)}m over the 500m ahead`);
+
+  const alwaysVisible = manifest.landmarks || [];
+  check("landmarks ride in the manifest, not in tiles", alwaysVisible.length >= 5,
+    `${alwaysVisible.length} always-visible: ${alwaysVisible.map((l) => l.n).filter(Boolean).slice(0, 3).join(", ")}`);
+
+  // --- surfaces ---
+  process.stdout.write("\nsurfaces and paved areas:\n");
+  let ribbons = 0;
+  const areaCount = { total: 0 };
+  const surfaces = {};
+  for (const { payload } of payloads) {
+    for (const r of payload.r || []) {
+      ribbons += 1;
+      surfaces[r.s || "?"] = (surfaces[r.s || "?"] || 0) + 1;
+    }
+    for (const a of payload.a || []) {
+      areaCount.total += 1;
+      surfaces[a.s || "?"] = (surfaces[a.s || "?"] || 0) + 1;
+    }
+  }
+  check("ways carry a real surface", !surfaces["?"] && Object.keys(surfaces).length >= 3,
+    Object.entries(surfaces).map(([k, v]) => `${k} ${v}`).join(", "));
+  // The High Street is tagged area=yes in OSM. Traced as a centre line it
+  // becomes a footpath following its own kerb instead of the street itself.
+  check("pedestrian areas are filled, not traced", areaCount.total >= 100,
+    `${areaCount.total} paved areas, ${ribbons} ribbons`);
+
+  // A filled area must FOLLOW the ground, not cover it. Lincoln's
+  // pedestrianised streets are the ones on the hill: the worst drops 14m over
+  // 175m with only 75 outline vertices, and filled straight from that outline
+  // it becomes a flat sheet laid over the slope, hiding the hill under the
+  // exact streets you walk up. This is the check that was missing when that
+  // shipped.
+  let longestEdge = 0;
+  let offGround = 0;
+  let sampled = 0;
+  for (const { payload } of payloads) {
+    for (const a of payload.a || []) {
+      for (let k = 0; k < a.i.length; k += 3) {
+        const p = [a.i[k], a.i[k + 1], a.i[k + 2]].map((j) => [a.v[j * 3], a.v[j * 3 + 1], a.v[j * 3 + 2]]);
+        for (let e = 0; e < 3; e += 1) {
+          const q = p[e];
+          const r = p[(e + 1) % 3];
+          longestEdge = Math.max(longestEdge, Math.hypot(q[0] - r[0], q[2] - r[2]));
+        }
+        // Centroid of the triangle must sit on the terrain, not above it.
+        const cx = (p[0][0] + p[1][0] + p[2][0]) / 3;
+        const cy = (p[0][1] + p[1][1] + p[2][1]) / 3;
+        const cz = (p[0][2] + p[1][2] + p[2][2]) / 3;
+        const g = terrain.heightAt(cx, cz);
+        if (g === null) continue;
+        sampled += 1;
+        if (Math.abs(cy - g) > 1.2) offGround += 1;
+      }
+    }
+  }
+  check("paved areas are tessellated, not one flat sheet", longestEdge <= 12,
+    `longest triangle edge ${longestEdge.toFixed(1)}m`);
+  check("paved areas follow the ground rather than covering it",
+    offGround / Math.max(sampled, 1) < 0.02,
+    `${offGround}/${sampled} triangles more than 1.2m off the terrain`);
+
+  // --- land cover ---
+  process.stdout.write("\nland cover:\n");
+  const coverKinds = {};
+  let treeCount = 0;
+  let wallCount = 0;
+  const water = [];
+  for (const { payload } of payloads) {
+    for (const c of payload.c || []) {
+      coverKinds[c.k] = (coverKinds[c.k] || 0) + 1;
+      if (c.k === "water") water.push(c);
+    }
+    treeCount += (payload.w || []).length / 3;
+    wallCount += (payload.l || []).length;
+  }
+  check("the ground is not all pavement", Object.keys(coverKinds).length >= 2,
+    Object.entries(coverKinds).map(([k, v]) => `${k} ${v}`).join(", "));
+  check("there are trees", treeCount > 100, `${treeCount} trees`);
+  check("there are boundary walls", wallCount > 200, `${wallCount} walls and hedges`);
+
+  // Water is the one surface that must NOT follow the heightmap. A pool draped
+  // over a hill is a hillside.
+  let slopedWater = 0;
+  for (const c of water) {
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (let i = 1; i < c.v.length; i += 3) {
+      if (c.v[i] < lo) lo = c.v[i];
+      if (c.v[i] > hi) hi = c.v[i];
+    }
+    if (hi - lo > 0.05) slopedWater += 1;
+  }
+  check("water is level, not draped over the hill", slopedWater === 0,
+    `${water.length} bodies of water, ${slopedWater} sloping`);
+
+  // --- street furniture and bridges ---
+  process.stdout.write("\nstreet furniture and bridges:\n");
+  const kinds = {};
+  let bridges = 0;
+  const sunkBridges = [];
+  for (const { payload } of payloads) {
+    for (const f of payload.f || []) kinds[f.k] = (kinds[f.k] || 0) + 1;
+    for (const r of payload.r || []) {
+      if (!r.br) continue;
+      bridges += 1;
+      // A bridge deck must NOT follow the ground: sampling terrain under High
+      // Bridge drops the carriageway into the Witham.
+      if (!r.e) continue;
+      let below = 0;
+      for (let i = 0; i < r.e.length; i += 1) {
+        const g = terrain.heightAt(r.p[i * 2], r.p[i * 2 + 1]);
+        if (g !== null && r.e[i] < g + 0.3) below += 1;
+      }
+      if (below === r.e.length) sunkBridges.push(r);
+    }
+  }
+  check("the street is furnished", Object.keys(kinds).length >= 3,
+    Object.entries(kinds).map(([k, v]) => `${k} ${v}`).join(", "));
+  check("bridge decks stand clear of the ground", sunkBridges.length === 0,
+    `${bridges} bridges, ${sunkBridges.length} sunk into the terrain`);
+
+  // --- world build ---
+  // Runs the real buildFreeRoamWorld against a stub of the three API it uses.
+  // This will not tell us it looks right, but it does exercise the extrusion
+  // index maths and the door/sign placement, which is where a silent geometry
+  // bug would otherwise sit until someone loaded the page.
+  process.stdout.write("\nworld build:\n");
+  const { buildFreeRoamWorld } = await import("../src/world/freeRoamWorld.js");
+  const THREE = stubThree();
+  const group = new THREE.Group();
+  // canvasTex actually runs the draw callback against a stub 2D context, so
+  // every texture in cityTextures.js is executed rather than just constructed.
+  let texturesDrawn = 0;
+  const canvasTex = (w, h, draw) => {
+    draw(stubCtx(), w, h);
+    texturesDrawn += 1;
+    return { wrapS: 0, wrapT: 0, repeat: { set() {} }, dispose() {} };
+  };
+
+  const built = buildFreeRoamWorld({
+    THREE,
+    group,
+    chapters: [{ name: "JD", sub: "the first one" }],
+    cleared: 0,
+    canvasTex,
+  });
+  check("city textures all render without throwing", texturesDrawn >= 7, `${texturesDrawn} drawn`);
+
+  check("world exposes every story place", built.places.length === manifest.anchors.length,
+    built.places.map((p) => `${p.name}[${p.kind}]`).join(", "));
+  check("JD is the chapter door", built.places.some((p) => p.kind === "chapter" && p.index === 0));
+  check("bank is the bank door", built.places.some((p) => p.kind === "bank"));
+  check("Kimani's is a placeholder door", built.places.some((p) => p.kind === "placeholder"));
+  check("every place has an exit", built.places.every((p) => p.exit && Number.isFinite(p.exit.yaw)));
+  check("spawn and yaw are finite", Number.isFinite(built.spawn[0]) && Number.isFinite(built.yaw));
+
+  // Let the streamed tiles land, then confirm real geometry was produced.
+  await new Promise((r) => setTimeout(r, 800));
+  const meshes = group.children.filter((c) => c && c.__isMesh);
+  const verts = meshes.reduce((n, m) => n + (m.geometry?.__count || 0), 0);
+  check("tiles produced merged geometry", verts > 10000, `${verts} vertices in ${meshes.length} meshes`);
+  // What matters is meshes per TILE, not in total: a tile emits a fixed handful
+  // (shopfronts, upper walls, roofs, terrain, roads) no matter how many
+  // buildings it holds. Counting against a fixed total just fails as the city
+  // grows.
+  const perTile = meshes.length / Math.max(1, built.stream.residentCount);
+  // Higher than it was, deliberately: upper walls are split by architectural
+  // style and ground surfaces by material, so limestone/brick and
+  // asphalt/paving/cobble each carry their own texture. That is a few more draw
+  // calls per tile in exchange for a city that is not one material. The lever
+  // if a handset struggles is worldTiles in QUALITY_PROFILES, not this.
+  check("geometry is merged, not per-building", perTile <= 19,
+    `${perTile.toFixed(1)} meshes/tile for ${built.colliders.buildings.length} buildings`);
+
+  const bad = meshes.find((m) => m.geometry && m.geometry.__maxIndex >= m.geometry.__count);
+  check("no out-of-range triangle indices", !bad,
+    bad ? `index ${bad.geometry.__maxIndex} >= ${bad.geometry.__count} verts` : "");
+
+  built.stream.dispose();
+  check("dispose releases every tile", built.stream.residentCount === 0);
+
+  process.stdout.write(`\n${failures ? `${failures} FAILED` : "all checks passed"}\n`);
+  process.exit(failures ? 1 : 0);
+};
+
+/** Enough of CanvasRenderingContext2D to run the texture painters headlessly. */
+function stubCtx() {
+  const noop = () => {};
+  return new Proxy({
+    createLinearGradient: () => ({ addColorStop: noop }),
+    canvas: { width: 256, height: 256 },
+  }, {
+    get(target, prop) {
+      if (prop in target) return target[prop];
+      // Any other method is a no-op; any other property reads/writes freely.
+      return typeof prop === "string" && /^[a-z]/.test(prop) ? noop : undefined;
+    },
+    set() { return true; },
+  });
+}
+
+/** The narrow slice of the three API the world builder actually touches. */
+function stubThree() {
+  class Obj {
+    constructor() { this.children = []; this.position = xyz(); this.rotation = xyz(); this.scale = xyz(); }
+    add(c) { this.children.push(c); }
+    remove(c) { this.children = this.children.filter((x) => x !== c); }
+    traverse(fn) { fn(this); for (const c of this.children) c.traverse?.(fn); }
+  }
+  const xyz = () => ({ x: 0, y: 0, z: 0, set(a, b, c) { this.x = a; this.y = b; this.z = c; } });
+
+  class BufferGeometry {
+    constructor() { this.__count = 0; this.__maxIndex = -1; }
+    setAttribute(name, attr) { if (name === "position") this.__count = attr.__count; }
+    setIndex(idx) { this.__maxIndex = idx.length ? Math.max(...idx) : -1; }
+    computeVertexNormals() {}
+    computeBoundingSphere() {}
+    translate() { return this; }
+    scale() { return this; }
+    dispose() {}
+  }
+  class Mesh extends Obj {
+    constructor(geometry, material) { super(); this.geometry = geometry; this.material = material; this.__isMesh = true; }
+  }
+  const Mat = class { constructor(o) { Object.assign(this, o); } dispose() {} };
+
+  return {
+    Group: Obj,
+    Mesh,
+    BufferGeometry,
+    Float32BufferAttribute: class { constructor(arr, size) { this.__count = arr.length / size; } },
+    BufferAttribute: class { constructor(arr, size) { this.__count = arr.length / size; } },
+    PlaneGeometry: BufferGeometry,
+    BoxGeometry: BufferGeometry,
+    SphereGeometry: BufferGeometry,
+    CylinderGeometry: BufferGeometry,
+    MeshStandardMaterial: Mat,
+    MeshBasicMaterial: Mat,
+    HemisphereLight: Obj,
+    DirectionalLight: class extends Obj {
+      constructor() {
+        super();
+        this.target = new Obj();
+        this.shadow = {
+          mapSize: { set() {} },
+          camera: {},
+        };
+      }
+    },
+    AmbientLight: Obj,
+    PointLight: Obj,
+    RingGeometry: BufferGeometry,
+    InstancedMesh: class extends Mesh {
+      constructor(g, m, count) { super(g, m); this.count = count; this.instanceMatrix = { needsUpdate: false }; }
+      setMatrixAt() {}
+    },
+    Matrix4: class {
+      makeScale() { return this; }
+      setPosition() { return this; }
+    },
+    RepeatWrapping: 1000,
+    DoubleSide: 2,
+    BackSide: 1,
+    Color: class {
+      constructor(hex) { this.hex = hex >>> 0 || 0; }
+      multiplyScalar() { return this; }
+      lerp() { return this; }
+      getHexString() { return this.hex.toString(16).padStart(6, "0"); }
+    },
+  };
+}
+
+/** Edges long enough for extrudeBuilding to bother with (it skips slivers). */
+function countUsableEdges(ring) {
+  const n = ring.length / 2;
+  let count = 0;
+  for (let i = 0; i < n; i += 1) {
+    const j = (i + 1) % n;
+    if (Math.hypot(ring[j * 2] - ring[i * 2], ring[j * 2 + 1] - ring[i * 2 + 1]) >= 0.01) count += 1;
+  }
+  return count;
+}
+
+function isDiagonal(b) {
+  // True if any wall runs at a meaningful angle to both axes.
+  const n = b.ring.length / 2;
+  for (let i = 0, j = n - 1; i < n; j = i++) {
+    const dx = Math.abs(b.ring[i * 2] - b.ring[j * 2]);
+    const dz = Math.abs(b.ring[i * 2 + 1] - b.ring[j * 2 + 1]);
+    if (Math.hypot(dx, dz) > 4 && dx > 1.5 && dz > 1.5) return true;
+  }
+  return false;
+}
+
+main().catch((err) => {
+  process.stderr.write(`verify failed: ${err.stack || err.message}\n`);
+  process.exit(1);
+});

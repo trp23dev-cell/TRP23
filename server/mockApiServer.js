@@ -3,6 +3,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash, randomUUID, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { gzipSync, gunzipSync } from "node:zlib";
 import { defaultContent } from "../src/data/defaultContent.js";
 import { defaultWorld } from "../src/data/defaultWorld.js";
 import { createSqliteStore, STARTING_COINS } from "./storage/sqliteStore.js";
@@ -89,6 +90,34 @@ async function serveStatic(res, pathname) {
     return false;
   }
 }
+/**
+ * Load the shipped map into whatever database this server came up against.
+ *
+ * The map is built offline and travels with the code as map-export.json.gz,
+ * not inside the database — that file also holds player accounts, and is not
+ * something to rewrite on every map rebuild. On boot the export wins if it is
+ * newer than whatever the database has, so a fresh deploy comes up with the
+ * map that was actually tested and no network fetch at start-up.
+ */
+async function importShippedMap() {
+  const file = path.join(storageDir, "map-export.json.gz");
+  let raw;
+  try {
+    raw = await fs.readFile(file);
+  } catch {
+    return; // no export shipped; whatever is in the database stands
+  }
+  try {
+    const { meta, tiles } = JSON.parse(gunzipSync(raw).toString("utf8"));
+    const current = store.getMapManifest();
+    if (current && current.builtAt >= meta.builtAt) return;
+    store.replaceMapTiles(tiles, meta, meta.builtAt);
+    console.log(`[map] imported ${tiles.length} tiles from the shipped export`);
+  } catch (err) {
+    console.error("[map] could not import the shipped map:", err.message);
+  }
+}
+
 let store;
 const LEGACY_DEFAULT_ADMIN_EMAIL = "admin@trapmadeit.local";
 
@@ -307,6 +336,57 @@ function sendJson(res, statusCode, payload) {
   res.end(JSON.stringify(payload));
 }
 
+// Map tiles are immutable between builds and are hit constantly as the player
+// walks, so they get gzip + a build-stamped ETag.
+//
+// MUST be no-cache, not max-age. fetch() honours the HTTP cache, so under
+// `max-age=86400` the browser served day-old tiles without ever contacting the
+// server — every `npm run map:build` landed in the database and never reached
+// the game. no-cache still caches; it just requires revalidation, which the
+// ETag answers with a 304 and no body. Same bandwidth, no staleness.
+const tileGzipCache = new Map();
+
+function sendMapPayload(req, res, json, builtAt, key = "") {
+  // `key` identifies WHICH tile this is. Without it the cache was keyed on
+  // build time and payload length alone, so any two tiles that happened to
+  // serialise to the same number of bytes would serve each other's geometry.
+  const etag = `W/"map-${builtAt}-${key}-${json.length}"`;
+  if (req.headers["if-none-match"] === etag) {
+    res.writeHead(304, { ETag: etag, "Access-Control-Allow-Origin": "*" });
+    res.end();
+    return;
+  }
+
+  const headers = {
+    "Content-Type": "application/json; charset=utf-8",
+    "Access-Control-Allow-Origin": "*",
+    "Cache-Control": "no-cache",
+    ETag: etag,
+  };
+
+  if ((req.headers["accept-encoding"] || "").includes("gzip")) {
+    let body = tileGzipCache.get(etag);
+    if (!body) {
+      body = gzipSync(json);
+      // Bounded so a wider world cannot grow this without limit.
+      if (tileGzipCache.size > 256) tileGzipCache.clear();
+      tileGzipCache.set(etag, body);
+    }
+    headers["Content-Encoding"] = "gzip";
+    res.writeHead(200, headers);
+    res.end(body);
+    return;
+  }
+
+  res.writeHead(200, headers);
+  res.end(json);
+}
+
+function parseMapTile(pathname) {
+  const m = pathname.match(/^\/api\/map\/tile\/(-?\d+)\/(-?\d+)$/);
+  return m ? { tileX: Number(m[1]), tileZ: Number(m[2]) } : null;
+}
+
 function parsePlayerId(pathname) {
   const match = pathname.match(/^\/api\/player\/([^/]+)$/);
   return match ? decodeURIComponent(match[1]) : null;
@@ -330,6 +410,33 @@ async function handleRequest(req, res) {
 
   if (req.method === "GET" && pathname === "/api/health") {
     sendJson(res, 200, { ok: true, service: "mock-api", schemaVersion: store.getSchemaVersion() });
+    return;
+  }
+
+  // ---------------- MAP (OpenStreetMap-derived, ODbL) ----------------
+  // Built by `npm run map:build`. The client streams tiles from here and never
+  // contacts OSM itself.
+  if (req.method === "GET" && pathname === "/api/map/manifest") {
+    const manifest = store.getMapManifest();
+    if (!manifest) {
+      sendJson(res, 503, { error: "map_not_built", hint: "run: npm run map:build" });
+      return;
+    }
+    sendMapPayload(req, res, JSON.stringify(manifest), manifest.builtAt, "manifest");
+    return;
+  }
+
+  const tileRef = req.method === "GET" ? parseMapTile(pathname) : null;
+  if (tileRef) {
+    const tile = store.getMapTile(tileRef.tileX, tileRef.tileZ);
+    // An empty tile is a normal answer, not an error: the world is not a
+    // rectangle, and the streamer asks for a 3x3 block regardless of what
+    // exists. Returning 200 with nothing in it keeps its cache logic simple.
+    if (!tile) {
+      sendJson(res, 200, { b: [], r: [], empty: true });
+      return;
+    }
+    sendMapPayload(req, res, tile.payload, tile.builtAt, `${tileRef.tileX}_${tileRef.tileZ}`);
     return;
   }
 

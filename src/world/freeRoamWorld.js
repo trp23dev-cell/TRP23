@@ -1,69 +1,271 @@
 // ============================================================================
 // THE BLOCK — the free-roam hub the chapters sit on.
 //
-// Ported from the standalone "FP FREE ROAM TEST PHASE 1" spike and wired into the
-// real game. The player walks the block, finds a chapter building, and enters it;
-// the chapter interiors are unchanged.
+// The block is the real city centre of Lincoln, UK, built from OpenStreetMap
+// data (ODbL). JD on the High Street is the first chapter, NatWest on Mint
+// Street is the bank, and Kimani's on Corporation Street is a door that does
+// not open yet. They are pinned to their real buildings — see
+// lincolnAnchors.json for why they are pinned by OSM id and never by name.
 //
-// The sky and the street light brighten as chapters are cleared. That is the moral
-// arc carried by the art (Bible Vol 3): the block you are trying to get out of
-// visibly becomes somewhere legitimate as you do the work.
+// Geometry arrives from our own server as 250m tiles and is built and torn down
+// around the player (mapStream.js). Nothing here knows about lat/lon; by the
+// time the data lands, it is metres.
+//
+// The sky and the door lights brighten as chapters are cleared. That is the
+// moral arc carried by the art (Bible Vol 3): the block you are trying to get
+// out of visibly becomes somewhere legitimate as you do the work.
 // ============================================================================
 
+import { createMapStream, fetchMapManifest } from "./mapStream.js";
+import { MAP_ATTRIBUTION } from "./geo.js";
+
 export const PLAYER_RADIUS = 0.6;
-export const WORLD_BOUND = 150;
 export const ENTER_DISTANCE = 4.6;
-// How far past the door the player is placed when leaving a place. Must exceed
-// ENTER_DISTANCE or stepping out instantly re-offers the door you just came through.
-const EXIT_STEP = 5;
 
-// Hub-and-spoke layout: the bank sits behind you at spawn, the chapters fan out.
-const PLACE_LAYOUT = [
-  { key: "bank", kind: "bank", pos: [0, -26], size: [12, 8, 8], color: 0x2a2317 },
-  { key: 0, kind: "chapter", pos: [-30, -6], size: [9, 7, 8], color: 0x241d14 },
-  { key: 1, kind: "chapter", pos: [30, -6], size: [9, 7, 8], color: 0x20241f },
-  { key: 2, kind: "chapter", pos: [-34, 22], size: [9, 8, 8], color: 0x1c1f26 },
-  { key: 3, kind: "chapter", pos: [34, 22], size: [10, 7, 8], color: 0x23201a },
-  { key: 4, kind: "chapter", pos: [-16, 46], size: [9, 9, 8], color: 0x262019 },
-  { key: 5, kind: "chapter", pos: [18, 48], size: [14, 8, 10], color: 0x1e1a15 },
-];
-
-const LAMP_SPOTS = [[-14, 6], [14, 6], [-14, 30], [14, 30], [0, 18], [-26, -14], [26, -14]];
-
-const SKYLINE = [
-  [-58, -55, 16, 14, 18], [-38, -58, 14, 14, 22], [-8, -60, 16, 16, 16],
-  [20, -58, 16, 14, 20], [52, -56, 18, 16, 24], [60, -30, 16, 18, 20],
-  [62, 0, 16, 18, 26], [60, 30, 16, 18, 18], [58, 54, 18, 16, 22],
-  [30, 62, 16, 14, 16], [2, 64, 18, 16, 24], [-28, 62, 16, 14, 20],
-  [-56, 58, 18, 16, 18], [-62, 28, 16, 18, 22], [-64, 0, 16, 18, 26],
-  [-60, -28, 16, 16, 18],
-];
+// Fallback bound, replaced by the real map extent once the manifest is in.
+export let WORLD_BOUND = 150;
 
 const GOLD = 0xc9a06a;
 
+// Collision grid cell. Buildings are registered into every cell their bounding
+// box touches, and only the cells around the player are ever tested — a linear
+// scan over a whole city every frame is not affordable.
+const CELL = 25;
+
+// Fog densities are for a CITY, not for the 320m block this started as. At the
+// old 0.012 the far side of the High Street was solid grey and the Cathedral on
+// its hill was invisible from everywhere — which read as the terrain having
+// been lost, when it was only ever hidden.
+//
 // How the block looks at each stage of the journey. Index = chapters cleared.
 // It starts at a street-lit dusk and ends in daylight.
 //
 // Deliberately NOT starting at night: the chapter interiors carry the darkness
-// (chapter one is the darkest room in the game), but the block is where the player
-// navigates, so it has to stay readable at zero progress. The arc is a lift from
-// dusk to day, not from black to day.
+// (chapter one is the darkest room in the game), but the block is where the
+// player navigates, so it has to stay readable at zero progress. The arc is a
+// lift from dusk to day, not from black to day.
 const MOODS = [
-  { bg: 0x2a2f3d, fog: [0x2a2f3d, 0.012], hemi: 1.3,  sun: 1.2,  amb: 0.42, exposure: 1.25, lamp: 1.6 },
-  { bg: 0x333949, fog: [0x333949, 0.011], hemi: 1.5,  sun: 1.5,  amb: 0.46, exposure: 1.30, lamp: 1.4 },
-  { bg: 0x3d4455, fog: [0x3d4455, 0.010], hemi: 1.75, sun: 1.8,  amb: 0.50, exposure: 1.35, lamp: 1.15 },
-  { bg: 0x474f62, fog: [0x474f62, 0.009], hemi: 2.0,  sun: 2.1,  amb: 0.54, exposure: 1.40, lamp: 0.9 },
-  { bg: 0x525b70, fog: [0x525b70, 0.008], hemi: 2.2,  sun: 2.35, amb: 0.57, exposure: 1.45, lamp: 0.6 },
-  { bg: 0x5d677e, fog: [0x5d677e, 0.007], hemi: 2.4,  sun: 2.55, amb: 0.60, exposure: 1.50, lamp: 0.35 },
-  { bg: 0x6a758d, fog: [0x6a758d, 0.006], hemi: 2.6,  sun: 2.8,  amb: 0.62, exposure: 1.55, lamp: 0.2 },
+  { bg: 0x2a2f3d, fog: [0x2a2f3d, 0.00180], hemi: 1.3,  sun: 1.2,  amb: 0.42, exposure: 1.25, lamp: 1.6 },
+  { bg: 0x333949, fog: [0x333949, 0.00168], hemi: 1.5,  sun: 1.5,  amb: 0.46, exposure: 1.30, lamp: 1.4 },
+  { bg: 0x3d4455, fog: [0x3d4455, 0.00156], hemi: 1.75, sun: 1.8,  amb: 0.50, exposure: 1.35, lamp: 1.15 },
+  { bg: 0x474f62, fog: [0x474f62, 0.00144], hemi: 2.0,  sun: 2.1,  amb: 0.54, exposure: 1.40, lamp: 0.9 },
+  { bg: 0x525b70, fog: [0x525b70, 0.00132], hemi: 2.2,  sun: 2.35, amb: 0.57, exposure: 1.45, lamp: 0.6 },
+  { bg: 0x5d677e, fog: [0x5d677e, 0.00120], hemi: 2.4,  sun: 2.55, amb: 0.60, exposure: 1.50, lamp: 0.35 },
+  { bg: 0x6a758d, fog: [0x6a758d, 0.00108], hemi: 2.6,  sun: 2.8,  amb: 0.62, exposure: 1.55, lamp: 0.2 },
 ];
 
 export function worldMood(cleared) {
   return MOODS[Math.max(0, Math.min(MOODS.length - 1, cleared | 0))];
 }
 
+// ---------------------------------------------------------------- manifest
+
+let manifest = null;
+
 /**
- * Builds the block into `group`.
+ * Fetch the map description once, at boot.
+ *
+ * Awaiting this before the first loadWorld() is what lets buildFreeRoamWorld
+ * stay synchronous: by the time the world is built, the anchors and the tile
+ * index are already in hand and only the geometry is still in flight.
+ */
+export async function prepareMap() {
+  if (manifest) return manifest;
+  manifest = await fetchMapManifest();
+  if (Array.isArray(manifest.tiles) && manifest.tiles.length) {
+    // Bound the player to the tiles that actually exist, plus a tile of slack
+    // so they can reach the far kerb rather than stopping on the boundary.
+    const size = manifest.tileSize;
+    let max = 0;
+    for (const [tx, tz] of manifest.tiles) {
+      max = Math.max(max, Math.abs(tx) * size, Math.abs(tz) * size);
+    }
+    WORLD_BOUND = max + size * 2;
+  }
+  return manifest;
+}
+
+export function mapReady() {
+  return !!manifest;
+}
+
+// ---------------------------------------------------------------- collision
+
+/**
+ * Uniform spatial hash over the buildings currently streamed in. Rebuilt when
+ * the resident tile set changes, which is rare — once per 250m walked — rather
+ * than per frame.
+ */
+export function createCollisionIndex() {
+  return {
+    cells: new Map(),
+    buildings: [],
+    roads: [],
+    rebuild(buildings, roads) {
+      this.buildings = buildings;
+      this.roads = roads;
+      this.cells.clear();
+      for (const b of buildings) {
+        if (b.passable) continue; // archways are walked through, not into
+        const x0 = Math.floor(b.minX / CELL);
+        const x1 = Math.floor(b.maxX / CELL);
+        const z0 = Math.floor(b.minZ / CELL);
+        const z1 = Math.floor(b.maxZ / CELL);
+        for (let cx = x0; cx <= x1; cx += 1) {
+          for (let cz = z0; cz <= z1; cz += 1) {
+            const key = `${cx},${cz}`;
+            let list = this.cells.get(key);
+            if (!list) this.cells.set(key, (list = []));
+            list.push(b);
+          }
+        }
+      }
+    },
+    near(x, z) {
+      const cx = Math.floor(x / CELL);
+      const cz = Math.floor(z / CELL);
+      const out = [];
+      // A building wider than a cell is registered in several of them, so the
+      // same one comes back once per cell without this.
+      const seen = new Set();
+      for (let dz = -1; dz <= 1; dz += 1) {
+        for (let dx = -1; dx <= 1; dx += 1) {
+          const list = this.cells.get(`${cx + dx},${cz + dz}`);
+          if (!list) continue;
+          for (const b of list) {
+            if (seen.has(b)) continue;
+            seen.add(b);
+            out.push(b);
+          }
+        }
+      }
+      return out;
+    },
+  };
+}
+
+function pointInRing(px, pz, ring) {
+  let inside = false;
+  const n = ring.length / 2;
+  for (let i = 0, j = n - 1; i < n; j = i++) {
+    const xi = ring[i * 2];
+    const zi = ring[i * 2 + 1];
+    const xj = ring[j * 2];
+    const zj = ring[j * 2 + 1];
+    if (zi > pz !== zj > pz && px < ((xj - xi) * (pz - zi)) / (zj - zi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+/**
+ * The correction that would push a circle out of one footprint, or null if it
+ * is already clear. Returns the move rather than applying it so the caller can
+ * resolve the deepest overlap first.
+ *
+ * Real footprints are not axis-aligned — Corporation Street and Silver Street
+ * both sit at an angle — so a bounding-box push would leave the player scraping
+ * invisible walls out in the road. This resolves against the actual wall.
+ */
+function ringCorrection(p, ring, radius) {
+  const n = ring.length / 2;
+  let bestD2 = Infinity;
+  let bx = 0;
+  let bz = 0;
+
+  for (let i = 0, j = n - 1; i < n; j = i++) {
+    const ax = ring[j * 2];
+    const az = ring[j * 2 + 1];
+    const cx = ring[i * 2];
+    const cz = ring[i * 2 + 1];
+    const ex = cx - ax;
+    const ez = cz - az;
+    const len2 = ex * ex + ez * ez;
+    let t = len2 > 0 ? ((p.x - ax) * ex + (p.z - az) * ez) / len2 : 0;
+    t = t < 0 ? 0 : t > 1 ? 1 : t;
+    const qx = ax + ex * t;
+    const qz = az + ez * t;
+    const d2 = (p.x - qx) ** 2 + (p.z - qz) ** 2;
+    if (d2 < bestD2) {
+      bestD2 = d2;
+      bx = qx;
+      bz = qz;
+    }
+  }
+
+  const inside = pointInRing(p.x, p.z, ring);
+  const d = Math.sqrt(bestD2);
+  if (!inside && d >= radius) return null;
+
+  let dx = p.x - bx;
+  let dz = p.z - bz;
+  if (d > 1e-6) {
+    dx /= d;
+    dz /= d;
+  } else {
+    dx = 1;
+    dz = 0;
+  }
+  // Standing inside the footprint means the nearest wall point is behind us.
+  if (inside) {
+    dx = -dx;
+    dz = -dz;
+  }
+  const x = bx + dx * radius;
+  const z = bz + dz * radius;
+  return { x, z, depth: Math.hypot(x - p.x, z - p.z) };
+}
+
+// A correction bigger than this means the player was already somewhere they
+// should not be. Still resolved, but not by flinging them across the city.
+const MAX_CORRECTION = 6;
+
+/**
+ * Push the player out of any building they have walked into.
+ *
+ * Overlaps are resolved deepest-first, one per pass. Resolving them in
+ * arbitrary order lets a terrace hand the player back and forth — out of one
+ * shop straight into its neighbour — and walk them a long way down the street
+ * in a single frame.
+ */
+export function resolveWorldCollisions(position, index) {
+  const p = position;
+  p.x = Math.max(-WORLD_BOUND, Math.min(WORLD_BOUND, p.x));
+  p.z = Math.max(-WORLD_BOUND, Math.min(WORLD_BOUND, p.z));
+  if (!index || !index.near) return;
+
+  const startX = p.x;
+  const startZ = p.z;
+
+  for (let pass = 0; pass < 4; pass += 1) {
+    let deepest = null;
+    for (const b of index.near(p.x, p.z)) {
+      if (
+        p.x < b.minX - PLAYER_RADIUS || p.x > b.maxX + PLAYER_RADIUS ||
+        p.z < b.minZ - PLAYER_RADIUS || p.z > b.maxZ + PLAYER_RADIUS
+      ) continue;
+      const fix = ringCorrection(p, b.ring, PLAYER_RADIUS);
+      if (fix && (!deepest || fix.depth > deepest.depth)) deepest = fix;
+    }
+    if (!deepest) break;
+    p.x = deepest.x;
+    p.z = deepest.z;
+  }
+
+  // Bound the whole correction, so a bad state degrades into "stuck against a
+  // wall" rather than "teleported two streets over".
+  const dx = p.x - startX;
+  const dz = p.z - startZ;
+  const moved = Math.hypot(dx, dz);
+  if (moved > MAX_CORRECTION) {
+    p.x = startX + (dx / moved) * MAX_CORRECTION;
+    p.z = startZ + (dz / moved) * MAX_CORRECTION;
+  }
+}
+
+// ---------------------------------------------------------------- world build
+
+/**
+ * Builds the block into `group`. prepareMap() must have resolved first.
  *
  * @param {object} opts
  * @param {object} opts.THREE           three namespace (the game owns the import)
@@ -73,40 +275,95 @@ export function worldMood(cleared) {
  * @param {Function} opts.canvasTex     game's canvas-texture helper (w,h,draw)=>Texture
  * @param {Function} [opts.setTextureQuality]
  * @param {Function} [opts.shadows]
- * @returns {{spawn:number[],yaw:number,mood:object,colliders:Array,places:Array}}
+ * @returns {{spawn:number[],yaw:number,mood:object,colliders:object,places:Array,stream:object}}
  */
-export function buildFreeRoamWorld({ THREE, group, chapters, cleared = 0, canvasTex, setTextureQuality, shadows }) {
+export function buildFreeRoamWorld({
+  THREE, group, chapters, cleared = 0, canvasTex, setTextureQuality, shadows,
+  loadRadius, shadowsEnabled = false, shadowMapSize = 1024,
+}) {
   const tune = (t) => { if (setTextureQuality) setTextureQuality(t); return t; };
   const mood = worldMood(cleared);
-  const colliders = [];
   const places = [];
+  const index = createCollisionIndex();
 
   // ---- ground ----
-  const roadTex = tune(canvasTex(512, 512, (g, w, h) => {
-    g.fillStyle = "#2a2723"; g.fillRect(0, 0, w, h);
-    for (let i = 0; i < 5000; i++) {
-      g.fillStyle = `rgba(${50 + Math.random() * 30},${46 + Math.random() * 26},40,${Math.random() * .35})`;
-      g.fillRect(Math.random() * w, Math.random() * h, 2, 2);
-    }
-    g.strokeStyle = "rgba(201,160,106,.16)"; g.lineWidth = 4;
-    for (let x = 64; x < w; x += 128) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.stroke(); }
-  }));
-  roadTex.wrapS = roadTex.wrapT = THREE.RepeatWrapping;
-  roadTex.repeat.set(24, 24);
-  const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(320, 320),
-    new THREE.MeshStandardMaterial({ map: roadTex, roughness: .95 })
+  // No flat plane any more: the real ground arrives per tile as a LIDAR
+  // heightmap (terrain.js). What is left here is a dark skirt sitting below the
+  // lowest ground in the city, so the horizon past the loaded tiles reads as
+  // land falling away rather than as a hole with sky through it.
+  const floor = (manifest?.terrainRange?.[0] ?? 0) - 12;
+  const skirt = new THREE.Mesh(
+    new THREE.PlaneGeometry(WORLD_BOUND * 6, WORLD_BOUND * 6),
+    new THREE.MeshStandardMaterial({ color: 0x1a1815, roughness: 1 })
   );
-  ground.rotation.x = -Math.PI / 2;
-  ground.receiveShadow = true;
-  group.add(ground);
+  skirt.rotation.x = -Math.PI / 2;
+  skirt.position.y = floor;
+  group.add(skirt);
+
+  // ---- sky ----
+  // A gradient dome rather than a flat background colour. Flat backgrounds read
+  // as a wall at the end of the street; a horizon that warms toward the ground
+  // gives the city somewhere to stand and sells the distance.
+  const skyTex = tune(canvasTex(4, 256, (g, w, h) => {
+    const grad = g.createLinearGradient(0, 0, 0, h);
+    const top = new THREE.Color(mood.bg).multiplyScalar(0.72);
+    const horizon = new THREE.Color(mood.bg).lerp(new THREE.Color(0xd8a878), 0.34);
+    grad.addColorStop(0, `#${top.getHexString()}`);
+    grad.addColorStop(0.62, `#${new THREE.Color(mood.bg).getHexString()}`);
+    grad.addColorStop(1, `#${horizon.getHexString()}`);
+    g.fillStyle = grad;
+    g.fillRect(0, 0, w, h);
+  }));
+  const sky = new THREE.Mesh(
+    new THREE.SphereGeometry(2300, 24, 16), // inside the 2600m far plane
+    new THREE.MeshBasicMaterial({ map: skyTex, side: THREE.BackSide, depthWrite: false, fog: false })
+  );
+  sky.renderOrder = -1;
+  group.add(sky);
 
   // ---- lights ----
   group.add(new THREE.HemisphereLight(0xd6dbf0, 0x555044, mood.hemi));
-  const sun = new THREE.DirectionalLight(0xffffff, mood.sun);
+  const sun = new THREE.DirectionalLight(0xfff0dc, mood.sun);
   sun.position.set(-40, 60, -20);
   group.add(sun);
+  group.add(sun.target);
+  // Shadows for a whole city cannot be done with one map, so this one follows
+  // the player and covers the street they are standing in. Beyond that the
+  // ambient and hemisphere lights carry it, which at this fog density is
+  // where everything turns to haze anyway.
+  if (shadowsEnabled) {
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(shadowMapSize, shadowMapSize);
+    const half = 90;
+    sun.shadow.camera.left = -half;
+    sun.shadow.camera.right = half;
+    sun.shadow.camera.top = half;
+    sun.shadow.camera.bottom = -half;
+    sun.shadow.camera.near = 1;
+    sun.shadow.camera.far = 420;
+    // Buildings are big and the map is stretched over 180m, so the bias has to
+    // be generous or every wall shadow-acnes.
+    sun.shadow.bias = -0.0016;
+    sun.shadow.normalBias = 0.9;
+  }
   group.add(new THREE.AmbientLight(0xffffff, mood.amb));
+
+  // ---- streamed city geometry ----
+  const stream = createMapStream({
+    THREE,
+    group,
+    manifest,
+    canvasTex,
+    setTextureQuality,
+    // Windows and shopfronts burn brightest at the start of the journey and
+    // fade as the sky comes up, the same arc the door lights carry. Kept low:
+    // this feeds a bloom pass, and anything above ~0.7 turns every shopfront
+    // into a solid white band with no glazing bars or doorway left in it.
+    nightLift: 0.12 + mood.lamp * 0.30,
+    loadRadius,
+    castShadows: shadowsEnabled,
+    onTilesChanged: () => index.rebuild(stream.activeBuildings(), stream.activeRoads()),
+  });
 
   // ---- signage ----
   function signTex(name, locked) {
@@ -123,141 +380,179 @@ export function buildFreeRoamWorld({ THREE, group, chapters, cleared = 0, canvas
   }
 
   // ---- the places you can walk into ----
-  for (const spec of PLACE_LAYOUT) {
-    const isBank = spec.kind === "bank";
-    const index = isBank ? -1 : spec.key;
-    const chapter = isBank ? null : chapters[index];
-    if (!isBank && !chapter) continue;
+  // Doors, signs and lights are hung on the real buildings by the tiler, which
+  // picked the wall facing the street. Unlike the tiles, these are always
+  // present: a story location must never be missing because a tile is in
+  // flight.
+  for (const anchor of manifest?.anchors || []) {
+    const isChapter = anchor.kind === "chapter";
+    const index_ = isChapter ? anchor.key : -1;
+    const chapter = isChapter ? chapters[index_] : null;
+    if (isChapter && !chapter) continue;
 
-    const locked = !isBank && index > cleared;
-    const name = isBank ? "TRAP CENTRAL BANK" : chapter.name;
-    const [px, pz] = spec.pos;
-    const [w, h, d] = spec.size;
+    const locked = isChapter && index_ > cleared;
+    const name = isChapter ? chapter.name : anchor.name;
+    const door = anchor.door;
 
     const b = new THREE.Group();
-    const body = new THREE.Mesh(
-      new THREE.BoxGeometry(w, h, d),
-      new THREE.MeshStandardMaterial({ color: spec.color, roughness: .9 })
-    );
-    body.position.y = h / 2;
-    b.add(body);
-
-    // Door faces the middle of the block, so you always approach it from the street.
-    const faceZ = pz > 0 ? -1 : 1;
-    const doorZ = (d / 2) * faceZ + 0.02 * faceZ;
-    const door = new THREE.Mesh(
+    const doorMesh = new THREE.Mesh(
       new THREE.PlaneGeometry(2.2, 3.4),
       new THREE.MeshStandardMaterial({
         color: 0x120f0b,
         emissive: locked ? 0x3a352c : GOLD,
         emissiveIntensity: locked ? .12 : .35,
         roughness: .6,
+        side: THREE.DoubleSide,
       })
     );
-    door.position.set(0, 1.7, doorZ);
-    door.rotation.y = faceZ < 0 ? Math.PI : 0;
-    b.add(door);
+    doorMesh.position.set(0, 1.7, 0);
+    b.add(doorMesh);
 
+    // The sign goes on the fascia board above the glazing — where a real shop
+    // sign is — not floating at first-floor height. Width is capped: the bank's
+    // frontage is 16m wide, and a sign that size fills the screen when you
+    // spawn in front of it.
+    const signW = Math.min(Math.max(door.width - 1.2, 2.6), 5.5);
     const sign = new THREE.Mesh(
-      new THREE.PlaneGeometry(Math.min(w - 1, 7), 1.4),
-      new THREE.MeshBasicMaterial({ map: signTex(name, locked), transparent: true })
+      new THREE.PlaneGeometry(signW, signW * 0.2),
+      new THREE.MeshBasicMaterial({ map: signTex(name, locked), transparent: true, side: THREE.DoubleSide })
     );
-    sign.position.set(0, h - 1.1, doorZ + 0.03 * faceZ);
-    sign.rotation.y = faceZ < 0 ? Math.PI : 0;
+    sign.position.set(0, 2.85, 0.06);
     b.add(sign);
 
-    const dl = new THREE.PointLight(locked ? 0x6b6355 : GOLD, (isBank ? 2 : 1.2) * (locked ? .3 : 1), 12, 1.6);
-    dl.position.set(0, 3, doorZ + faceZ * 1.5);
+    // mood.lamp carries the dusk-to-daylight arc: the doors blaze at the start
+    // of the journey and fade back as the sky comes up to meet them.
+    const dl = new THREE.PointLight(
+      locked ? 0x6b6355 : GOLD,
+      (anchor.kind === "bank" ? 2 : 1.2) * (locked ? .3 : 1) * (0.5 + mood.lamp),
+      14,
+      1.6
+    );
+    dl.position.set(0, 3, 1.5);
     b.add(dl);
 
-    b.position.set(px, 0, pz);
+    b.position.set(door.x, door.y || 0, door.z);
+    // The door group is rotated to sit flat on its wall, facing the street.
+    b.rotation.y = Math.atan2(door.nx, door.nz);
     if (shadows) shadows(b);
     group.add(b);
 
-    colliders.push({ minX: px - w / 2, maxX: px + w / 2, minZ: pz - d / 2, maxZ: pz + d / 2 });
     places.push({
-      kind: spec.kind,
-      index,
+      kind: anchor.kind,
+      index: index_,
       name,
       locked,
-      sub: isBank ? "Deposit, withdraw, top up." : chapter.sub,
+      sub: isChapter ? chapter.sub : anchor.sub,
       // stand just outside the door
-      x: px,
-      z: pz + faceZ * (d / 2 + 1.6),
+      x: anchor.x,
+      z: anchor.z,
       // Where the player is put when they walk back OUT of this place. Sits far
       // enough past the door that the "enter" prompt does not immediately fire
       // again, and faces away from the building so the door is behind them.
-      exit: {
-        x: px,
-        z: pz + faceZ * (d / 2 + 1.6 + EXIT_STEP),
-        yaw: faceZ > 0 ? Math.PI : 0,
-      },
+      exit: anchor.exit,
     });
   }
 
-  // ---- street lamps ----
-  for (const [x, z] of LAMP_SPOTS) {
-    const g = new THREE.Group();
-    const pole = new THREE.Mesh(
-      new THREE.CylinderGeometry(.08, .1, 5, 8),
-      new THREE.MeshStandardMaterial({ color: 0x2b2b2b, metalness: .6, roughness: .5 })
-    );
-    pole.position.y = 2.5; g.add(pole);
-    const bulb = new THREE.Mesh(new THREE.SphereGeometry(.16, 10, 10), new THREE.MeshBasicMaterial({ color: 0xffd9a0 }));
-    bulb.position.y = 5; g.add(bulb);
-    const l = new THREE.PointLight(0xffcf99, mood.lamp, 16, 1.8);
-    l.position.y = 5; g.add(l);
-    g.position.set(x, 0, z);
-    group.add(g);
-  }
+  const spawn = manifest?.spawn || [0, 14];
+  const yaw = manifest?.spawnYaw ?? 0;
+  // Seeded from the city floor and then tracked as the player walks, so a tile
+  // arriving late never teleports them vertically.
+  let lastKnownGround = manifest?.terrainRange?.[0] ?? 0;
 
-  // ---- skyline that encloses the block ----
-  const windowTex = canvasTex(128, 256, (g, w, h) => {
-    g.fillStyle = "#0b0a0c"; g.fillRect(0, 0, w, h);
-    for (let y = 12; y < h - 8; y += 22) for (let x = 10; x < w - 8; x += 20) {
-      const lit = Math.random() < 0.32;
-      g.fillStyle = lit ? `rgba(201,160,106,${0.25 + Math.random() * 0.4})` : "rgba(28,26,24,0.6)";
-      g.fillRect(x, y, 10, 12);
-    }
-  });
-  windowTex.wrapS = windowTex.wrapT = THREE.RepeatWrapping;
-  for (const [x, z, w, d, h] of SKYLINE) {
-    const t = windowTex.clone();
-    t.repeat.set(Math.max(1, w / 6), Math.max(1, h / 6));
-    t.needsUpdate = true;
-    const m = new THREE.Mesh(
-      new THREE.BoxGeometry(w, h, d),
-      new THREE.MeshStandardMaterial({ map: t, color: 0x15141a, roughness: .9 })
-    );
-    m.position.set(x, h / 2, z);
-    group.add(m);
-    colliders.push({ minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2 });
-  }
+  // The skyline you can see from anywhere: the Cathedral, the water tower, the
+  // few tall blocks. Built once and never streamed out.
+  stream.buildLandmarks(manifest?.landmarks);
 
-  // yaw 0 looks down -z, which puts the bank and the first two chapters in view on
-  // arrival rather than the empty end of the block.
-  return { spawn: [0, 14], yaw: 0, mood, colliders, places };
+  // Kick off the first tiles so the street is there when the fade lifts.
+  stream.update(spawn[0], spawn[1], { force: true });
+  index.rebuild(stream.activeBuildings(), stream.activeRoads());
+
+  return {
+    spawn, yaw, mood, colliders: index, places, stream,
+    /**
+     * Ground height under a point, for anything that has to stand on the hill.
+     *
+     * While a tile is still in flight the last known height is held rather than
+     * falling back to anything absolute: the city spans 76m, so dropping to the
+     * lowest ground would pitch a player standing by the Cathedral into a 60m
+     * fall the moment a tile was slow.
+     */
+    groundAt: (x, z) => {
+      const h = stream.heightAt(x, z);
+      if (h !== null) { lastKnownGround = h; return h; }
+      return lastKnownGround;
+    },
+  };
 }
 
-/** Push the player out of any building they have walked into, shallowest axis first. */
-export function resolveWorldCollisions(position, colliders) {
-  const p = position;
-  p.x = Math.max(-WORLD_BOUND, Math.min(WORLD_BOUND, p.x));
-  p.z = Math.max(-WORLD_BOUND, Math.min(WORLD_BOUND, p.z));
-  for (const c of colliders) {
-    if (p.x > c.minX - PLAYER_RADIUS && p.x < c.maxX + PLAYER_RADIUS &&
-        p.z > c.minZ - PLAYER_RADIUS && p.z < c.maxZ + PLAYER_RADIUS) {
-      const dxL = Math.abs(p.x - (c.minX - PLAYER_RADIUS));
-      const dxR = Math.abs((c.maxX + PLAYER_RADIUS) - p.x);
-      const dzT = Math.abs(p.z - (c.minZ - PLAYER_RADIUS));
-      const dzB = Math.abs((c.maxZ + PLAYER_RADIUS) - p.z);
-      const m = Math.min(dxL, dxR, dzT, dzB);
-      if (m === dxL) p.x = c.minX - PLAYER_RADIUS;
-      else if (m === dxR) p.x = c.maxX + PLAYER_RADIUS;
-      else if (m === dzT) p.z = c.minZ - PLAYER_RADIUS;
-      else p.z = c.maxZ + PLAYER_RADIUS;
-    }
-  }
+/**
+ * A marker you can see from across the block.
+ *
+ * A waypoint is only useful if you can find it without looking at the map, so
+ * it is a tall beam rather than a pin on the ground: on a street of two-storey
+ * shopfronts a 40m column stays visible from most of the city centre.
+ */
+export function createWaypointBeacon({ THREE, group, groundAt }) {
+  const beacon = new THREE.Group();
+
+  const beam = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.35, 0.35, 40, 8, 1, true),
+    new THREE.MeshBasicMaterial({
+      color: 0xf4ecdd,
+      transparent: true,
+      opacity: 0.16,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    })
+  );
+  beam.position.y = 20;
+  beacon.add(beam);
+
+  const core = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.09, 0.09, 40, 6),
+    new THREE.MeshBasicMaterial({ color: 0xfff6e6, transparent: true, opacity: 0.55, depthWrite: false })
+  );
+  core.position.y = 20;
+  beacon.add(core);
+
+  // A ring on the pavement, so the beam has a foot you can actually walk to.
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(1.1, 1.5, 24),
+    new THREE.MeshBasicMaterial({ color: 0xf4ecdd, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false })
+  );
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.06;
+  beacon.add(ring);
+
+  beacon.visible = false;
+  group.add(beacon);
+
+  return {
+    set(wp) {
+      if (!wp) { beacon.visible = false; return; }
+      // Planted on the ground it marks. On a 60m hill a beacon rooted at zero
+      // is either buried or hanging in the sky.
+      beacon.position.set(wp.x, groundAt ? groundAt(wp.x, wp.z) : 0, wp.z);
+      beacon.visible = true;
+    },
+    /** The ground may only arrive once its tile streams in, so re-seat it. */
+    reseat(wp) {
+      if (!wp || !beacon.visible || !groundAt) return;
+      beacon.position.y = groundAt(wp.x, wp.z);
+    },
+    /** Slow pulse, so it reads as a marker rather than as part of the city. */
+    tick(t) {
+      if (!beacon.visible) return;
+      const p = 0.5 + Math.sin(t * 2.2) * 0.5;
+      beam.material.opacity = 0.10 + p * 0.12;
+      ring.material.opacity = 0.34 + p * 0.28;
+      ring.scale.setScalar(1 + p * 0.10);
+    },
+    dispose() {
+      group.remove(beacon);
+      beacon.traverse((o) => { o.geometry?.dispose(); o.material?.dispose(); });
+    },
+  };
 }
 
 /** Nearest place to the player, for the compass and the [E] prompt. */
@@ -270,21 +565,52 @@ export function nearestPlace(position, places) {
   return best ? { place: best, dist: bd } : null;
 }
 
-/** Player-centred, north-up radar. */
-export function drawMinimap(ctx, canvas, camera, colliders, places, near, THREE, dirVec) {
+// Minimap zoom levels, in pixels per metre. Index into this with
+// minimapZoomIn/Out so the HUD and the renderer never disagree.
+export const MINIMAP_ZOOMS = [0.35, 0.6, 1.15, 2.2, 4.0];
+export const MINIMAP_DEFAULT_ZOOM = 2;
+
+/**
+ * Player-centred, north-up street map.
+ *
+ * @param {number} zoomIndex  index into MINIMAP_ZOOMS
+ * @param {object} waypoint   {x,z,name} or null
+ */
+export function drawMinimap(ctx, canvas, camera, index, places, near, THREE, dirVec, waypoint, zoomIndex = MINIMAP_DEFAULT_ZOOM) {
   const W = canvas.width, H = canvas.height;
-  const cx = W / 2, cy = H / 2, ppm = 1.15;
+  const cx = W / 2, cy = H / 2;
+  const ppm = MINIMAP_ZOOMS[Math.max(0, Math.min(MINIMAP_ZOOMS.length - 1, zoomIndex))];
   const px = camera.position.x, pz = camera.position.z;
   ctx.clearRect(0, 0, W, H);
 
   ctx.strokeStyle = "rgba(201,160,106,.10)";
   for (const r of [30, 60]) { ctx.beginPath(); ctx.arc(cx, cy, r * ppm, 0, Math.PI * 2); ctx.stroke(); }
 
-  for (const c of colliders) {
-    const bx = ((c.minX + c.maxX) / 2 - px) * ppm, bz = ((c.minZ + c.maxZ) / 2 - pz) * ppm;
-    const w = (c.maxX - c.minX) * ppm, h = (c.maxZ - c.minZ) * ppm;
-    ctx.fillStyle = "rgba(201,160,106,.16)";
-    ctx.fillRect(cx + bx - w / 2, cy + bz - h / 2, w, h);
+  // Roads under buildings: on a real street grid the roads are what you
+  // actually navigate by, so they read as the base layer.
+  ctx.strokeStyle = "rgba(201,160,106,.22)";
+  ctx.lineWidth = 1.5;
+  for (const r of index?.roads || []) {
+    ctx.beginPath();
+    for (let i = 0; i < r.p.length; i += 2) {
+      const sx = cx + (r.p[i] - px) * ppm, sy = cy + (r.p[i + 1] - pz) * ppm;
+      if (i === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+    }
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = "rgba(201,160,106,.16)";
+  for (const b of index?.buildings || []) {
+    // Skip anything well off the dial rather than pathing it.
+    if (Math.abs(b.minX - px) > 90 && Math.abs(b.maxX - px) > 90) continue;
+    if (Math.abs(b.minZ - pz) > 90 && Math.abs(b.maxZ - pz) > 90) continue;
+    ctx.beginPath();
+    for (let i = 0; i < b.ring.length; i += 2) {
+      const sx = cx + (b.ring[i] - px) * ppm, sy = cy + (b.ring[i + 1] - pz) * ppm;
+      if (i === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+    }
+    ctx.closePath();
+    ctx.fill();
   }
 
   for (const pl of places) {
@@ -298,6 +624,48 @@ export function drawMinimap(ctx, canvas, camera, colliders, places, near, THREE,
     }
   }
 
+  // Waypoint. If it is off the edge of the dial, it becomes an arrow pinned to
+  // the rim pointing the way — a marker you cannot see is no use.
+  if (waypoint) {
+    const wx = (waypoint.x - px) * ppm;
+    const wz = (waypoint.z - pz) * ppm;
+    const rim = Math.min(W, H) / 2 - 9;
+    const dist = Math.hypot(wx, wz);
+
+    // The guide line: a dashed run from the player straight to the marker, so
+    // the direction to walk is readable at a glance without reading the arrow.
+    const reach = Math.min(dist, rim);
+    if (reach > 6) {
+      const ux = wx / (dist || 1);
+      const uz = wz / (dist || 1);
+      ctx.save();
+      ctx.setLineDash([5, 4]);
+      ctx.strokeStyle = "rgba(244,236,221,.55)";
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(cx + ux * 7, cy + uz * 7);
+      ctx.lineTo(cx + ux * reach, cy + uz * reach);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    ctx.fillStyle = "#f4ecdd";
+    if (dist <= rim) {
+      const sx = cx + wx, sy = cy + wz;
+      ctx.beginPath(); ctx.arc(sx, sy, 3.5, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = "rgba(244,236,221,.8)";
+      ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.arc(sx, sy, 7.5, 0, Math.PI * 2); ctx.stroke();
+    } else {
+      const a = Math.atan2(wz, wx);
+      ctx.save();
+      ctx.translate(cx + Math.cos(a) * rim, cy + Math.sin(a) * rim);
+      ctx.rotate(a + Math.PI / 2);
+      ctx.beginPath(); ctx.moveTo(0, -6); ctx.lineTo(4, 4); ctx.lineTo(-4, 4); ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
+  }
+
   camera.getWorldDirection(dirVec);
   ctx.save();
   ctx.translate(cx, cy);
@@ -305,4 +673,19 @@ export function drawMinimap(ctx, canvas, camera, colliders, places, near, THREE,
   ctx.fillStyle = "#f4ecdd";
   ctx.beginPath(); ctx.moveTo(0, -6); ctx.lineTo(4.5, 5); ctx.lineTo(-4.5, 5); ctx.closePath(); ctx.fill();
   ctx.restore();
+
+  // Scale readout, so the zoom level means something.
+  const radiusM = Math.round((Math.min(W, H) / 2) / ppm);
+  ctx.fillStyle = "rgba(244,236,221,.5)";
+  ctx.font = "8px system-ui, sans-serif";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  ctx.fillText(`${radiusM}m`, 4, 4);
+
+  // ODbL requires attribution wherever the data is shown.
+  ctx.fillStyle = "rgba(244,236,221,.35)";
+  ctx.font = "7px system-ui, sans-serif";
+  ctx.textAlign = "right";
+  ctx.textBaseline = "alphabetic";
+  ctx.fillText(MAP_ATTRIBUTION, W - 3, H - 3);
 }
