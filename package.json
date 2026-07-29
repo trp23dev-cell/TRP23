@@ -22,7 +22,8 @@
     "android:prepare": "npm run build && npm run android:sync",
     "map:build": "node scripts/build-map-tiles.mjs",
     "map:verify": "node scripts/verify-map.mjs",
-    "map:export": "node scripts/export-map.mjs"
+    "map:export": "node scripts/export-map.mjs",
+    "check:repo": "node scripts/check-repo-hygiene.mjs"
   },
   "dependencies": {
     "@capacitor/core": "^7.4.2",

@@ -9,9 +9,28 @@ dist/
 pnpm-lock.yaml
 pnpm-workspace.yaml
 
-# Transient SQLite write-ahead log / shared-memory files (the .db is tracked)
+# The database is NOT tracked. It holds player accounts — emails, phone
+# numbers and password hashes — and this repository is public. It is also
+# runtime state: committing it means every deploy resets live players back to
+# whatever was last committed.
+#
+# The MAP is the one thing in there that has to ship, and it travels separately
+# as server/storage/map-export.json.gz, which the server imports on boot.
+server/storage/*.db
 server/storage/*.db-wal
 server/storage/*.db-shm
+
+# Signing material and API keys. An Apple .p8 cannot be re-downloaded and
+# grants App Store Connect / push access, so it must never be in the tree.
+*.p8
+*.p12
+*.keystore
+*.jks
+*.mobileprovision
+*.cer
+*.csr
+*.pem
+*.key
 
 # Local env files (keep the *.example templates)
 .env

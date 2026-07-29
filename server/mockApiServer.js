@@ -276,6 +276,7 @@ async function logAudit(action, ctx, details = {}) {
 async function ensureStorage() {
   await fs.mkdir(storageDir, { recursive: true });
   store = createSqliteStore({ dbPath: dbFile });
+  await importShippedMap();
   store.ensureKey(contentFile, defaultContent);
 
   // Content migration. `ensureKey` only seeds when the row is missing, so a database
