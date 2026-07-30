@@ -50,14 +50,22 @@ so it takes a bootstrap token supplied out of band:
    openssl rand -hex 32
    ```
 
-2. Create the first admin, once:
+2. Create the first admin, once, from your own machine:
 
    ```bash
-   curl -X POST https://<your-app>.up.railway.app/api/auth/register \
-     -H 'Content-Type: application/json' \
-     -H "x-bootstrap-token: <the token>" \
-     -d '{"email":"you@example.com","password":"<20+ characters>","role":"admin"}'
+   export ADMIN_BOOTSTRAP_TOKEN=<the same token you set in Railway>
+   npm run admin:create -- --url https://<your-app>.up.railway.app --email you@example.com
    ```
+
+   It prompts for the password rather than taking it as an argument, so it
+   does not end up in your shell history. On success:
+
+   ```
+   created admin you@example.com on https://<your-app>.up.railway.app
+   ```
+
+   If it answers `403 only an admin can create staff accounts`, an admin
+   already exists — sign in and create further staff from there.
 
 3. **Delete `ADMIN_BOOTSTRAP_TOKEN` from the variables.** It only works while
    zero admins exist, but there is no reason to leave it lying around.

@@ -24,7 +24,8 @@
     "map:verify": "node scripts/verify-map.mjs",
     "map:export": "node scripts/export-map.mjs",
     "check:repo": "node scripts/check-repo-hygiene.mjs",
-    "check:api": "node scripts/check-api-security.mjs"
+    "check:api": "node scripts/check-api-security.mjs",
+    "admin:create": "node scripts/create-admin.mjs"
   },
   "dependencies": {
     "@capacitor/core": "^7.4.2",
