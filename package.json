@@ -23,7 +23,8 @@
     "map:build": "node scripts/build-map-tiles.mjs",
     "map:verify": "node scripts/verify-map.mjs",
     "map:export": "node scripts/export-map.mjs",
-    "check:repo": "node scripts/check-repo-hygiene.mjs"
+    "check:repo": "node scripts/check-repo-hygiene.mjs",
+    "check:api": "node scripts/check-api-security.mjs"
   },
   "dependencies": {
     "@capacitor/core": "^7.4.2",

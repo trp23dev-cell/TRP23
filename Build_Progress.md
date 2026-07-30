@@ -127,7 +127,7 @@ Not "it builds" — actually driven end to end in headless Chrome:
 | 8.3 | Make the CMS actually drive missions (`type`/`requirement`/`limit` are still decorative) | ⬜ |
 | 8.4 | Admin/ops UI over the API that already exists | ⬜ |
 | 8.5 | Real payments, addresses, fulfilment | ⬜ |
-| 8.6 | Security work from `Bible_Planning_Devwork.MD` Phase 0 (**the committed Apple key still needs revoking**) | 🚧 |
+| 8.6 | Security: credentials and the player database untracked, staff registration closed, `check:repo` + `check:api` in place. **The committed Apple key is still in git history and must be revoked at Apple — deleting the file does not undo the exposure.** | 🚧 |
 
 ---
 

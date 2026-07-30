@@ -36,7 +36,17 @@ function sanitizeAccount(acct) {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const storageDir = path.join(__dirname, "storage");
+// Two different directories, and the distinction matters on a hosted deploy:
+//
+//   shippedDir  ships with the code. Read-only in practice, and holds the
+//               built map. Replaced wholesale on every deploy.
+//   dataDir     writable state — the database. On Railway this must point at a
+//               mounted volume (DATA_DIR=/data), or every deploy starts with
+//               an empty database and every account is lost.
+//
+// They default to the same place so local development is unchanged.
+const shippedDir = path.join(__dirname, "storage");
+const storageDir = process.env.DATA_DIR || shippedDir;
 const dbFile = path.join(storageDir, "trapmadeit.db");
 const contentFile = "content";
 const refundsFile = "refunds";
@@ -100,7 +110,9 @@ async function serveStatic(res, pathname) {
  * map that was actually tested and no network fetch at start-up.
  */
 async function importShippedMap() {
-  const file = path.join(storageDir, "map-export.json.gz");
+  // Always from the shipped copy, never the data volume: the map is code, not
+  // state, and a deploy must be able to update it.
+  const file = path.join(shippedDir, "map-export.json.gz");
   let raw;
   try {
     raw = await fs.readFile(file);
@@ -275,6 +287,13 @@ async function logAudit(action, ctx, details = {}) {
 
 async function ensureStorage() {
   await fs.mkdir(storageDir, { recursive: true });
+  if (process.env.NODE_ENV === "production" && !process.env.DATA_DIR) {
+    console.warn(
+      "[storage] DATA_DIR is not set, so the database is being written inside the\n" +
+      "[storage] deployment. Every redeploy will wipe player accounts. Mount a\n" +
+      "[storage] volume and set DATA_DIR to its path."
+    );
+  }
   store = createSqliteStore({ dbPath: dbFile });
   await importShippedMap();
   store.ensureKey(contentFile, defaultContent);
@@ -448,8 +467,41 @@ async function handleRequest(req, res) {
       const email = String(body.email || "").trim().toLowerCase();
       const password = String(body.password || "");
       const role = ["admin", "ops", "product", "viewer"].includes(body.role) ? body.role : "viewer";
+
+      // STAFF accounts, not player accounts. This route used to be wide open:
+      // anyone on the internet could POST role:"admin" and take over the CMS,
+      // the content and every player record. Players sign up at
+      // /api/players/register, which is a different thing entirely.
+      //
+      // Creating staff now requires either an existing admin, or — for the very
+      // first account on a fresh deployment, when there is no admin to
+      // authorise it — a bootstrap token supplied out of band.
+      const isFirstAdmin = store.countAdminUsers() === 0;
+      const bootstrap = process.env.ADMIN_BOOTSTRAP_TOKEN;
+      const offered = req.headers["x-bootstrap-token"];
+      const bootstrapOk = isFirstAdmin
+        && !!bootstrap
+        && typeof offered === "string"
+        && offered.length === bootstrap.length
+        && timingSafeEqual(Buffer.from(offered), Buffer.from(bootstrap));
+
+      if (!requiresRole(ctx, ["admin"]) && !bootstrapOk) {
+        await logAudit("auth.register.denied", ctx, { email, role, isFirstAdmin });
+        sendJson(res, 403, {
+          ok: false,
+          error: isFirstAdmin
+            ? "first staff account requires the ADMIN_BOOTSTRAP_TOKEN header"
+            : "only an admin can create staff accounts",
+        });
+        return;
+      }
+
       if (!email || !password) {
         sendJson(res, 400, { ok: false, error: "email and password are required" });
+        return;
+      }
+      if (password.length < 12) {
+        sendJson(res, 400, { ok: false, error: "staff passwords must be at least 12 characters" });
         return;
       }
       if (store.findAdminUserByEmail(email)) {

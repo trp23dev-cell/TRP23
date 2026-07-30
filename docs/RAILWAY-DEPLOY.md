@@ -1,0 +1,84 @@
+# Deploying to Railway
+
+Two things have to be right or the deploy is either broken or unsafe: the
+database must live on a volume, and staff registration must be locked.
+
+## 1. Mount a volume for the database
+
+The game stores accounts, wallets, progress and the ledger in SQLite. Without a
+volume that file lives inside the deployment, and **every redeploy destroys it**
+— all accounts, all balances, gone, with no error.
+
+In the Railway service:
+
+1. **Variables → New Variable**
+
+   | Variable | Value |
+   |---|---|
+   | `DATA_DIR` | `/data` |
+   | `NODE_ENV` | `production` |
+
+2. **Settings → Volumes → Add Volume**, mount path `/data`.
+
+The server writes `trapmadeit.db` there and creates it on first boot. It warns
+loudly in the logs if `NODE_ENV=production` and `DATA_DIR` is unset, because
+silent data loss is the worst kind.
+
+The **map** does not live on the volume. It ships with the code as
+`server/storage/map-export.json.gz` and is imported on boot whenever it is newer
+than what the database holds, so a deploy always comes up with the map that was
+tested and never fetches anything at start-up. Rebuilding the map is:
+
+```bash
+npm run map:build     # fetch OSM + LIDAR, build tiles   (~45s)
+npm run map:export    # write the artefact that ships
+npm run map:verify    # 60-odd checks over the built map
+```
+
+## 2. Create the first staff account
+
+`/api/auth/register` creates **staff** accounts — admin, ops, product, viewer —
+and is not the same thing as player signup. It is closed: creating staff needs
+an existing admin.
+
+For the first account on a fresh deployment there is no admin to authorise it,
+so it takes a bootstrap token supplied out of band:
+
+1. Set `ADMIN_BOOTSTRAP_TOKEN` in Railway to a long random string:
+
+   ```bash
+   openssl rand -hex 32
+   ```
+
+2. Create the first admin, once:
+
+   ```bash
+   curl -X POST https://<your-app>.up.railway.app/api/auth/register \
+     -H 'Content-Type: application/json' \
+     -H "x-bootstrap-token: <the token>" \
+     -d '{"email":"you@example.com","password":"<20+ characters>","role":"admin"}'
+   ```
+
+3. **Delete `ADMIN_BOOTSTRAP_TOKEN` from the variables.** It only works while
+   zero admins exist, but there is no reason to leave it lying around.
+
+After that, further staff accounts are created by an admin using their session.
+
+## 3. Before you invite anyone real
+
+- [ ] Volume mounted and `DATA_DIR` set — otherwise accounts vanish on redeploy
+- [ ] `ADMIN_BOOTSTRAP_TOKEN` removed after first use
+- [ ] `npm run check:repo` passes — no keys, keystores or databases tracked
+- [ ] `npm run check:api` passes against the deployed URL:
+      `API=https://<your-app>.up.railway.app npm run check:api`
+- [ ] Any credential that was ever committed has been **revoked and reissued**,
+      not just deleted. Deleting a file does not remove it from git history.
+
+## What is deliberately not here
+
+**CORS is `*`.** The API is Bearer-token authenticated with no cookies, so this
+is not a session-riding risk, and the mobile build needs a non-web origin. Worth
+narrowing when the shipping origins are known.
+
+**No rate limiting.** Player registration and login are open endpoints with no
+throttle. Fine for testing; not fine once the game is public.

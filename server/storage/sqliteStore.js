@@ -846,6 +846,9 @@ export function createSqliteStore({ dbPath }) {
     insertAdminUser.run(user);
     return user;
   }
+  function countAdminUsers() {
+    return db.prepare("SELECT COUNT(*) AS c FROM admin_users").get().c;
+  }
   function findAdminUserByEmail(email) {
     return selectAdminByEmail.get(email) || null;
   }
@@ -997,6 +1000,7 @@ export function createSqliteStore({ dbPath }) {
     // admin users + sessions
     createAdminUser,
     findAdminUserByEmail,
+    countAdminUsers,
     findAdminUserById,
     updateAdminPasswordHash,
     createAdminSession,
