@@ -702,7 +702,12 @@ async function main() {
       warnings += 1;
     }
     anchors.push({
-      key: a.key,
+      // `key` is a STRING for every anchor, and the chapter number lives in
+      // `index`. It used to be 0 for JD and "bank"/"barber" for the rest — one
+      // field with two types, which JavaScript shrugs at and a typed client
+      // cannot parse at all. The Unity port found it immediately.
+      key: String(a.key),
+      index: a.kind === "chapter" ? Number(a.key) : -1,
       kind: a.kind,
       name: a.name,
       sub: a.sub || null,

@@ -13,5 +13,11 @@
     <Compile Include="../../Unity/TRP23/Assets/UI/Scripts/Auth/HttpAuthService.cs" />
     <Compile Include="../../Unity/TRP23/Assets/UI/Scripts/Auth/MockAuthService.cs" />
     <Compile Include="../../Unity/TRP23/Assets/UI/Scripts/SceneFlow.cs" />
+    <Compile Include="../../Unity/TRP23/Assets/World/Scripts/TrapGeo.cs" />
+    <Compile Include="../../Unity/TRP23/Assets/World/Scripts/TileModels.cs" />
+    <Compile Include="../../Unity/TRP23/Assets/World/Scripts/MapClient.cs" />
+    <Compile Include="../../Unity/TRP23/Assets/World/Scripts/TerrainMeshBuilder.cs" />
+    <Compile Include="../../Unity/TRP23/Assets/World/Scripts/WorldStreamer.cs" />
+    <Compile Include="../../Unity/TRP23/Assets/World/Scripts/FlyCamera.cs" />
   </ItemGroup>
 </Project>

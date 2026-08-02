@@ -1,0 +1,144 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+namespace TrapMadeIt.World
+{
+    /// <summary>
+    /// Streams the city in around the player, a tile at a time.
+    ///
+    /// This is the terrain only, deliberately. It is the smallest thing that
+    /// proves the whole pipeline — server, wire format, projection, winding —
+    /// and everything else stands on it. Buildings come next, on top of ground
+    /// that is already known to be in the right place.
+    /// </summary>
+    [RequireComponent(typeof(MapClient))]
+    public class WorldStreamer : MonoBehaviour
+    {
+        [Tooltip("Tiles out from the player kept loaded. 2 = a 5x5 block, 1250m across.")]
+        public int loadRadius = 2;
+
+        [Tooltip("Follows this. Leave empty to use the main camera.")]
+        public Transform follow;
+
+        public Material groundMaterial;
+
+        MapClient client;
+        readonly Dictionary<Vector2Int, GameObject> live = new Dictionary<Vector2Int, GameObject>();
+        readonly Dictionary<Vector2Int, TerrainPatch> patches = new Dictionary<Vector2Int, TerrainPatch>();
+        readonly HashSet<Vector2Int> inFlight = new HashSet<Vector2Int>();
+        Vector2Int? lastTile;
+        bool ready;
+
+        void Awake() => client = GetComponent<MapClient>();
+
+        IEnumerator Start()
+        {
+            if (follow == null && Camera.main != null) follow = Camera.main.transform;
+
+            yield return client.LoadManifest((ok, err) =>
+            {
+                if (!ok) { Debug.LogError($"[world] {err}"); return; }
+                ready = true;
+                var m = client.Manifest;
+                Debug.Log($"[world] {m.tiles.Length} tiles, {m.buildingCount} buildings, " +
+                          $"ground {m.terrainRange[0]}m to {m.terrainRange[1]}m. {m.attribution}");
+            });
+
+            if (!ready) yield break;
+
+            // Stand the player where the web client does: on the street, facing
+            // the hill. That heading was chosen by sampling the steepest climb,
+            // so it points at the Cathedral.
+            if (follow != null && client.Manifest.spawn != null && client.Manifest.spawn.Length == 2)
+            {
+                var s = client.Manifest.spawn;
+                follow.position = new Vector3(s[0], client.Manifest.terrainRange[1] + 50f, s[1]);
+                follow.rotation = Quaternion.Euler(0f, client.Manifest.spawnYaw * Mathf.Rad2Deg, 0f);
+            }
+
+            Refresh(true);
+        }
+
+        void Update()
+        {
+            if (!ready || follow == null) return;
+            Refresh(false);
+
+            // Keep the player on the ground once the tile under them exists.
+            if (TryGroundHeight(follow.position.x, follow.position.z, out float y))
+            {
+                var p = follow.position;
+                // Eye height, matching the web client.
+                float target = y + 1.7f;
+                if (p.y > target) p.y = Mathf.Max(target, p.y - Time.deltaTime * 30f);
+                else p.y = target;
+                follow.position = p;
+            }
+        }
+
+        void Refresh(bool force)
+        {
+            var here = TrapGeo.TileOf(follow.position.x, follow.position.z);
+            if (!force && lastTile.HasValue && lastTile.Value == here) return;
+            lastTile = here;
+
+            for (int dz = -loadRadius; dz <= loadRadius; dz++)
+            {
+                for (int dx = -loadRadius; dx <= loadRadius; dx++)
+                {
+                    var t = new Vector2Int(here.x + dx, here.y + dz);
+                    if (live.ContainsKey(t) || inFlight.Contains(t)) continue;
+                    if (!client.Has(t)) continue;      // edge of the world
+                    inFlight.Add(t);
+                    StartCoroutine(Load(t));
+                }
+            }
+
+            // Unload one ring beyond the load radius, so walking back and forth
+            // across a boundary does not thrash build and teardown.
+            var drop = new List<Vector2Int>();
+            foreach (var kv in live)
+            {
+                if (Mathf.Abs(kv.Key.x - here.x) > loadRadius + 1 ||
+                    Mathf.Abs(kv.Key.y - here.y) > loadRadius + 1) drop.Add(kv.Key);
+            }
+            foreach (var t in drop)
+            {
+                Destroy(live[t]);
+                live.Remove(t);
+                patches.Remove(t);
+            }
+        }
+
+        IEnumerator Load(Vector2Int t)
+        {
+            yield return client.LoadTile(t, payload =>
+            {
+                inFlight.Remove(t);
+                if (payload?.t == null) return;
+
+                var mesh = TerrainMeshBuilder.Build(payload.t, t);
+                if (mesh == null) return;
+
+                var go = new GameObject($"tile_{t.x}_{t.y}");
+                go.transform.SetParent(transform, false);
+                go.AddComponent<MeshFilter>().sharedMesh = mesh;
+                var mr = go.AddComponent<MeshRenderer>();
+                if (groundMaterial != null) mr.sharedMaterial = groundMaterial;
+
+                live[t] = go;
+                patches[t] = payload.t;
+            });
+        }
+
+        /// Ground height under a world position, or false if that tile is not in.
+        public bool TryGroundHeight(float x, float z, out float y)
+        {
+            y = 0f;
+            var t = TrapGeo.TileOf(x, z);
+            return patches.TryGetValue(t, out var patch)
+                && TerrainMeshBuilder.SampleHeight(patch, t, x, z, out y);
+        }
+    }
+}

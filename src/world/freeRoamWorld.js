@@ -386,7 +386,7 @@ export function buildFreeRoamWorld({
   // flight.
   for (const anchor of manifest?.anchors || []) {
     const isChapter = anchor.kind === "chapter";
-    const index_ = isChapter ? anchor.key : -1;
+    const index_ = isChapter ? anchor.index : -1;
     const chapter = isChapter ? chapters[index_] : null;
     if (isChapter && !chapter) continue;
 
