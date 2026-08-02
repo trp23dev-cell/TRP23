@@ -67,6 +67,54 @@ const main = async () => {
   check("player data needs authentication", other.status === 401 || other.status === 403,
     `HTTP ${other.status}`);
 
+  // --- rate limiting ---
+  // Login and registration are open by definition, which makes them the
+  // targets. These assert that hammering them actually stops.
+  process.stdout.write("\nrate limiting:\n");
+
+  // Per-account lockout: many attempts at ONE account. This is the one a
+  // per-IP limit never catches when the attempt is distributed.
+  const victim = `victim-${stamp}@example.invalid`;
+  await post("/api/players/register", {
+    username: `vic${stamp}`.slice(0, 18), email: victim, password: "thecorrectpassword",
+  });
+  let locked = null;
+  for (let i = 0; i < 16; i += 1) {
+    const r = await post("/api/players/login", { identifier: victim, password: `wrong-${i}` });
+    if (r.status === 429) { locked = i + 1; break; }
+  }
+  check("guessing one account's password locks it", locked !== null,
+    locked ? `locked after ${locked} attempts` : "still accepting attempts after 16 wrong passwords");
+
+  // A locked account must stay locked even for the RIGHT password, or the
+  // lockout is trivially bypassed by simply guessing correctly.
+  if (locked) {
+    const correct = await post("/api/players/login", { identifier: victim, password: "thecorrectpassword" });
+    check("the lockout is not bypassed by the correct password", correct.status === 429,
+      `HTTP ${correct.status}`);
+  }
+
+  // Registration flood from one address.
+  let regBlocked = null;
+  for (let i = 0; i < 26; i += 1) {
+    const r = await post("/api/players/register", {
+      username: `flood${stamp}${i}`.slice(0, 18),
+      email: `flood-${stamp}-${i}@example.invalid`,
+      password: "averylongpassword",
+    });
+    if (r.status === 429) { regBlocked = i + 1; break; }
+  }
+  check("registration floods are throttled", regBlocked !== null,
+    regBlocked ? `blocked after ${regBlocked}` : "26 accounts created without a limit");
+
+  // A 429 has to say when to come back, or clients cannot behave.
+  const again = await post("/api/players/register", {
+    username: `x${stamp}`.slice(0, 18), email: `x-${stamp}@example.invalid`, password: "averylongpassword",
+  });
+  check("throttled responses say when to retry",
+    again.status !== 429 || Number(again.json?.retryAfter) > 0,
+    again.status === 429 ? `retryAfter ${again.json?.retryAfter}s` : "not throttled");
+
   process.stdout.write(`\n${failures ? `${failures} FAILED` : "all security checks passed"}\n`);
   process.exit(failures ? 1 : 0);
 };

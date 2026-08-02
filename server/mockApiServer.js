@@ -8,6 +8,7 @@ import { defaultContent } from "../src/data/defaultContent.js";
 import { defaultWorld } from "../src/data/defaultWorld.js";
 import { createSqliteStore, STARTING_COINS } from "./storage/sqliteStore.js";
 import { generateTotpSecret, verifyTotp, otpauthUrl } from "./totp.js";
+import { createRateLimiter, clientAddress } from "./rateLimit.js";
 
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,20}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -128,6 +129,29 @@ async function importShippedMap() {
   } catch (err) {
     console.error("[map] could not import the shipped map:", err.message);
   }
+}
+
+const rateLimiter = createRateLimiter();
+
+/**
+ * Apply a rate limit, answering the request with 429 if it is over.
+ * @returns true when the caller should stop.
+ */
+function rateLimited(req, res, bucket) {
+  const address = clientAddress(req);
+  const verdict = rateLimiter.checkAddress(bucket, address);
+  if (verdict.ok) return false;
+  res.writeHead(429, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Access-Control-Allow-Origin": "*",
+    "Retry-After": String(verdict.retryAfter),
+  });
+  res.end(JSON.stringify({
+    ok: false,
+    error: "too many attempts, slow down",
+    retryAfter: verdict.retryAfter,
+  }));
+  return true;
 }
 
 let store;
@@ -462,6 +486,7 @@ async function handleRequest(req, res) {
 
   // ---------------- AUTH ----------------
   if (req.method === "POST" && pathname === "/api/auth/register") {
+    if (rateLimited(req, res, "register")) return;
     try {
       const body = JSON.parse((await readBody(req)) || "{}");
       const email = String(body.email || "").trim().toLowerCase();
@@ -526,15 +551,26 @@ async function handleRequest(req, res) {
   }
 
   if (req.method === "POST" && pathname === "/api/auth/login") {
+    if (rateLimited(req, res, "login")) return;
     try {
       const body = JSON.parse((await readBody(req)) || "{}");
       const email = String(body.email || "").trim().toLowerCase();
       const password = String(body.password || "");
+      const lock = rateLimiter.accountLocked(`staff:${email}`);
+      if (!lock.ok) {
+        await logAudit("auth.login.locked", null, { email });
+        sendJson(res, 429, {
+          ok: false, error: "too many failed attempts for this account", retryAfter: lock.retryAfter,
+        });
+        return;
+      }
       const user = store.findAdminUserByEmail(email);
       if (!user || !verifyAdminPassword(password, user.passwordHash)) {
+        rateLimiter.failAccount(`staff:${email}`);
         sendJson(res, 401, { ok: false, error: "invalid credentials" });
         return;
       }
+      rateLimiter.succeeded(`staff:${email}`);
       // Transparently upgrade legacy SHA-256 accounts to scrypt on login.
       if (!user.passwordHash.startsWith("scrypt$")) {
         store.updateAdminPasswordHash(user.id, hashPlayerPassword(password));
@@ -590,6 +626,7 @@ async function handleRequest(req, res) {
   // guest player (preserving progress) or creates a fresh account. Optionally
   // begins TOTP 2FA enrollment (returns a secret to confirm via /2fa/enable).
   if (req.method === "POST" && pathname === "/api/players/register") {
+    if (rateLimited(req, res, "register")) return;
     const body = JSON.parse((await readBody(req)) || "{}");
     const username = String(body.username || "").trim();
     const email = String(body.email || "").trim().toLowerCase();
@@ -644,11 +681,28 @@ async function handleRequest(req, res) {
   // `code` is required; when missing we reply 401 with twofaRequired so the
   // client can prompt for it.
   if (req.method === "POST" && pathname === "/api/players/login") {
+    if (rateLimited(req, res, "login")) return;
     const body = JSON.parse((await readBody(req)) || "{}");
     const identifier = String(body.identifier || body.email || body.username || "").trim().toLowerCase();
     const password = String(body.password || "");
+
+    // Per-account lockout as well as per-address. A distributed attempt on one
+    // known email never trips a per-IP limit, because no single address is
+    // trying often enough.
+    const lock = rateLimiter.accountLocked(identifier);
+    if (!lock.ok) {
+      await logAudit("players.login.locked", null, { identifier });
+      sendJson(res, 429, {
+        ok: false,
+        error: "too many failed attempts for this account",
+        retryAfter: lock.retryAfter,
+      });
+      return;
+    }
+
     const account = store.findPlayerByIdentifier(identifier);
     if (!account || !account.passwordHash || !verifyPlayerPassword(password, account.passwordHash)) {
+      rateLimiter.failAccount(identifier);
       sendJson(res, 401, { ok: false, error: "invalid credentials" });
       return;
     }
@@ -659,10 +713,14 @@ async function handleRequest(req, res) {
         return;
       }
       if (!verifyTotp(account.twofaSecret, code)) {
+        // Knowing the password but not the code is still an attempt.
+        rateLimiter.failAccount(identifier);
         sendJson(res, 401, { ok: false, error: "invalid two-factor code", twofaRequired: true });
         return;
       }
     }
+    // Signed in properly, so forget the failures.
+    rateLimiter.succeeded(identifier);
     store.markPlayerSeen(account.playerId);
     const { token, expiresAt } = issuePlayerSession(account.playerId);
     await logAudit("players.login", null, { playerId: account.playerId });

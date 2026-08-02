@@ -17,6 +17,16 @@ In the Railway service:
    |---|---|
    | `DATA_DIR` | `/data` |
    | `NODE_ENV` | `production` |
+   | `TRUST_PROXY` | `1` |
+
+   `TRUST_PROXY` is not optional on Railway. Every request arrives via the
+   platform's proxy, so without it the rate limiter sees one address for the
+   whole world and **all players share a single bucket** — a handful of logins
+   would lock out everyone. With it set, the limiter reads `X-Forwarded-For`.
+
+   It is off by default because that header is trivially forged when there is
+   *no* proxy in front, which would let an attacker rotate it and bypass the
+   limit entirely. Set it when deployed behind a proxy; leave it unset locally.
 
 2. **Settings → Volumes → Add Volume**, mount path `/data`.
 
@@ -88,5 +98,13 @@ After that, further staff accounts are created by an admin using their session.
 is not a session-riding risk, and the mobile build needs a non-web origin. Worth
 narrowing when the shipping origins are known.
 
-**No rate limiting.** Player registration and login are open endpoints with no
-throttle. Fine for testing; not fine once the game is public.
+**Rate limiting is in memory.** It holds counts in the process, which is right
+for a single instance and wrong the moment the service is scaled to more than
+one — each instance would keep its own counts and the effective limit would
+multiply by the instance count. Revisit with a shared store if you scale out.
+
+The limits are deliberately loose per IP (40 logins / 15 min, 20 registrations
+/ hour) and tight per account (10 failed sign-ins / 15 min). Mobile carriers put
+thousands of subscribers behind one address, so a tight per-IP cap locks out
+real players without stopping an attacker who has many addresses. The per-account
+lock is the control that actually stops password guessing.
