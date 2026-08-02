@@ -11,5 +11,7 @@
     <Compile Include="../../Unity/TRP23/Assets/UI/Scripts/Auth/AuthModels.cs" />
     <Compile Include="../../Unity/TRP23/Assets/UI/Scripts/Auth/IAuthService.cs" />
     <Compile Include="../../Unity/TRP23/Assets/UI/Scripts/Auth/HttpAuthService.cs" />
+    <Compile Include="../../Unity/TRP23/Assets/UI/Scripts/Auth/MockAuthService.cs" />
+    <Compile Include="../../Unity/TRP23/Assets/UI/Scripts/SceneFlow.cs" />
   </ItemGroup>
 </Project>

@@ -5,7 +5,7 @@ using System;
 using System.Collections;
 namespace UnityEngine {
   public class Object {}
-  public class MonoBehaviour : Object { public Coroutine StartCoroutine(IEnumerator r) => null; }
+  public class MonoBehaviour : Component { public Coroutine StartCoroutine(IEnumerator r) => null; public static void DontDestroyOnLoad(Object o) {} public static void Destroy(Object o) {} }
   public class Coroutine {}
   public static class PlayerPrefs {
     public static string GetString(string k, string d) => d;
@@ -20,6 +20,16 @@ namespace UnityEngine {
   }
   public class HeaderAttribute : Attribute { public HeaderAttribute(string h) {} }
   public class TooltipAttribute : Attribute { public TooltipAttribute(string t) {} }
+  public class SerializeFieldAttribute : Attribute {}
+  public class GameObject : Object {
+    public GameObject() {}
+    public GameObject(string name) {}
+    public T AddComponent<T>() where T : Component, new() => new T();
+  }
+  public class Component : Object { public GameObject gameObject => null; }
+}
+namespace UnityEngine.SceneManagement {
+  public static class SceneManager { public static void LoadScene(string name) {} }
 }
 namespace UnityEngine.Networking {
   public class DownloadHandler { public string text => ""; }
