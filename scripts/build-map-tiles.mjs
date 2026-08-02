@@ -31,14 +31,20 @@ import { triangulate, normalisedOrder } from "../src/world/buildingMesh.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-// Lincoln city centre. Runs from the Brayford and the lower High Street all the
-// way up to the Castle and the Cathedral, because the climb is the city: the
-// High Street sits at ~6m and the Cathedral at ~65m, and a bbox that stops
-// short of Steep Hill throws away the thing that makes Lincoln Lincoln.
-// Lincoln city centre plus the eastern approach out to HMP Lincoln on
-// Greetwell Road, which the story needs. That is 2.2km across, well past what
-// the OSM API will return in one request, so the fetch chunks itself.
-const DEFAULT_BBOX = { w: -0.548, s: 53.224, e: -0.514, n: 53.239 };
+// Lincoln out to the ring road: 4km x 4km of the built-up city.
+//
+// Covers the Brayford and the university, the whole High Street climb to the
+// Castle and Cathedral, HMP Lincoln on Greetwell Road, and south to Canwick.
+// The climb is the city — the High Street sits at ~6m and the Cathedral at
+// ~65m — so any bbox that stops short of Steep Hill throws away the thing that
+// makes Lincoln Lincoln.
+//
+// The full City of Lincoln boundary is 8.6 x 7.6km, about 65 km2. That is
+// roughly a thousand tiles and 50MB+ of map, which needs a Geofabrik extract
+// instead of the OSM API and a way of shipping the map other than in the
+// repository. This is the largest area the current architecture handles
+// without redesign.
+const DEFAULT_BBOX = { w: -0.566, s: 53.213, e: -0.506, n: 53.249 };
 
 // Spacing of the terrain grid handed to the client, in metres. The source is 1m
 // LIDAR; 5m is smooth underfoot and keeps a tile's heightmap to ~2600 samples.

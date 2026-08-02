@@ -220,6 +220,33 @@ function ringCorrection(p, ring, radius) {
 const MAX_CORRECTION = 6;
 
 /**
+ * Does the segment a->b cross any wall of this ring? Returns how far along the
+ * segment the first crossing happens (0..1), or null.
+ */
+function segmentCrossesRing(ax, az, bx, bz, ring) {
+  const n = ring.length / 2;
+  let earliest = null;
+  const dx = bx - ax;
+  const dz = bz - az;
+
+  for (let i = 0, j = n - 1; i < n; j = i++) {
+    const cx = ring[j * 2];
+    const cz = ring[j * 2 + 1];
+    const ex = ring[i * 2] - cx;
+    const ez = ring[i * 2 + 1] - cz;
+
+    const denom = dx * ez - dz * ex;
+    if (Math.abs(denom) < 1e-9) continue;   // parallel
+
+    const t = ((cx - ax) * ez - (cz - az) * ex) / denom;   // along a->b
+    const u = ((cx - ax) * dz - (cz - az) * dx) / denom;   // along the wall
+    if (t < 0 || t > 1 || u < 0 || u > 1) continue;
+    if (earliest === null || t < earliest) earliest = t;
+  }
+  return earliest;
+}
+
+/**
  * Push the player out of any building they have walked into.
  *
  * Overlaps are resolved deepest-first, one per pass. Resolving them in
@@ -227,11 +254,34 @@ const MAX_CORRECTION = 6;
  * shop straight into its neighbour — and walk them a long way down the street
  * in a single frame.
  */
-export function resolveWorldCollisions(position, index) {
+export function resolveWorldCollisions(position, index, from = null) {
   const p = position;
   p.x = Math.max(-WORLD_BOUND, Math.min(WORLD_BOUND, p.x));
   p.z = Math.max(-WORLD_BOUND, Math.min(WORLD_BOUND, p.z));
   if (!index || !index.near) return;
+
+  // Stop at the wall rather than trying to escape from inside it.
+  //
+  // Pushing out of a footprint finds the NEAREST wall, and on a concave
+  // building — an L-shaped corner shop, a terrace with a back extension — the
+  // nearest wall can be across a re-entrant corner, so "outward" from it lands
+  // you deeper in. No amount of pushing fixes that; the answer is not to cross
+  // the wall at all. This also rules out tunnelling clean through a thin wall
+  // at speed, which the push-out never addressed either.
+  if (from) {
+    let earliest = null;
+    for (const b of index.near(p.x, p.z)) {
+      const t = segmentCrossesRing(from.x, from.z, p.x, p.z, b.ring);
+      if (t !== null && (earliest === null || t < earliest)) earliest = t;
+    }
+    if (earliest !== null) {
+      // Stop just short of the crossing, so the push-out below settles the
+      // player against the wall rather than on it.
+      const back = Math.max(0, earliest - 0.02);
+      p.x = from.x + (p.x - from.x) * back;
+      p.z = from.z + (p.z - from.z) * back;
+    }
+  }
 
   const startX = p.x;
   const startZ = p.z;

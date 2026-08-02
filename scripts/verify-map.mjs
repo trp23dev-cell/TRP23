@@ -159,9 +159,12 @@ const main = async () => {
       approaches += 1;
       const p = { ...start };
       for (let s = 0; s < 180; s += 1) {
+        // Where they were, so the resolver can stop them AT the wall rather
+        // than having to escape from inside it.
+        const from = { x: p.x, z: p.z };
         p.x -= Math.cos(ang) * STEP;
         p.z -= Math.sin(ang) * STEP;
-        resolveWorldCollisions(p, index);
+        resolveWorldCollisions(p, index, from);
         if (insideAny(p.x, p.z, index)) { breached += 1; breach = { x: p.x, z: p.z, from: start, ang }; break; }
       }
     }

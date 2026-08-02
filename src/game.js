@@ -2155,9 +2155,13 @@ function moveStep(dt){
   
   if(v.lengthSq()>0){
     v.normalize().multiplyScalar(sp);
+    // Where they were, so a step that would cross a wall is stopped at it
+    // rather than resolved from inside — the only way to be right about
+    // concave footprints, of which Lincoln has plenty.
+    const wasX=camera.position.x, wasZ=camera.position.z;
     camera.position.add(v);
     if(mode==='world'){
-      resolveWorldCollisions(camera.position,worldColliders);
+      resolveWorldCollisions(camera.position,worldColliders,{x:wasX,z:wasZ});
       // Stream the city in around the player. Cheap to call every step: it
       // early-outs unless they have crossed into a new tile.
       worldStream?.update(camera.position.x,camera.position.z);
