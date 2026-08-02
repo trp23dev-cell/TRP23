@@ -104,6 +104,18 @@ namespace StarterAssets
         // away the whole SpeedChangeRate ramp.
         private Vector3 _firstPersonHeading = Vector3.forward;
 
+        [Tooltip("Slow down going uphill. Lincoln is built on a hill and Steep " +
+                 "Hill is called that for a reason; at a flat speed the climb " +
+                 "that takes eight minutes on foot takes the same time as the " +
+                 "level ground beside it, which is what makes a city feel like " +
+                 "a floor plan rather than a place.")]
+        public bool SlowOnSlopes = true;
+
+        [Tooltip("How hard gradient bites. 3.5 is close to Naismith's rule, the " +
+                 "one walkers actually plan routes with: a 1-in-6 climb costs " +
+                 "you about a third of your pace.")]
+        public float SlopePenalty = 3.5f;
+
         // cinemachine
         private float _cinemachineTargetYaw;
         private float _cinemachineTargetPitch;
@@ -273,6 +285,8 @@ namespace StarterAssets
             // if there is no input, set the target speed to 0
             if (_input.move == Vector2.zero) targetSpeed = 0.0f;
 
+            if (SlowOnSlopes && targetSpeed > 0.0f) targetSpeed *= SlopeFactor();
+
             // a reference to the players current horizontal velocity
             float currentHorizontalSpeed = new Vector3(_controller.velocity.x, 0.0f, _controller.velocity.z).magnitude;
 
@@ -343,6 +357,45 @@ namespace StarterAssets
                 _animator.SetFloat(_animIDSpeed, _animationBlend);
                 _animator.SetFloat(_animIDMotionSpeed, inputMagnitude);
             }
+        }
+
+        /// <summary>
+        /// How much of your pace the ground under you leaves you.
+        ///
+        /// Taken from the surface normal rather than from how far you climbed
+        /// last frame: the frame-to-frame version reads as noise on a stepped
+        /// heightmap and makes the speed flicker.
+        /// </summary>
+        private float SlopeFactor()
+        {
+            Vector3 heading = FirstPerson
+                ? _firstPersonHeading
+                : Quaternion.Euler(0.0f, _targetRotation, 0.0f) * Vector3.forward;
+            heading.y = 0.0f;
+            if (heading.sqrMagnitude < 0.0001f) return 1.0f;
+            heading.Normalize();
+
+            // Start above the feet, or the ray begins inside the ground on any
+            // slope and hits nothing.
+            Vector3 from = transform.position + Vector3.up * 0.5f;
+            if (!Physics.Raycast(from, Vector3.down, out RaycastHit hit, 3.0f, GroundLayers,
+                    QueryTriggerInteraction.Ignore))
+                return 1.0f;
+
+            // Rise over run in the direction of travel. Positive is uphill.
+            Vector3 n = hit.normal;
+            if (n.y < 0.01f) return 1.0f;
+            float grade = -(n.x * heading.x + n.z * heading.z) / n.y;
+
+            if (grade > 0.0f)
+                return Mathf.Clamp(1.0f / (1.0f + SlopePenalty * grade), 0.3f, 1.0f);
+
+            // Downhill is quicker, but only up to a point -- past about 1 in 4
+            // you are picking your way down rather than striding.
+            float drop = -grade;
+            return drop < 0.25f
+                ? Mathf.Lerp(1.0f, 1.12f, drop / 0.25f)
+                : Mathf.Clamp(1.12f - (drop - 0.25f) * 1.4f, 0.45f, 1.12f);
         }
 
         private void JumpAndGravity()

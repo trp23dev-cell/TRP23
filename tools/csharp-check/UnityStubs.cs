@@ -5,7 +5,7 @@ using System;
 using System.Collections;
 namespace UnityEngine {
   public class Object {}
-  public class MonoBehaviour : Component { public Transform transform => null; public static T FindAnyObjectByType<T>() where T : Component, new() => new T(); public Coroutine StartCoroutine(IEnumerator r) => null; public static void DontDestroyOnLoad(Object o) {} public static void Destroy(Object o) {} }
+  public class MonoBehaviour : Component { public Transform transform => null; public bool enabled { get; set; } public static T FindAnyObjectByType<T>() where T : Component, new() => new T(); public Coroutine StartCoroutine(IEnumerator r) => null; public static void DontDestroyOnLoad(Object o) {} public static void Destroy(Object o) {} }
   public class Coroutine {}
   public class WaitForSeconds { public WaitForSeconds(float s) {} }
   public static class PlayerPrefs {
@@ -27,6 +27,9 @@ namespace UnityEngine {
     public GameObject() {}
     public GameObject(string name) {}
     public string tag { get; set; }
+    public string name { get; set; }
+    public void SetActive(bool on) {}
+    public T GetComponent<T>() where T : Component, new() => new T();
     public Transform transform => null;
     public T AddComponent<T>() where T : Component, new() => new T();
   }
@@ -35,18 +38,31 @@ namespace UnityEngine {
 
 // --- world scripts ---
 namespace UnityEngine {
-  public struct Vector2 { public float x, y; public Vector2(float x, float y){this.x=x;this.y=y;} }
+  public struct Vector2 {
+    public float x, y; public Vector2(float x, float y){this.x=x;this.y=y;}
+    public static Vector2 zero => default;
+    public float magnitude => (float)System.Math.Sqrt(x*x+y*y);
+    public Vector2 normalized { get { var m = magnitude; return m < 1e-9f ? this : new Vector2(x/m, y/m); } }
+    public static Vector2 operator *(Vector2 a, float f) => new Vector2(a.x*f, a.y*f);
+    public static Vector2 operator -(Vector2 a, Vector2 b) => new Vector2(a.x-b.x, a.y-b.y);
+  }
   public struct Vector3 {
     public static Vector3 zero => default;
     public static Vector3 up => default;
+    public float magnitude => (float)System.Math.Sqrt(x*x+y*y+z*z);
+    public static Vector3 Lerp(Vector3 a, Vector3 b, float t) => a + (b - a) * Mathf.Clamp01(t);
     public float x, y, z; public Vector3(float x,float y,float z){this.x=x;this.y=y;this.z=z;}
     public float sqrMagnitude => x*x+y*y+z*z;
-    public Vector3 normalized => this;
-    public static Vector3 operator /(Vector3 a, float f) => a;
+    public Vector3 normalized { get { var m = magnitude; return m < 1e-9f ? this : new Vector3(x/m, y/m, z/m); } }
+    public static Vector3 operator /(Vector3 a, float f) => new Vector3(a.x/f, a.y/f, a.z/f);
     public static Vector3 operator +(Vector3 a, Vector3 b) => new Vector3(a.x+b.x,a.y+b.y,a.z+b.z);
     public static Vector3 operator -(Vector3 a, Vector3 b) => new Vector3(a.x-b.x,a.y-b.y,a.z-b.z);
     public static Vector3 operator *(Vector3 a, float f) => new Vector3(a.x*f,a.y*f,a.z*f);
-    public static Vector3 Cross(Vector3 a, Vector3 b) => default;
+    // Real, because a check that derives a triangle's facing from its vertex
+    // order is worthless if the cross product returns zero. Same trap as Sqrt.
+    public static Vector3 Cross(Vector3 a, Vector3 b) =>
+      new Vector3(a.y*b.z - a.z*b.y, a.z*b.x - a.x*b.z, a.x*b.y - a.y*b.x);
+    public static float Dot(Vector3 a, Vector3 b) => a.x*b.x + a.y*b.y + a.z*b.z;
   }
   public struct Vector2Int {
     public int x, y; public Vector2Int(int x,int y){this.x=x;this.y=y;}
@@ -55,9 +71,14 @@ namespace UnityEngine {
     public override bool Equals(object o) => o is Vector2Int v && v==this;
     public override int GetHashCode() => x*397 ^ y;
   }
-  public struct Quaternion { public static Quaternion Euler(float x,float y,float z) => default; public Vector3 eulerAngles => default; }
+  public struct Quaternion {
+    public static Quaternion Euler(float x,float y,float z) => default;
+    public static Quaternion identity => default;
+    public Vector3 eulerAngles => default;
+  }
   public struct Color {
     public Color(float r,float g,float b){}
+    public Color(float r,float g,float b,float a){}
     public static Color white => default;
     public static Color operator *(Color c, float f) => c;
   }
@@ -78,6 +99,10 @@ namespace UnityEngine {
     public static float Max(float a,float b) => a>b?a:b;
     public static float Min(float a,float b) => a<b?a:b;
     public static float Sin(float f) => (float)System.Math.Sin(f);
+    public static float Lerp(float a, float b, float t) => a + (b - a) * Clamp01(t);
+    public static float Cos(float f) => (float)System.Math.Cos(f);
+    public static float Atan2(float y, float x) => (float)System.Math.Atan2(y, x);
+    public static float PI => (float)System.Math.PI;
     public static float MaxValue => float.MaxValue;
   }
   public class Mesh : Object {
@@ -94,12 +119,21 @@ namespace UnityEngine {
   public class Transform : Component {
     public T GetComponent<T>() where T : Component, new() => new T();
     public Vector3 position { get; set; } public Quaternion rotation { get; set; }
+    public Vector3 localPosition { get; set; } public Quaternion localRotation { get; set; }
+    public Vector3 eulerAngles { get; set; }
+    public string name { get; set; }
+    public int childCount => 0;
+    public Transform GetChild(int i) => null;
     public void SetParent(Transform p, bool w) {}
     public Vector3 TransformDirection(Vector3 v) => v;
   }
   public class Camera : Component {
     public static Camera main => null; public Transform transform => null;
     public float farClipPlane { get; set; } public float nearClipPlane { get; set; }
+    public bool orthographic { get; set; } public float orthographicSize { get; set; }
+    public CameraClearFlags clearFlags { get; set; } public Color backgroundColor { get; set; }
+    public float depth { get; set; } public int cullingMask { get; set; }
+    public RenderTexture targetTexture { get; set; }
   }
   public enum LightType { Directional }
   public class Light : Component { public LightType type { get; set; } public float intensity { get; set; } public Transform transform => null; }
@@ -134,6 +168,66 @@ namespace UnityEngine {
     public bool isKinematic { get; set; } public Vector3 linearVelocity { get; set; }
   }
   public class RequireComponentAttribute : System.Attribute { public RequireComponentAttribute(System.Type t) {} }
+
+  // --- enough of the UI and camera surface for the map to be type-checked ---
+  // Signatures copied from the real API. Where one is wrong the check is worse
+  // than useless, so these stay mechanical: no logic, no invented overloads.
+  public class Texture : Object {}
+  public enum CameraClearFlags { Skybox, SolidColor, Depth, Nothing }
+  public enum FilterMode { Point, Bilinear, Trilinear }
+  public enum RenderMode { ScreenSpaceOverlay, ScreenSpaceCamera, WorldSpace }
+  public enum TextAnchor { UpperLeft, UpperCenter, UpperRight, MiddleLeft, MiddleCenter,
+                           MiddleRight, LowerLeft, LowerCenter, LowerRight }
+  public class RenderTexture : Texture {
+    public RenderTexture(int w, int h, int depth) {}
+    public string name { get; set; }
+    public FilterMode filterMode { get; set; }
+    public void Release() {}
+    public static implicit operator bool(RenderTexture t) => false;
+  }
+  public class Font : Object {}
+  public static class Resources { public static T GetBuiltinResource<T>(string path) where T : Object, new() => new T(); }
+  public static class Screen { public static int width => 0; public static int height => 0; }
+  public static class LayerMask { public static int NameToLayer(string n) => -1; }
+  public struct Rect {
+    public float width, height;
+    public bool Contains(Vector2 p) => false;
+  }
+  public class RectTransform : Transform {
+    public Vector2 anchorMin { get; set; } public Vector2 anchorMax { get; set; }
+    public Vector2 pivot { get; set; } public Vector2 sizeDelta { get; set; }
+    public Vector2 anchoredPosition { get; set; }
+    public Rect rect => default;
+  }
+  public static class RectTransformUtility {
+    public static bool RectangleContainsScreenPoint(RectTransform r, Vector2 p, Camera c) => false;
+    public static bool ScreenPointToLocalPointInRectangle(RectTransform r, Vector2 p, Camera c, out Vector2 local) { local = default; return false; }
+  }
+  public class LineRenderer : Component {
+    public int positionCount { get; set; }
+    public float startWidth { get; set; } public float endWidth { get; set; }
+    public bool useWorldSpace { get; set; } public int numCapVertices { get; set; }
+    public Material material { get; set; }
+    public void SetPosition(int i, Vector3 p) {}
+  }
+  public class Canvas : Component { public RenderMode renderMode { get; set; } }
+  public class CanvasScaler : Component {
+    public enum ScaleMode { ConstantPixelSize, ScaleWithScreenSize, ConstantPhysicalSize }
+    public ScaleMode uiScaleMode { get; set; }
+    public Vector2 referenceResolution { get; set; }
+  }
+}
+
+namespace UnityEngine.UI {
+  public class Graphic : Component { public Color color { get; set; } }
+  public class RawImage : Graphic { public Texture texture { get; set; } }
+  // RenderTexture derives from Texture in the real API, which is what lets a
+  // RawImage show a camera's output at all.
+  public class Image : Graphic {}
+  public class Text : Graphic {
+    public Font font { get; set; } public int fontSize { get; set; }
+    public string text { get; set; } public TextAnchor alignment { get; set; }
+  }
 }
 // The new Input System, which this project uses (activeInputHandler: 1).
 // Stubbed so the ENABLE_INPUT_SYSTEM branch of FlyCamera is actually compiled
@@ -145,7 +239,10 @@ namespace UnityEngine.InputSystem {
   public class Mouse {
     public static Mouse current => null;
     public ButtonControl rightButton => null;
+    public ButtonControl leftButton => null;
     public Vector2Control delta => null;
+    public Vector2Control position => null;
+    public Vector2Control scroll => null;
   }
   public class Keyboard {
     public static Keyboard current => null;
@@ -157,6 +254,9 @@ namespace UnityEngine.InputSystem {
     public ButtonControl eKey => null;
     public ButtonControl leftShiftKey => null;
     public ButtonControl spaceKey => null;
+    public ButtonControl mKey => null;
+    public ButtonControl leftBracketKey => null;
+    public ButtonControl rightBracketKey => null;
   }
 }
 namespace UnityEngine.SceneManagement {

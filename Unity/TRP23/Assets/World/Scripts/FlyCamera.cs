@@ -19,9 +19,13 @@ namespace TrapMadeIt.World
     /// </summary>
     public class FlyCamera : MonoBehaviour
     {
-        public float walkSpeed = 8f;
+        // Real numbers. A person walks at about 1.4 m/s and runs at about 4.5;
+        // this was 8 m/s with a x4 sprint, which is 32 m/s -- roughly 70mph, and
+        // it made the 192m of Steep Hill a six-second stroll. Flying is
+        // deliberately not realistic: it is a camera, not a person.
+        public float walkSpeed = 1.4f;
         public float flySpeed = 60f;
-        public float sprintMultiplier = 4f;
+        public float sprintMultiplier = 3.2f;
         public float lookSensitivity = 0.12f;
 
         [Tooltip("How quickly a second tap of space counts as a double tap.")]

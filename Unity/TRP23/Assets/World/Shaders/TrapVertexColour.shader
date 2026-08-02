@@ -18,6 +18,13 @@ Shader "TRAP/Vertex Colour"
         _BaseColor("Base Colour", Color) = (1,1,1,1)
         _Smoothness("Smoothness", Range(0,1)) = 0.05
         _Metallic("Metallic", Range(0,1)) = 0.0
+
+        // 2 = Back (normal), 0 = Off (double-sided). Buildings are hollow
+        // shells, so from inside one -- which fly mode puts you in constantly --
+        // single-sided walls mean you look straight out through the city.
+        // Double-siding costs overdraw, so it is a per-material choice rather
+        // than something baked in for the ground and the roads too.
+        [Enum(UnityEngine.Rendering.CullMode)] _Cull("Cull", Float) = 2
     }
 
     SubShader
@@ -28,6 +35,7 @@ Shader "TRAP/Vertex Colour"
         {
             Name "ForwardLit"
             Tags { "LightMode" = "UniversalForward" }
+            Cull [_Cull]
 
             HLSLPROGRAM
             #pragma vertex vert
@@ -67,6 +75,7 @@ Shader "TRAP/Vertex Colour"
                 half4  _BaseColor;
                 half   _Smoothness;
                 half   _Metallic;
+                float  _Cull;
             CBUFFER_END
 
             Varyings vert(Attributes IN)
@@ -121,7 +130,11 @@ Shader "TRAP/Vertex Colour"
             ZWrite On
             ZTest LEqual
             ColorMask 0
-            Cull Back
+            // Must match the forward pass. If the depth prepass culls faces the
+            // forward pass keeps, URP writes depth for one set of surfaces and
+            // colour for another, and the difference shows up as exactly the
+            // kind of see-through you cannot explain by looking at the mesh.
+            Cull [_Cull]
 
             HLSLPROGRAM
             #pragma vertex ShadowVert
@@ -129,6 +142,14 @@ Shader "TRAP/Vertex Colour"
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Shadows.hlsl"
+
+            CBUFFER_START(UnityPerMaterial)
+                float4 _BaseMap_ST;
+                half4  _BaseColor;
+                half   _Smoothness;
+                half   _Metallic;
+                float  _Cull;
+            CBUFFER_END
 
             float3 _LightDirection;
 
@@ -162,12 +183,21 @@ Shader "TRAP/Vertex Colour"
             Tags { "LightMode" = "DepthOnly" }
             ZWrite On
             ColorMask 0
+            Cull [_Cull]
 
             HLSLPROGRAM
             #pragma vertex DepthVert
             #pragma fragment DepthFrag
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+
+            CBUFFER_START(UnityPerMaterial)
+                float4 _BaseMap_ST;
+                half4  _BaseColor;
+                half   _Smoothness;
+                half   _Metallic;
+                float  _Cull;
+            CBUFFER_END
 
             float4 DepthVert(float4 positionOS : POSITION) : SV_POSITION
             {

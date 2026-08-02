@@ -32,8 +32,11 @@ namespace TrapMadeIt.World.EditorTools
             // building's real brick / limestone / render / glass lives, and a
             // tint here would darken all of it by a flat amount.
             var ground = MakeMaterial(GroundPath, new Color(0.32f, 0.35f, 0.27f), 0.05f);
-            var wall = MakeMaterial(WallPath, Color.white, 0.08f);
-            var roof = MakeMaterial(RoofPath, Color.white, 0.10f);
+            // Double-sided. A building is a hollow shell and fly mode puts you
+            // inside one constantly; single-sided walls mean you look straight
+            // out through the city from in there.
+            var wall = MakeMaterial(WallPath, Color.white, 0.08f, doubleSided: true);
+            var roof = MakeMaterial(RoofPath, Color.white, 0.10f, doubleSided: true);
 
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
@@ -82,11 +85,19 @@ namespace TrapMadeIt.World.EditorTools
                     tpc.GroundLayers = 1 << 0;   // Default
                     tpc.FirstPerson = true;
                     tpc.JumpHeight = 0.55f;      // a person, not a pole vaulter
+                    tpc.MoveSpeed = 1.4f;        // a walk
+                    tpc.SprintSpeed = 4.5f;      // a run, not a sprint-finish
                 }
 
                 // Survives the streaming gap at boot. Without it the controller
                 // starts falling before the first tile has arrived.
                 player.AddComponent<PlayerRig>();
+
+                // Its own layer, so the map camera can leave it out. Looking
+                // straight down at yourself otherwise fills the middle of the
+                // map with the top of your own head.
+                int playerLayer = EnsureLayer("Player");
+                if (playerLayer >= 0) SetLayerRecursive(player.transform, playerLayer);
 
                 // Sit the camera in the character's head. The controller moves
                 // PlayerCameraRoot to eye height and points it, so the camera
@@ -120,6 +131,10 @@ namespace TrapMadeIt.World.EditorTools
             streamer.buildingMaterial = wall;
             streamer.roofMaterial = roof;
 
+            var map = worldGo.AddComponent<TrapMinimap>();
+            map.world = streamer;
+            map.player = streamer.follow;
+
             EditorSceneManager.MarkSceneDirty(scene);
             Debug.Log(player != null
                 ? "[TRAP] World test scene built, first person. Press Play.\n" +
@@ -127,6 +142,8 @@ namespace TrapMadeIt.World.EditorTools
                   "  WASD    walk\n" +
                   "  shift   sprint\n" +
                   "  space   jump\n" +
+                  "  M       map (click to set a waypoint)\n" +
+                  "  [ ]     zoom the minimap\n" +
                   "You start held in place until the tile under you streams in."
                 : "[TRAP] World test scene built, free camera. Press Play.\n" +
                   "  right-drag  look\n" +
@@ -134,6 +151,45 @@ namespace TrapMadeIt.World.EditorTools
                   "  double-tap space  fly / walk\n" +
                   "  Q / E       down / up (flying only)\n" +
                   "  shift       hurry");
+        }
+
+        /// <summary>
+        /// Add a layer to the project if it is not already there, and return its
+        /// index. Layers cannot be created with an API call -- they live in
+        /// ProjectSettings/TagManager.asset and have to be written into its
+        /// serialised form, which is why this looks the way it does.
+        /// </summary>
+        static int EnsureLayer(string name)
+        {
+            int existing = LayerMask.NameToLayer(name);
+            if (existing >= 0) return existing;
+
+            var asset = AssetDatabase.LoadAllAssetsAtPath("ProjectSettings/TagManager.asset");
+            if (asset == null || asset.Length == 0) return -1;
+
+            var tagManager = new SerializedObject(asset[0]);
+            var layers = tagManager.FindProperty("layers");
+            if (layers == null) return -1;
+
+            // 0-7 are Unity's own and must not be touched.
+            for (int i = 8; i < layers.arraySize; i++)
+            {
+                var slot = layers.GetArrayElementAtIndex(i);
+                if (!string.IsNullOrEmpty(slot.stringValue)) continue;
+                slot.stringValue = name;
+                tagManager.ApplyModifiedProperties();
+                return i;
+            }
+
+            Debug.LogWarning($"[TRAP] no free layer slot for '{name}' — the player " +
+                             "will show up in the middle of its own map.");
+            return -1;
+        }
+
+        static void SetLayerRecursive(Transform root, int layer)
+        {
+            root.gameObject.layer = layer;
+            for (int i = 0; i < root.childCount; i++) SetLayerRecursive(root.GetChild(i), layer);
         }
 
         /// Depth-first search by name, because the prefab nests the camera root
@@ -157,7 +213,8 @@ namespace TrapMadeIt.World.EditorTools
         /// and the renderer falls back to Unity's default — which is why the
         /// ground came out flat cyan.
         /// </summary>
-        static Material MakeMaterial(string path, Color colour, float smoothness)
+        static Material MakeMaterial(string path, Color colour, float smoothness,
+                                     bool doubleSided = false)
         {
             EnsureFolder(Path.GetDirectoryName(path));
 
@@ -197,6 +254,7 @@ namespace TrapMadeIt.World.EditorTools
             if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", colour);
             else mat.color = colour;
             if (mat.HasProperty("_Smoothness")) mat.SetFloat("_Smoothness", smoothness);
+            if (mat.HasProperty("_Cull")) mat.SetFloat("_Cull", doubleSided ? 0f : 2f);
 
             EditorUtility.SetDirty(mat);
             AssetDatabase.SaveAssets();

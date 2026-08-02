@@ -34,6 +34,7 @@ namespace TrapCollisionCheck
 
             var collision = new WorldCollision();
             var rings = new List<float[]>();
+            var meshable = new List<BuildingData>();
 
             using (var raw = File.OpenRead(path))
             using (var gz = new GZipStream(raw, CompressionMode.Decompress))
@@ -55,7 +56,16 @@ namespace TrapCollisionCheck
                         int k = 0;
                         foreach (var v in p.EnumerateArray()) ring[k++] = v.GetSingle();
                         if (ring.Length < 6) continue;
-                        buildings.Add(new BuildingData { p = ring });
+                        var bd = new BuildingData { p = ring };
+                        bd.y = Get(b, "y");
+                        bd.s = Get(b, "s");
+                        bd.h = Get(b, "h");
+                        bd.st = Str(b, "st");
+                        bd.g = Str(b, "g");
+                        bd.rs = Str(b, "rs");
+                        bd.m = Str(b, "m");
+                        buildings.Add(bd);
+                        meshable.Add(bd);
                         rings.Add(ring);
                     }
                     collision.AddTile(new Vector2Int(tx, tz), buildings.ToArray());
@@ -114,6 +124,7 @@ namespace TrapCollisionCheck
                 }
             }
 
+            int windingFailures = CheckWinding(meshable);
             bool ok = breached == 0;
             Console.WriteLine($"{(ok ? "ok  " : "FAIL")}  walking at a building never gets you inside one" +
                               $" — {breached}/{approaches} approaches breached" +
@@ -123,6 +134,69 @@ namespace TrapCollisionCheck
                 Console.Error.WriteLine($"FAIL  only {approaches} approaches tested — the sample is not meaningful");
                 return 1;
             }
+            return ok && windingFailures == 0 ? 0 : 1;
+        }
+
+        static float Get(JsonElement e, string k) =>
+            e.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetSingle() : 0f;
+        static string Str(JsonElement e, string k) =>
+            e.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+
+        /// <summary>
+        /// Every triangle must face the way its own normal says it does.
+        ///
+        /// Backface culling reads the VERTEX ORDER, not the normal attribute.
+        /// Get them out of step and the wall is lit correctly, shaded
+        /// correctly, and invisible from the side you are standing on -- you see
+        /// straight through the building to the inside of its far wall. The web
+        /// client shipped 42% of Lincoln like that, and this port was never
+        /// checked, so here it is being checked.
+        /// </summary>
+        static int CheckWinding(List<BuildingData> buildings)
+        {
+            long triangles = 0, backwards = 0;
+            int worstBuilding = -1;
+            float worstShare = 0f;
+
+            for (int i = 0; i < buildings.Count; i++)
+            {
+                var walls = new BuildingMeshBuilder.Buffers();
+                var roofs = new BuildingMeshBuilder.Buffers();
+                try { BuildingMeshBuilder.Extrude(buildings[i], walls, roofs); }
+                catch { continue; }   // degenerate footprint; not this check's problem
+
+                foreach (var buf in new[] { walls, roofs })
+                {
+                    long bad = 0, total = 0;
+                    for (int t = 0; t + 2 < buf.triangles.Count; t += 3)
+                    {
+                        int a = buf.triangles[t], b = buf.triangles[t + 1], c = buf.triangles[t + 2];
+                        if (a >= buf.vertices.Count || b >= buf.vertices.Count || c >= buf.vertices.Count)
+                            continue;
+
+                        var geometric = Vector3.Cross(
+                            buf.vertices[b] - buf.vertices[a],
+                            buf.vertices[c] - buf.vertices[a]);
+                        if (geometric.magnitude < 1e-7f) continue;   // degenerate sliver
+
+                        var declared = buf.normals[a];
+                        total++;
+                        if (Vector3.Dot(geometric.normalized, declared.normalized) < 0f) bad++;
+                    }
+                    triangles += total;
+                    backwards += bad;
+                    if (total > 0 && bad / (float)total > worstShare)
+                    {
+                        worstShare = bad / (float)total;
+                        worstBuilding = i;
+                    }
+                }
+            }
+
+            bool ok = backwards == 0;
+            Console.WriteLine($"{(ok ? "ok  " : "FAIL")}  every wall faces outward" +
+                              $" — {backwards}/{triangles} triangles wound against their normal" +
+                              (ok ? "" : $" (worst building #{worstBuilding}, {worstShare * 100f:F0}% of it)"));
             return ok ? 0 : 1;
         }
 

@@ -16,6 +16,7 @@
     <Compile Include="../../Unity/TRP23/Assets/World/Scripts/TrapGeo.cs" />
     <Compile Include="../../Unity/TRP23/Assets/World/Scripts/TileModels.cs" />
     <Compile Include="../../Unity/TRP23/Assets/World/Scripts/WorldCollision.cs" />
+    <Compile Include="../../Unity/TRP23/Assets/World/Scripts/BuildingMeshBuilder.cs" />
     <Compile Include="Program.cs" />
   </ItemGroup>
 </Project>
