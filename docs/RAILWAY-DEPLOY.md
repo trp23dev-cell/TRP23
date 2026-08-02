@@ -90,7 +90,12 @@ After that, further staff accounts are created by an admin using their session.
 - [ ] `npm run check:api` passes against the deployed URL:
       `API=https://<your-app>.up.railway.app npm run check:api`
 - [ ] Any credential that was ever committed has been **revoked and reissued**,
-      not just deleted. Deleting a file does not remove it from git history.
+      not just deleted. Deleting a file does not remove it from git history —
+      revocation is the fix, and it is the only one that works after the fact.
+      (The Apple key committed in 6057dba4 was revoked by its owner on
+      2026-07-31. iOS release will need a Developer account of our own.)
+- [ ] The three admin passwords whose hashes were in the public database have
+      been changed.
 
 ## What is deliberately not here
 

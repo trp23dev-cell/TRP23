@@ -127,7 +127,7 @@ Not "it builds" — actually driven end to end in headless Chrome:
 | 8.3 | Make the CMS actually drive missions (`type`/`requirement`/`limit` are still decorative) | ⬜ |
 | 8.4 | Admin/ops UI over the API that already exists | ⬜ |
 | 8.5 | Real payments, addresses, fulfilment | ⬜ |
-| 8.6 | Security: credentials and the player database untracked, staff registration closed, `check:repo` + `check:api` in place. **The committed Apple key is still in git history and must be revoked at Apple — deleting the file does not undo the exposure.** | 🚧 |
+| 8.6 | Security: credentials and the player database untracked, staff registration closed, login/registration rate limited, `check:repo` + `check:api` in place. The exposed Apple key was reported to its owner and **revoked** (2026-07-31); the dead copy remains in git history, which is harmless now. | ✅ |
 
 ---
 
