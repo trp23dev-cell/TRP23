@@ -17,13 +17,18 @@ namespace TrapMadeIt.World.EditorTools
         const string GroundPath = "Assets/World/Materials/TrapGround.mat";
         const string WallPath = "Assets/World/Materials/TrapWall.mat";
         const string RoofPath = "Assets/World/Materials/TrapRoof.mat";
+        const string VertexShaderPath = "Assets/World/Shaders/TrapVertexColour.shader";
 
         [MenuItem("TRAP/Build World Test Scene")]
         public static void Build()
         {
+            // White walls and roofs are not a mistake. TRAP/Vertex Colour
+            // multiplies by the mesh's own colour, which is where each
+            // building's real brick / limestone / render / glass lives, and a
+            // tint here would darken all of it by a flat amount.
             var ground = MakeMaterial(GroundPath, new Color(0.32f, 0.35f, 0.27f), 0.05f);
-            var wall = MakeMaterial(WallPath, new Color(0.55f, 0.50f, 0.44f), 0.08f);
-            var roof = MakeMaterial(RoofPath, new Color(0.20f, 0.21f, 0.23f), 0.10f);
+            var wall = MakeMaterial(WallPath, Color.white, 0.08f);
+            var roof = MakeMaterial(RoofPath, Color.white, 0.10f);
 
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
@@ -78,7 +83,17 @@ namespace TrapMadeIt.World.EditorTools
         {
             EnsureFolder(Path.GetDirectoryName(path));
 
-            var shader = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
+            // Load the vertex-colour shader as an ASSET. Shader.Find works in
+            // the editor and then returns null in a player build, which is the
+            // magenta; loading by path puts a hard reference in the material,
+            // and a referenced shader gets built in.
+            var shader = AssetDatabase.LoadAssetAtPath<Shader>(VertexShaderPath);
+            if (shader == null)
+            {
+                Debug.LogWarning($"[TRAP] {VertexShaderPath} missing — falling back to URP/Lit. " +
+                                 "Buildings will all be one colour.");
+                shader = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
+            }
             if (shader == null)
             {
                 Debug.LogError("[TRAP] no usable shader found — surfaces will render untextured.");

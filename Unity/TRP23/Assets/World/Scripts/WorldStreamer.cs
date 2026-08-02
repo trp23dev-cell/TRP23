@@ -28,6 +28,10 @@ namespace TrapMadeIt.World
         // Everything else gets a flat colour for now. Textures come later; the
         // point of this pass is that the city has roads, grass and water at all
         // rather than buildings floating on bare ground.
+        /// The shader that reads per-building colour. Named here so the setup
+        /// script and the runtime agree on one string.
+        public const string VertexColourShader = "TRAP/Vertex Colour";
+
         readonly Dictionary<string, Material> palette = new Dictionary<string, Material>();
 
         static readonly Dictionary<string, Color> Palette = new Dictionary<string, Color>
@@ -79,9 +83,17 @@ namespace TrapMadeIt.World
             Debug.Log($"[world] ground material: {(groundMaterial != null ? groundMaterial.name : "NONE")}, " +
                       $"shader in use: {(known != null ? known.name : "NONE FOUND — this is the magenta)")}");
 
+            // TRAP/Vertex Colour multiplies the material colour by the mesh's
+            // own, so a tinted wall material would darken every building by its
+            // own tint. White lets each building's real colour through; under
+            // the plain URP fallback the old flat tints are still right.
+            bool vertexTinted = known != null && known.name == VertexColourShader;
+            var wallTint = vertexTinted ? Color.white : new Color(0.55f, 0.50f, 0.44f);
+            var roofTint = vertexTinted ? Color.white : new Color(0.20f, 0.21f, 0.23f);
+
             if (groundMaterial == null) groundMaterial = Make(known, new Color(0.32f, 0.35f, 0.27f), 0.05f, "TrapGround");
-            if (buildingMaterial == null) buildingMaterial = Make(known, new Color(0.55f, 0.50f, 0.44f), 0.08f, "TrapWall");
-            if (roofMaterial == null) roofMaterial = Make(known, new Color(0.20f, 0.21f, 0.23f), 0.10f, "TrapRoof");
+            if (buildingMaterial == null) buildingMaterial = Make(known, wallTint, 0.08f, "TrapWall");
+            if (roofMaterial == null) roofMaterial = Make(known, roofTint, 0.10f, "TrapRoof");
 
             foreach (var kv in Palette)
             {
