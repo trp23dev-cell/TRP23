@@ -21,7 +21,10 @@ namespace TrapMadeIt.World
         readonly Dictionary<Vector2Int, TilePayload> cache = new Dictionary<Vector2Int, TilePayload>();
         readonly HashSet<Vector2Int> available = new HashSet<Vector2Int>();
 
-        public bool Has(Vector2Int t) => available.Count == 0 || available.Contains(t);
+        /// Whether the server actually has this tile. An empty index means the
+        /// manifest failed to parse, and permitting everything in that case is
+        /// what let a broken parser look like a working world.
+        public bool Has(Vector2Int t) => available.Contains(t);
         public bool TryCached(Vector2Int t, out TilePayload p) => cache.TryGetValue(t, out p);
 
         public IEnumerator LoadManifest(Action<bool, string> done)
@@ -47,21 +50,46 @@ namespace TrapMadeIt.World
                 available.Clear();
                 foreach (var t in Manifest.tiles) available.Add(t);
 
+                if (available.Count == 0)
+                {
+                    done?.Invoke(false, "the manifest carried no tile index — nothing would load");
+                    yield break;
+                }
+
                 done?.Invoke(true, null);
             }
         }
 
         /// <summary>
         /// The tile index is [[x,z],[x,z],...] — a jagged array, which
-        /// JsonUtility cannot represent at all. Rather than reshape the wire
-        /// format for one client's serialiser, it is pulled out directly.
+        /// JsonUtility cannot represent at all, so it is pulled out directly.
+        ///
+        /// Bracket-matched rather than pattern-matched. A non-greedy regex
+        /// stops at the first ']', which is the end of the first PAIR, not the
+        /// end of the array — so it silently returned nothing and the streamer
+        /// fell back to "load anything", which happened to work and hid it.
         /// </summary>
         static Vector2Int[] ParseTileIndex(string json)
         {
-            var block = Regex.Match(json, "\"tiles\"\\s*:\\s*\\[(.*?)\\]\\s*,\\s*\"", RegexOptions.Singleline);
-            var body = block.Success ? block.Groups[1].Value : null;
-            if (string.IsNullOrEmpty(body)) return Array.Empty<Vector2Int>();
+            int key = json.IndexOf("\"tiles\"", StringComparison.Ordinal);
+            if (key < 0) return Array.Empty<Vector2Int>();
+            int open = json.IndexOf('[', key);
+            if (open < 0) return Array.Empty<Vector2Int>();
 
+            int depth = 0;
+            int close = -1;
+            for (int i = open; i < json.Length; i++)
+            {
+                if (json[i] == '[') depth++;
+                else if (json[i] == ']')
+                {
+                    depth--;
+                    if (depth == 0) { close = i; break; }
+                }
+            }
+            if (close < 0) return Array.Empty<Vector2Int>();
+
+            var body = json.Substring(open + 1, close - open - 1);
             var pairs = Regex.Matches(body, @"\[\s*(-?\d+)\s*,\s*(-?\d+)\s*\]");
             var list = new List<Vector2Int>(pairs.Count);
             foreach (Match m in pairs)

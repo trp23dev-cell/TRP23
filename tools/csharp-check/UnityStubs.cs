@@ -36,6 +36,7 @@ namespace UnityEngine {
   public struct Vector2 { public float x, y; public Vector2(float x, float y){this.x=x;this.y=y;} }
   public struct Vector3 {
     public static Vector3 zero => default;
+    public static Vector3 up => default;
     public float x, y, z; public Vector3(float x,float y,float z){this.x=x;this.y=y;this.z=z;}
     public float sqrMagnitude => x*x+y*y+z*z;
     public Vector3 normalized => this;
@@ -50,8 +51,12 @@ namespace UnityEngine {
     public override int GetHashCode() => x*397 ^ y;
   }
   public struct Quaternion { public static Quaternion Euler(float x,float y,float z) => default; public Vector3 eulerAngles => default; }
-  public struct Color { public Color(float r,float g,float b){} }
+  public struct Color {
+    public Color(float r,float g,float b){}
+    public static Color operator *(Color c, float f) => c;
+  }
   public static class Mathf {
+    public static float Sqrt(float f) => f;
     public const float Deg2Rad = 0.0174533f, Rad2Deg = 57.2958f;
     public static int FloorToInt(float f) => (int)f;
     public static float Abs(float f) => f < 0 ? -f : f;
@@ -65,6 +70,11 @@ namespace UnityEngine {
     public string name; public Vector3[] vertices { get; set; } public Vector2[] uv { get; set; }
     public int[] triangles { get; set; } public Rendering.IndexFormat indexFormat { get; set; }
     public void RecalculateNormals() {} public void RecalculateBounds() {}
+    public void SetVertices(System.Collections.Generic.List<Vector3> v) {}
+    public void SetNormals(System.Collections.Generic.List<Vector3> v) {}
+    public void SetUVs(int c, System.Collections.Generic.List<Vector2> v) {}
+    public void SetColors(System.Collections.Generic.List<Color> v) {}
+    public void SetTriangles(System.Collections.Generic.List<int> t, int sub) {}
   }
   namespace Rendering { public enum IndexFormat { UInt16, UInt32 } }
   public class Transform : Component {

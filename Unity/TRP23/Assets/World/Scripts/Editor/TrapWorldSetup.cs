@@ -14,12 +14,16 @@ namespace TrapMadeIt.World.EditorTools
     /// </summary>
     public static class TrapWorldSetup
     {
-        const string MaterialPath = "Assets/World/Materials/TrapGround.mat";
+        const string GroundPath = "Assets/World/Materials/TrapGround.mat";
+        const string WallPath = "Assets/World/Materials/TrapWall.mat";
+        const string RoofPath = "Assets/World/Materials/TrapRoof.mat";
 
         [MenuItem("TRAP/Build World Test Scene")]
         public static void Build()
         {
-            var ground = GroundMaterial();
+            var ground = MakeMaterial(GroundPath, new Color(0.32f, 0.35f, 0.27f), 0.05f);
+            var wall = MakeMaterial(WallPath, new Color(0.55f, 0.50f, 0.44f), 0.08f, vertexColour: true);
+            var roof = MakeMaterial(RoofPath, new Color(0.20f, 0.21f, 0.23f), 0.10f, vertexColour: true);
 
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
@@ -50,6 +54,8 @@ namespace TrapMadeIt.World.EditorTools
             var streamer = worldGo.AddComponent<WorldStreamer>();
             streamer.follow = camGo.transform;
             streamer.groundMaterial = ground;
+            streamer.buildingMaterial = wall;
+            streamer.roofMaterial = roof;
 
             EditorSceneManager.MarkSceneDirty(scene);
             Debug.Log("[TRAP] World test scene built. Press Play. " +
@@ -64,34 +70,32 @@ namespace TrapMadeIt.World.EditorTools
         /// and the renderer falls back to Unity's default — which is why the
         /// ground came out flat cyan.
         /// </summary>
-        static Material GroundMaterial()
+        static Material MakeMaterial(string path, Color colour, float smoothness, bool vertexColour = false)
         {
-            var existing = AssetDatabase.LoadAssetAtPath<Material>(MaterialPath);
+            var existing = AssetDatabase.LoadAssetAtPath<Material>(path);
             if (existing != null) return existing;
 
-            var shader = Shader.Find("Universal Render Pipeline/Lit");
+            var shader = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
             if (shader == null)
             {
-                Debug.LogWarning("[TRAP] URP Lit shader not found; falling back to Standard.");
-                shader = Shader.Find("Standard");
-            }
-            if (shader == null)
-            {
-                Debug.LogError("[TRAP] no usable shader found — the ground will render untextured.");
+                Debug.LogError("[TRAP] no usable shader found — surfaces will render untextured.");
                 return null;
             }
 
-            var mat = new Material(shader) { name = "TrapGround" };
+            var mat = new Material(shader) { name = Path.GetFileNameWithoutExtension(path) };
             // URP uses _BaseColor. Material.color writes _Color, which URP/Lit
-            // does not have, so it silently does nothing.
-            if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", new Color(0.32f, 0.35f, 0.27f));
-            else mat.color = new Color(0.32f, 0.35f, 0.27f);
-            if (mat.HasProperty("_Smoothness")) mat.SetFloat("_Smoothness", 0.05f);
+            // does not have, so setting it silently does nothing at all.
+            if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", colour);
+            else mat.color = colour;
+            if (mat.HasProperty("_Smoothness")) mat.SetFloat("_Smoothness", smoothness);
 
-            Directory.CreateDirectory(Path.GetDirectoryName(MaterialPath));
-            AssetDatabase.CreateAsset(mat, MaterialPath);
+            // Per-building colour is baked into the mesh vertices, so the
+            // shader has to be told to read them.
+            if (vertexColour) mat.EnableKeyword("_VERTEX_COLOR");
+
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+            AssetDatabase.CreateAsset(mat, path);
             AssetDatabase.SaveAssets();
-            Debug.Log($"[TRAP] created {MaterialPath} using shader '{shader.name}'.");
             return mat;
         }
     }

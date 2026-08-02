@@ -7,10 +7,10 @@ namespace TrapMadeIt.World
     /// <summary>
     /// Streams the city in around the player, a tile at a time.
     ///
-    /// This is the terrain only, deliberately. It is the smallest thing that
-    /// proves the whole pipeline — server, wire format, projection, winding —
-    /// and everything else stands on it. Buildings come next, on top of ground
-    /// that is already known to be in the right place.
+    /// Terrain and buildings, merged per tile: one ground mesh, one for walls
+    /// and one for roofs. A thousand separate renderers would cost more than
+    /// everything else in the scene put together, which is the lesson the web
+    /// client already paid for.
     /// </summary>
     [RequireComponent(typeof(MapClient))]
     public class WorldStreamer : MonoBehaviour
@@ -22,6 +22,8 @@ namespace TrapMadeIt.World
         public Transform follow;
 
         public Material groundMaterial;
+        public Material buildingMaterial;
+        public Material roofMaterial;
 
         MapClient client;
         readonly Dictionary<Vector2Int, GameObject> live = new Dictionary<Vector2Int, GameObject>();
@@ -118,18 +120,43 @@ namespace TrapMadeIt.World
                 inFlight.Remove(t);
                 if (payload?.t == null) return;
 
-                var mesh = TerrainMeshBuilder.Build(payload.t, t);
-                if (mesh == null) return;
-
                 var go = new GameObject($"tile_{t.x}_{t.y}");
                 go.transform.SetParent(transform, false);
-                go.AddComponent<MeshFilter>().sharedMesh = mesh;
-                var mr = go.AddComponent<MeshRenderer>();
-                if (groundMaterial != null) mr.sharedMaterial = groundMaterial;
+
+                var ground = TerrainMeshBuilder.Build(payload.t, t);
+                if (ground != null) AddMesh(go, "ground", ground, groundMaterial);
+
+                // Buildings, merged into two meshes for the whole tile rather
+                // than one object each. Nine hundred separate renderers would
+                // cost more than everything else in the scene put together.
+                if (payload.b != null && payload.b.Length > 0)
+                {
+                    var walls = new BuildingMeshBuilder.Buffers();
+                    var roofs = new BuildingMeshBuilder.Buffers();
+                    foreach (var b in payload.b)
+                    {
+                        // Landmarks ride in the manifest and are built once,
+                        // permanently. Drawing them here as well double-draws.
+                        if (b.lm == 1) continue;
+                        BuildingMeshBuilder.Extrude(b, walls, roofs);
+                    }
+                    AddMesh(go, "walls", walls.ToMesh($"walls_{t.x}_{t.y}"), buildingMaterial);
+                    AddMesh(go, "roofs", roofs.ToMesh($"roofs_{t.x}_{t.y}"), roofMaterial);
+                }
 
                 live[t] = go;
                 patches[t] = payload.t;
             });
+        }
+
+        static void AddMesh(GameObject parent, string name, Mesh mesh, Material mat)
+        {
+            if (mesh == null) return;
+            var go = new GameObject(name);
+            go.transform.SetParent(parent.transform, false);
+            go.AddComponent<MeshFilter>().sharedMesh = mesh;
+            var mr = go.AddComponent<MeshRenderer>();
+            if (mat != null) mr.sharedMaterial = mat;
         }
 
         /// Ground height under a world position, or false if that tile is not in.
