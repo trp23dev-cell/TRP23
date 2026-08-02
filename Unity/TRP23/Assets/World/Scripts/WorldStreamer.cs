@@ -35,27 +35,39 @@ namespace TrapMadeIt.World
         void Awake()
         {
             client = GetComponent<MapClient>();
-            // Make our own if the scene did not supply them.
+
+            // Take the shader from the ground material rather than looking it
+            // up by name.
             //
-            // A missing material renders magenta, which looks like a broken
-            // shader and sends you hunting in the wrong place — it has done
-            // twice already. Materials built HERE are safe where editor-built
-            // ones were not: this component holds the reference for its whole
-            // life, so nothing can collect them on entering Play.
-            groundMaterial = groundMaterial ? groundMaterial : Fallback(new Color(0.32f, 0.35f, 0.27f), 0.05f);
-            buildingMaterial = buildingMaterial ? buildingMaterial : Fallback(new Color(0.55f, 0.50f, 0.44f), 0.08f);
-            roofMaterial = roofMaterial ? roofMaterial : Fallback(new Color(0.20f, 0.21f, 0.23f), 0.10f);
+            // The ground renders correctly, so whatever shader IT holds is
+            // definitely valid and definitely loaded. Shader.Find depends on
+            // the shader being reachable by name at runtime, which is an
+            // assumption — and the magenta says an assumption in here is wrong.
+            // Borrowing a known-good one removes the guess.
+            Shader known = groundMaterial != null ? groundMaterial.shader : null;
+            if (known == null) known = Shader.Find("Universal Render Pipeline/Lit");
+            if (known == null) known = Shader.Find("Universal Render Pipeline/Simple Lit");
+            if (known == null) known = Shader.Find("Standard");
+
+            Debug.Log($"[world] ground material: {(groundMaterial != null ? groundMaterial.name : "NONE")}, " +
+                      $"shader in use: {(known != null ? known.name : "NONE FOUND — this is the magenta)")}");
+
+            if (groundMaterial == null) groundMaterial = Make(known, new Color(0.32f, 0.35f, 0.27f), 0.05f, "TrapGround");
+            if (buildingMaterial == null) buildingMaterial = Make(known, new Color(0.55f, 0.50f, 0.44f), 0.08f, "TrapWall");
+            if (roofMaterial == null) roofMaterial = Make(known, new Color(0.20f, 0.21f, 0.23f), 0.10f, "TrapRoof");
+
+            Debug.Log($"[world] walls: {(buildingMaterial != null ? buildingMaterial.name : "NONE")}, " +
+                      $"roofs: {(roofMaterial != null ? roofMaterial.name : "NONE")}");
         }
 
-        static Material Fallback(Color colour, float smoothness)
+        static Material Make(Shader shader, Color colour, float smoothness, string name)
         {
-            var shader = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
             if (shader == null)
             {
-                Debug.LogError("[world] no usable shader — surfaces will render magenta.");
+                Debug.LogError($"[world] no shader available for {name} — it will render magenta.");
                 return null;
             }
-            var mat = new Material(shader) { name = "TrapFallback" };
+            var mat = new Material(shader) { name = name };
             // URP uses _BaseColor; Material.color writes _Color, which URP/Lit
             // does not have and silently ignores.
             if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", colour);
@@ -179,6 +191,8 @@ namespace TrapMadeIt.World
             });
         }
 
+        static bool warnedNullMaterial;
+
         static void AddMesh(GameObject parent, string name, Mesh mesh, Material mat)
         {
             if (mesh == null) return;
@@ -186,7 +200,17 @@ namespace TrapMadeIt.World
             go.transform.SetParent(parent.transform, false);
             go.AddComponent<MeshFilter>().sharedMesh = mesh;
             var mr = go.AddComponent<MeshRenderer>();
-            if (mat != null) mr.sharedMaterial = mat;
+            if (mat != null)
+            {
+                mr.sharedMaterial = mat;
+            }
+            else if (!warnedNullMaterial)
+            {
+                // Once, not eighty-five times. A renderer with no material is
+                // what magenta actually IS, and nothing was ever saying so.
+                warnedNullMaterial = true;
+                Debug.LogError($"[world] '{name}' has no material — that is the magenta.");
+            }
         }
 
         /// Ground height under a world position, or false if that tile is not in.

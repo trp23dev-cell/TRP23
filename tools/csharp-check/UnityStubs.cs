@@ -101,7 +101,7 @@ namespace UnityEngine {
     public void EnableKeyword(string k) {}
     public static implicit operator bool(Material m) => false;
   }
-  public class Shader : Object { public static Shader Find(string n) => null; }
+  public class Shader : Object { public static Shader Find(string n) => null; public string name { get; set; } }
   public static class Input {
     public static bool GetMouseButton(int b) => false;
     public static bool GetKey(KeyCode k) => false;
