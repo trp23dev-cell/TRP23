@@ -81,6 +81,15 @@ const main = async () => {
   check("staff registration is closed", anon.status === 403 || anon.status === 429,
     `HTTP ${anon.status}`);
 
+  if ((d.staffAccounts || 0) === 0) {
+    check("the bootstrap token is set, so the first admin can be created",
+      d.bootstrapReady === true,
+      d.bootstrapReady
+        ? "ready — run npm run admin:create"
+        : "ADMIN_BOOTSTRAP_TOKEN is NOT set on the server, so nothing can create the first admin",
+      false);
+  }
+
   check("a staff account exists", (d.staffAccounts || 0) > 0,
     d.staffAccounts
       ? `${d.staffAccounts}`

@@ -42,9 +42,48 @@ if (!token) {
   process.exit(1);
 }
 
-const rl = createInterface({ input: stdin, output: stdout });
-const password = await rl.question("password (20+ characters recommended, input is visible): ");
-rl.close();
+if (/^<.*>$/.test(token) || token.includes("paste")) {
+  process.stderr.write(
+    `\nADMIN_BOOTSTRAP_TOKEN is literally "${token}".\n` +
+    "That is placeholder text, not a token. Set it to the same value you put\n" +
+    "in the Railway variables.\n"
+  );
+  process.exit(1);
+}
+
+/**
+ * Read a password without echoing it.
+ *
+ * The first version of this printed "input is visible" and let the terminal
+ * echo, which is how a real password ends up pasted into a chat window or a
+ * screen share. Raw mode, and nothing is drawn.
+ */
+async function askPassword(prompt) {
+  stdout.write(prompt);
+  if (!stdin.isTTY) {
+    // Piped input (a test harness): read the line as-is.
+    const rl = createInterface({ input: stdin, output: stdout, terminal: false });
+    const line = await rl.question("");
+    rl.close();
+    return line;
+  }
+  stdin.setRawMode(true);
+  stdin.resume();
+  let out = "";
+  for await (const chunk of stdin) {
+    const s = chunk.toString("utf8");
+    if (s === "\r" || s === "\n") break;
+    if (s === "\u0003") { stdout.write("\n"); process.exit(130); }   // ctrl-c
+    if (s === "\u007f" || s === "\b") { out = out.slice(0, -1); continue; }
+    out += s;
+  }
+  stdin.setRawMode(false);
+  stdin.pause();
+  stdout.write("\n");
+  return out;
+}
+
+const password = await askPassword("password (20+ characters recommended, not echoed): ");
 
 if (password.length < 12) {
   process.stderr.write("refused: staff passwords must be at least 12 characters\n");

@@ -540,6 +540,10 @@ async function handleRequest(req, res) {
         production: process.env.NODE_ENV === "production",
         mapTiles: manifest?.tiles?.length || 0,
         staffAccounts: store.countAdminUsers(),
+        // Whether a first-admin bootstrap is currently possible. Says nothing
+        // about the token itself, and it is useless without it, but it turns
+        // "403 and I cannot tell why" into an answerable question.
+        bootstrapReady: !!process.env.ADMIN_BOOTSTRAP_TOKEN && store.countAdminUsers() === 0,
       },
     });
     return;
