@@ -268,6 +268,26 @@ const MIGRATIONS = [
       );
     `);
   },
+
+  // Failed sign-ins, on disk.
+  //
+  // The account lock is the one limit that actually stops password guessing,
+  // and it was held in memory — so nine wrong passwords, a deploy, and the
+  // attacker starts again from zero. Restarts are not rare on a platform that
+  // redeploys on push, and an attacker does not have to guess when one happens:
+  // they can just keep going and take whichever windows they are handed.
+  //
+  // Per-IP counts stay in memory on purpose. They are deliberately loose,
+  // losing them costs nothing, and writing every request to disk would not be.
+  (db) => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS auth_failures (
+        k       TEXT PRIMARY KEY,
+        count   INTEGER NOT NULL,
+        resetAt INTEGER NOT NULL
+      );
+    `);
+  },
 ];
 
 // Apply any migrations the DB has not yet seen, each in its own transaction.
@@ -849,6 +869,31 @@ export function createSqliteStore({ dbPath }) {
   function countAdminUsers() {
     return db.prepare("SELECT COUNT(*) AS c FROM admin_users").get().c;
   }
+
+  // --- failed sign-ins, so a restart does not hand an attacker a clean slate --
+  const selectFailure = db.prepare("SELECT count, resetAt FROM auth_failures WHERE k = ?");
+  const upsertFailure = db.prepare(
+    "INSERT INTO auth_failures(k, count, resetAt) VALUES(@k, @count, @resetAt) " +
+    "ON CONFLICT(k) DO UPDATE SET count = excluded.count, resetAt = excluded.resetAt"
+  );
+  const deleteFailure = db.prepare("DELETE FROM auth_failures WHERE k = ?");
+  const sweepFailures = db.prepare("DELETE FROM auth_failures WHERE resetAt <= ?");
+
+  /** The live entry for a key, or null if there is none or it has expired. */
+  function readAuthFailure(key, now = Date.now()) {
+    const row = selectFailure.get(key);
+    if (!row || row.resetAt <= now) return null;
+    return { count: row.count, resetAt: row.resetAt };
+  }
+  function writeAuthFailure(key, count, resetAt) {
+    upsertFailure.run({ k: key, count, resetAt });
+  }
+  function clearAuthFailure(key) {
+    deleteFailure.run(key);
+  }
+  function sweepAuthFailures(now = Date.now()) {
+    return sweepFailures.run(now).changes;
+  }
   function findAdminUserByEmail(email) {
     return selectAdminByEmail.get(email) || null;
   }
@@ -1001,6 +1046,10 @@ export function createSqliteStore({ dbPath }) {
     createAdminUser,
     findAdminUserByEmail,
     countAdminUsers,
+    readAuthFailure,
+    writeAuthFailure,
+    clearAuthFailure,
+    sweepAuthFailures,
     findAdminUserById,
     updateAdminPasswordHash,
     createAdminSession,

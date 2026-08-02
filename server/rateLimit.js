@@ -11,10 +11,22 @@
 //   per account  a distributed attempt at ONE account from many addresses,
 //                which a per-IP limit never sees
 //
-// Deliberately in memory. This runs as a single instance, and a Redis
-// dependency for a game that has not launched is the wrong trade. It is the
-// first thing to revisit if the service is ever scaled out, because each
-// instance would then hold its own counts and the effective limit multiplies.
+// Where the counts live is a per-bucket decision, not a global one:
+//
+//   per IP       IN MEMORY. Deliberately loose (see LIMITS), so losing the
+//                counts on restart costs nothing, and writing every request to
+//                disk would cost something.
+//   per account  ON DISK, in the SQLite volume. This is the limit that actually
+//                stops password guessing, and in memory it meant nine wrong
+//                passwords, a deploy, and the attacker starts again from zero.
+//                On a platform that redeploys on push that is not a rare event,
+//                and an attacker need not even predict one -- they can keep
+//                going and take whichever windows they are handed.
+//
+// Neither is shared BETWEEN instances. This runs as one, and a Redis dependency
+// for a game that has not launched is the wrong trade. It is the first thing to
+// revisit if the service is ever scaled out, because each instance would then
+// hold its own per-IP counts and the effective limit multiplies.
 // ============================================================================
 
 const MINUTE = 60 * 1000;
@@ -24,8 +36,23 @@ const MINUTE = 60 * 1000;
  * and the edge case it is criticised for — double the limit across a window
  * boundary — does not matter at these numbers.
  */
-function createCounter() {
+function createCounter(persistence = null) {
   const hits = new Map(); // key -> { count, resetAt }
+
+  // One shape for both backings, so take/peek/clear below do not care which
+  // they are talking to. The persistent one reads through to SQLite every time
+  // rather than caching: these are single-digit calls per sign-in, and a cache
+  // is one more thing that can disagree with the truth.
+  const read = persistence
+    ? (key) => persistence.read(key)
+    : (key) => {
+        const entry = hits.get(key);
+        return entry && entry.resetAt > Date.now() ? entry : null;
+      };
+  const write = persistence
+    ? (key, entry) => persistence.write(key, entry.count, entry.resetAt)
+    : (key, entry) => hits.set(key, entry);
+  const drop = persistence ? (key) => persistence.clear(key) : (key) => hits.delete(key);
 
   // Old entries would otherwise accumulate for every address ever seen.
   const sweep = setInterval(() => {
@@ -33,6 +60,7 @@ function createCounter() {
     for (const [key, entry] of hits) {
       if (entry.resetAt <= now) hits.delete(key);
     }
+    persistence?.sweep(now);
   }, 5 * MINUTE);
   sweep.unref?.();
 
@@ -40,12 +68,10 @@ function createCounter() {
     /** @returns {{ok:boolean, retryAfter:number, remaining:number}} */
     take(key, limit, windowMs) {
       const now = Date.now();
-      let entry = hits.get(key);
-      if (!entry || entry.resetAt <= now) {
-        entry = { count: 0, resetAt: now + windowMs };
-        hits.set(key, entry);
-      }
+      let entry = read(key);
+      if (!entry) entry = { count: 0, resetAt: now + windowMs };
       entry.count += 1;
+      write(key, entry);
       const ok = entry.count <= limit;
       return {
         ok,
@@ -55,9 +81,9 @@ function createCounter() {
     },
     /** Ask without counting. */
     peek(key, limit) {
-      const entry = hits.get(key);
+      const entry = read(key);
       const now = Date.now();
-      if (!entry || entry.resetAt <= now) return { ok: true, remaining: limit, retryAfter: 0 };
+      if (!entry) return { ok: true, remaining: limit, retryAfter: 0 };
       return {
         ok: entry.count <= limit,
         remaining: Math.max(0, limit - entry.count),
@@ -66,10 +92,10 @@ function createCounter() {
     },
     /** Wipe a key — used to forget failures once someone logs in properly. */
     clear(key) {
-      hits.delete(key);
+      drop(key);
     },
     get size() {
-      return hits.size;
+      return persistence ? persistence.size() : hits.size;
     },
   };
 }
@@ -115,9 +141,24 @@ export const LIMITS = {
 // scoping it to the account means a shared IP cannot lock out strangers.
 export const ACCOUNT_LOCK = { limit: 10, windowMs: 15 * MINUTE };
 
-export function createRateLimiter() {
+/**
+ * @param {object} [store] the SQLite store. Given one, failed sign-ins survive
+ *   a restart; without one they do not, which is right for tests and for
+ *   `npm run dev` but wrong in production.
+ */
+export function createRateLimiter(store = null) {
   const byAddress = createCounter();
-  const byAccount = createCounter();
+  const byAccount = createCounter(
+    store?.readAuthFailure
+      ? {
+          read: (key) => store.readAuthFailure(key),
+          write: (key, count, resetAt) => store.writeAuthFailure(key, count, resetAt),
+          clear: (key) => store.clearAuthFailure(key),
+          sweep: (now) => store.sweepAuthFailures(now),
+          size: () => -1,   // not worth a COUNT(*) on every stats call
+        }
+      : null
+  );
 
   return {
     /**

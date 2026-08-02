@@ -32,9 +32,15 @@ function check(name, ok, detail = "") {
   if (!ok) failures += 1;
 }
 
-/** Start a server with its own database, so the run is repeatable. */
-async function startServer() {
-  const dir = await mkdtemp(path.join(tmpdir(), "trp23-sec-"));
+/**
+ * Start a server with its own database, so the run is repeatable.
+ *
+ * Takes an existing data directory when given one, which is how the restart
+ * check below brings the service back up on the same database — the whole
+ * question being whether anything survived.
+ */
+async function startServer(existingDir = null) {
+  const dir = existingDir || await mkdtemp(path.join(tmpdir(), "trp23-sec-"));
   const port = 8900 + Math.floor(Math.random() * 400);
   const child = spawn(process.execPath, [path.join(ROOT, "server/mockApiServer.js")], {
     cwd: ROOT,
@@ -42,15 +48,21 @@ async function startServer() {
     stdio: "ignore",
   });
   const base = `http://127.0.0.1:${port}`;
-  const stop = async () => {
+  // Killing the process and deleting the database are separate acts: a restart
+  // needs the first without the second.
+  const kill = async () => {
     child.kill();
+    await new Promise((r) => setTimeout(r, 250));
+  };
+  const stop = async () => {
+    await kill();
     await rm(dir, { recursive: true, force: true });
   };
 
   for (let i = 0; i < 80; i += 1) {
     try {
       const res = await fetch(`${base}/api/health`);
-      if (res.ok) return { base, stop };
+      if (res.ok) return { base, stop, kill, dir };
     } catch { /* not up yet */ }
     await new Promise((r) => setTimeout(r, 150));
   }
@@ -64,6 +76,7 @@ const main = async () => {
     ? { base: external.replace(/\/$/, ""), stop: async () => {} }
     : await startServer();
   const API = server.base;
+  let restarted = null;
   process.stdout.write(`checking ${API}${external ? "" : "  (throwaway instance)"}\n\n`);
 
   const post = async (p, body, headers = {}) => {
@@ -188,8 +201,29 @@ const main = async () => {
     check("but not so tight it blocks a shared connection",
       regBlocked === null || regBlocked > 10,
       regBlocked ? `${regBlocked} allowed before throttling` : "no limit");
+
+    // The one that matters most, and the one that used to fail silently.
+    //
+    // The account lock lived in memory, so a redeploy forgot every failed
+    // attempt and handed the attacker a fresh ten. Railway redeploys on push.
+    // Nothing in the suite noticed, because nothing restarted the server.
+    if (locked && !external && server.kill) {
+      await server.kill();
+      const again = await startServer(server.dir);
+      restarted = again;
+
+      const res = await fetch(`${again.base}/api/players/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ identifier: victim, password: "thecorrectpassword" }),
+      });
+      check("the account lock survives a restart", res.status === 429,
+        `HTTP ${res.status} after restarting on the same database`);
+    }
   } finally {
-    await server.stop();
+    // Whichever process is holding the database now.
+    await (restarted ? restarted.stop() : server.stop());
+    if (restarted) await server.stop();
   }
 
   process.stdout.write(`\n${failures ? `${failures} FAILED` : "all security checks passed"}\n`);

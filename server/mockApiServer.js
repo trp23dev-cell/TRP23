@@ -263,7 +263,9 @@ function corsHeaders(req) {
   };
 }
 
-const rateLimiter = createRateLimiter();
+// Rebound to a persistent one once the database is open (see boot). Until
+// then it is memory-only, which is correct: there is nothing to serve yet.
+let rateLimiter = createRateLimiter();
 
 /**
  * Apply a rate limit, answering the request with 429 if it is over.
@@ -451,6 +453,12 @@ async function ensureStorage() {
     );
   }
   store = createSqliteStore({ dbPath: dbFile });
+
+  // Now that the database is open, failed sign-ins go to disk. Held in memory
+  // they were forgotten on every redeploy, which handed an attacker a fresh
+  // ten attempts each time the service restarted.
+  rateLimiter = createRateLimiter(store);
+
   await importShippedMap();
   store.ensureKey(contentFile, defaultContent);
 
