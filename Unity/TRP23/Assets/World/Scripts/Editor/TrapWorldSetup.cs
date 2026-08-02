@@ -22,8 +22,8 @@ namespace TrapMadeIt.World.EditorTools
         public static void Build()
         {
             var ground = MakeMaterial(GroundPath, new Color(0.32f, 0.35f, 0.27f), 0.05f);
-            var wall = MakeMaterial(WallPath, new Color(0.55f, 0.50f, 0.44f), 0.08f, vertexColour: true);
-            var roof = MakeMaterial(RoofPath, new Color(0.20f, 0.21f, 0.23f), 0.10f, vertexColour: true);
+            var wall = MakeMaterial(WallPath, new Color(0.55f, 0.50f, 0.44f), 0.08f);
+            var roof = MakeMaterial(RoofPath, new Color(0.20f, 0.21f, 0.23f), 0.10f);
 
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
@@ -70,10 +70,9 @@ namespace TrapMadeIt.World.EditorTools
         /// and the renderer falls back to Unity's default — which is why the
         /// ground came out flat cyan.
         /// </summary>
-        static Material MakeMaterial(string path, Color colour, float smoothness, bool vertexColour = false)
+        static Material MakeMaterial(string path, Color colour, float smoothness)
         {
-            var existing = AssetDatabase.LoadAssetAtPath<Material>(path);
-            if (existing != null) return existing;
+            EnsureFolder(Path.GetDirectoryName(path));
 
             var shader = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
             if (shader == null)
@@ -82,21 +81,62 @@ namespace TrapMadeIt.World.EditorTools
                 return null;
             }
 
-            var mat = new Material(shader) { name = Path.GetFileNameWithoutExtension(path) };
+            // Repair rather than reuse. An existing asset may be one of the
+            // broken ones from an earlier run, and silently handing it back is
+            // how a fix fails to take effect.
+            var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (mat == null)
+            {
+                mat = new Material(shader) { name = Path.GetFileNameWithoutExtension(path) };
+                AssetDatabase.CreateAsset(mat, path);
+            }
+            else
+            {
+                mat.shader = shader;
+            }
+
             // URP uses _BaseColor. Material.color writes _Color, which URP/Lit
             // does not have, so setting it silently does nothing at all.
             if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", colour);
             else mat.color = colour;
             if (mat.HasProperty("_Smoothness")) mat.SetFloat("_Smoothness", smoothness);
 
-            // Per-building colour is baked into the mesh vertices, so the
-            // shader has to be told to read them.
-            if (vertexColour) mat.EnableKeyword("_VERTEX_COLOR");
-
-            Directory.CreateDirectory(Path.GetDirectoryName(path));
-            AssetDatabase.CreateAsset(mat, path);
+            EditorUtility.SetDirty(mat);
             AssetDatabase.SaveAssets();
-            return mat;
+
+            // Prove it landed. A material that only exists in memory dies on
+            // entering Play mode and the renderer falls back to Unity's
+            // default — which is the magenta, and it is the SECOND time that
+            // has happened, so it is checked now rather than assumed.
+            var saved = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (saved == null)
+            {
+                Debug.LogError($"[TRAP] could not save {path}. Surfaces will render magenta.");
+                return mat;
+            }
+            return saved;
+        }
+
+        /// <summary>
+        /// Create a folder through the AssetDatabase, not through the file
+        /// system. Directory.CreateDirectory makes it on disk, but Unity does
+        /// not know it exists until a refresh, and CreateAsset into a folder
+        /// Unity has never heard of fails — quietly.
+        /// </summary>
+        static void EnsureFolder(string folder)
+        {
+            folder = folder.Replace('\\', '/');
+            if (AssetDatabase.IsValidFolder(folder)) return;
+
+            var parts = folder.Split('/');
+            var built = parts[0];              // "Assets"
+            for (int i = 1; i < parts.Length; i++)
+            {
+                var next = $"{built}/{parts[i]}";
+                if (!AssetDatabase.IsValidFolder(next)) AssetDatabase.CreateFolder(built, parts[i]);
+                built = next;
+            }
+            AssetDatabase.Refresh();
         }
     }
 }
