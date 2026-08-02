@@ -2,6 +2,7 @@ using System.IO;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using TrapMadeIt.UI.EditorTools;
 
 namespace TrapMadeIt.World.EditorTools
 {
@@ -135,7 +136,16 @@ namespace TrapMadeIt.World.EditorTools
             map.world = streamer;
             map.player = streamer.follow;
 
+            // The HUD, in the SAME scene as the city.
+            //
+            // These were two menu items writing two scenes, both of which
+            // called themselves the game: building the world then building the
+            // UI replaced Lincoln with a grey placeholder plane. One scene has
+            // both now, and it is saved where the menu's Play button looks.
+            TrapUiSetup.AddHud();
+
             EditorSceneManager.MarkSceneDirty(scene);
+            EditorSceneManager.SaveScene(scene, TrapUiSetup.GameScenePath);
             Debug.Log(player != null
                 ? "[TRAP] World test scene built, first person. Press Play.\n" +
                   "  mouse   look\n" +

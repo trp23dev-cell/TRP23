@@ -9,7 +9,7 @@ using UnityEngine.UIElements;
 namespace TrapMadeIt.UI.EditorTools
 {
     // One-click assembly of the TRAP UI: PanelSettings + Menu scene + Game scene,
-    // fully wired. Run from the Unity menu: TRAP > Build UI (Menu + Game).
+    // fully wired. Run from the Unity menu: TRAP > Build UI (Menu only).
     public static class TrapUiSetup
     {
         const string SettingsPath = "Assets/UI/Settings/TrapPanelSettings.asset";
@@ -19,18 +19,45 @@ namespace TrapMadeIt.UI.EditorTools
         const string MenuScene    = "Assets/Scenes/TrapMenu.unity";
         const string GameScene    = "Assets/Scenes/TrapGame.unity";
 
-        [MenuItem("TRAP/Build UI (Menu + Game)")]
+        [MenuItem("TRAP/Build UI (Menu only)")]
         public static void Build()
         {
             var panel = EnsurePanelSettings();
             BuildMenuScene(panel);
-            BuildGameScene(panel);
             AddScenesToBuild();
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
             EditorSceneManager.OpenScene(MenuScene);
-            Debug.Log("[TRAP] UI built. Press Play — Menu scene is first in Build Settings.");
+            Debug.Log("[TRAP] Menu built. The GAME scene comes from " +
+                      "TRAP > Build World Test Scene, which builds Lincoln and the " +
+                      "HUD together into the same scene.");
         }
+
+        /// <summary>
+        /// The in-game HUD, added to whatever scene is open.
+        ///
+        /// This used to be built into a scene of its own with a flat grey plane
+        /// standing in for "the 3D world". That placeholder outlived its
+        /// purpose the moment the real city arrived, and because both menu
+        /// items wrote a scene called the game scene, running one threw away
+        /// the other -- build the world, build the UI, and the world was gone.
+        ///
+        /// One scene owns both now, and this is the piece the world setup calls.
+        /// </summary>
+        public static void AddHud()
+        {
+            var panel = EnsurePanelSettings();
+            NewEventSystem();
+
+            var ui = new GameObject("TrapHudUI");
+            var doc = ui.AddComponent<UIDocument>();
+            doc.panelSettings = panel;
+            doc.visualTreeAsset = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(HudUxml);
+            ui.AddComponent<TrapHudController>();
+        }
+
+        /// Where the world setup should save, so the menu's Play button finds it.
+        public static string GameScenePath => GameScene;
 
         static PanelSettings EnsurePanelSettings()
         {
@@ -67,36 +94,6 @@ namespace TrapMadeIt.UI.EditorTools
             ui.AddComponent<TrapMenuController>();
 
             EditorSceneManager.SaveScene(scene, MenuScene);
-        }
-
-        static void BuildGameScene(PanelSettings panel)
-        {
-            var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
-
-            var camGo = NewCamera("Main Camera", new Color(0.05f, 0.04f, 0.03f));
-            camGo.transform.position = new Vector3(0, 2.2f, -4f);
-            camGo.transform.rotation = Quaternion.Euler(18f, 0, 0);
-
-            var lightGo = new GameObject("Directional Light");
-            var light = lightGo.AddComponent<Light>();
-            light.type = LightType.Directional;
-            light.intensity = 1.1f;
-            lightGo.transform.rotation = Quaternion.Euler(50f, -30f, 0);
-
-            // Placeholder gameplay ground (stands in for the real 3D world).
-            var ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
-            ground.name = "PlaceholderGround";
-            ground.transform.localScale = new Vector3(4, 1, 4);
-
-            NewEventSystem();
-
-            var ui = new GameObject("TrapHudUI");
-            var doc = ui.AddComponent<UIDocument>();
-            doc.panelSettings = panel;
-            doc.visualTreeAsset = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(HudUxml);
-            ui.AddComponent<TrapHudController>();
-
-            EditorSceneManager.SaveScene(scene, GameScene);
         }
 
         static GameObject NewCamera(string name, Color bg)

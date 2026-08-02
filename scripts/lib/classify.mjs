@@ -154,9 +154,14 @@ function roofShapeOf(tags, type, footprintArea) {
 }
 
 /** Real heights where they are given, informed guesses where they are not. */
-function heightOf(tags, type, id, century) {
+function heightOf(tags, type, id, century, measured = null) {
   const explicit = Number.parseFloat(tags.height);
   if (Number.isFinite(explicit) && explicit > 1) return explicit;
+
+  // Measured from the air beats counting storeys and multiplying by three.
+  // It sits below an explicit height tag, which someone chose deliberately,
+  // and above everything else, which is arithmetic on an assumption.
+  if (measured) return measured.height;
 
   const levels = Number.parseFloat(tags["building:levels"]);
   if (Number.isFinite(levels) && levels > 0) {
@@ -236,7 +241,7 @@ const LANDMARKS = [
 /**
  * @returns {{style, ground, roof, height, tint, landmark}}
  */
-export function classifyBuilding(id, tags, elevation, footprintArea) {
+export function classifyBuilding(id, tags, elevation, footprintArea, measured = null) {
   const type = (tags.building || "yes").toLowerCase();
   const century = centuryOf(tags.start_date);
   const name = tags.name || "";
@@ -248,8 +253,14 @@ export function classifyBuilding(id, tags, elevation, footprintArea) {
     style = hashUnit(id, 53) < 0.22 ? "render" : "brick";
   }
 
-  let height = heightOf(tags, type, id, century);
+  let height = heightOf(tags, type, id, century, measured);
   let roof = roofShapeOf(tags, type, footprintArea);
+
+  // The roof the survey actually saw. A tagged roof:shape still wins -- someone
+  // stood in the street and looked at it -- but for the 95% with no tag, the
+  // spread between eaves and ridge is evidence and the footprint area was only
+  // ever a guess.
+  if (measured && !tags["roof:shape"]) roof = measured.roof;
   let landmark = false;
 
   for (const [pattern, spec] of LANDMARKS) {

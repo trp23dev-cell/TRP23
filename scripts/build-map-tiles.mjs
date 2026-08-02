@@ -25,7 +25,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createSqliteStore } from "../server/storage/sqliteStore.js";
 import { project, unproject, TILE_SIZE, ORIGIN, MAP_ATTRIBUTION } from "../src/world/geo.js";
-import { fetchTerrain, TERRAIN_ATTRIBUTION } from "./lib/terrainSource.mjs";
+import { fetchTerrain, fetchSurface, TERRAIN_ATTRIBUTION } from "./lib/terrainSource.mjs";
 import { classifyBuilding } from "./lib/classify.mjs";
 import { triangulate, normalisedOrder } from "../src/world/buildingMesh.js";
 
@@ -254,6 +254,21 @@ function centroidOf(ring) {
   return { x: x / ring.length, z: z / ring.length };
 }
 
+/** Shortest distance from a point to any edge of the ring. */
+function distanceToRing(x, z, ring) {
+  let best = Infinity;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const ax = ring[j].x, az = ring[j].z;
+    const ex = ring[i].x - ax, ez = ring[i].z - az;
+    const lenSq = ex * ex + ez * ez;
+    const t = lenSq < 1e-9 ? 0 : Math.max(0, Math.min(1, ((x - ax) * ex + (z - az) * ez) / lenSq));
+    const dx = x - (ax + ex * t), dz = z - (az + ez * t);
+    const d = Math.hypot(dx, dz);
+    if (d < best) best = d;
+  }
+  return best;
+}
+
 function pointInRing(p, ring) {
   let inside = false;
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
@@ -480,6 +495,7 @@ async function main() {
 
   // ---- the ground ----
   let terrain = null;
+  let surface = null;
   if (args.terrain) {
     process.stdout.write("fetching LIDAR terrain...\n");
     terrain = await fetchTerrain(args.bbox);
@@ -488,6 +504,18 @@ async function main() {
       `${terrain.min.toFixed(1)}m to ${terrain.max.toFixed(1)}m ` +
       `(${(terrain.max - terrain.min).toFixed(0)}m of hill)\n`
     );
+
+    // The same survey's first laser return, which includes whatever is standing
+    // on the ground. Minus the terrain, that is every building's real height.
+    process.stdout.write("fetching LIDAR surface...\n");
+    try {
+      surface = await fetchSurface(args.bbox);
+      process.stdout.write(`surface ${surface.width}x${surface.height} @1m\n`);
+    } catch (err) {
+      // Not fatal. Without it every height falls back to the tag-and-type
+      // guess, which is where the city was before -- worse, not broken.
+      process.stdout.write(`surface unavailable (${err.message}); heights stay estimated\n`);
+    }
   }
 
   // Elevation at a point in game metres. Terrain is published on the National
@@ -498,6 +526,72 @@ async function main() {
     const ll = unproject(x, z);
     return terrain.at(ll.lat, ll.lon);
   };
+
+  const surfaceAt = (x, z) => {
+    if (!surface) return null;
+    const ll = unproject(x, z);
+    return surface.at(ll.lat, ll.lon);
+  };
+
+  let measuredCount = 0;
+
+  /**
+   * Measure a building from the air: surface model minus terrain, sampled
+   * across the footprint.
+   *
+   * Two things this must not do. It must not take the MAXIMUM, or a chimney,
+   * an aerial or an overhanging tree becomes the roofline. And it must not
+   * sample near the edges, where a 1m raster blends the wall into the pavement
+   * beside it and reads as half height.
+   *
+   * The spread of what is left tells you the roof. A flat roof is one height
+   * all over; a pitched roof ramps from eaves to ridge, so its samples spread
+   * roughly evenly between the two. So the 20th percentile is the eaves -- the
+   * height the WALLS are built to -- and the 90th is the ridge.
+   *
+   * @returns {{height:number, ridge:number, roof:string}|null}
+   */
+  function measureBuilding(ring, sill) {
+    if (!surface || !terrain || ring.length < 3) return null;
+
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (const p of ring) {
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.z < minZ) minZ = p.z;
+      if (p.z > maxZ) maxZ = p.z;
+    }
+
+    const step = Math.max(1, Math.min(3, (maxX - minX + maxZ - minZ) / 24));
+    const samples = [];
+    for (let z = minZ + step / 2; z < maxZ; z += step) {
+      for (let x = minX + step / 2; x < maxX; x += step) {
+        if (!pointInRing({ x, z }, ring)) continue;
+        if (distanceToRing(x, z, ring) < 1.2) continue;   // off the wall edge
+        const h = surfaceAt(x, z) - groundAt(x, z);
+        if (Number.isFinite(h)) samples.push(h);
+      }
+    }
+    // Fewer than this and a percentile is just an opinion.
+    if (samples.length < 5) return null;
+
+    samples.sort((a, b) => a - b);
+    const at = (q) => samples[Math.min(samples.length - 1, Math.floor(q * samples.length))];
+    const eaves = at(0.2);
+    const ridge = at(0.9);
+
+    // Nothing there, or something implausible. The Cathedral is the tallest
+    // thing in Lincoln at 83m; anything above that is a survey artefact.
+    if (eaves < 2.2 || ridge > 90) return null;
+
+    return {
+      height: eaves,
+      ridge,
+      // A ridge well above the eaves is a pitch. Below that it is flat, or
+      // close enough that drawing a pitch would be inventing one.
+      roof: ridge - eaves > 1.5 ? "gabled" : "flat",
+    };
+  }
 
   // --- roads first: doors need them ---
   const roads = [];
@@ -658,7 +752,9 @@ async function main() {
     }
 
     const area = Math.abs(ringArea(ring));
-    const spec = classifyBuilding(`way/${w.id}`, w.tags, sill, area);
+    const measured = measureBuilding(ring, sill);
+    if (measured) measuredCount += 1;
+    const spec = classifyBuilding(`way/${w.id}`, w.tags, sill, area, measured);
 
     buildings.push({
       id: `way/${w.id}`,
@@ -675,6 +771,10 @@ async function main() {
       name: w.tags.name || null,
       tags: w.tags,
     });
+  }
+  if (surface) {
+    const pct = ((measuredCount / Math.max(1, buildings.length)) * 100).toFixed(0);
+    process.stdout.write(`measured ${measuredCount} building heights from LIDAR (${pct}%)\n`);
   }
   process.stdout.write(`kept ${buildings.length} buildings, ${roads.length} road segments, ${areas.length} paved areas\n`);
 
