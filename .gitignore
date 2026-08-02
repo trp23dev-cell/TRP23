@@ -70,3 +70,5 @@ Unity/**/[Rr]ecordings/
 
 # OS
 Thumbs.db
+tools/csharp-check/obj/
+tools/csharp-check/bin/

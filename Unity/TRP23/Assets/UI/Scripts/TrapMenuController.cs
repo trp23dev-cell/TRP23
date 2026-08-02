@@ -70,9 +70,9 @@ namespace TrapMadeIt.UI
             _auth.Register(req, res =>
             {
                 if (!res.ok) { Msg("auth-msg", res.error, "err"); return; }
-                if (!string.IsNullOrEmpty(res.twofaSecret))
+                if (res.twofa != null && !string.IsNullOrEmpty(res.twofa.secret))
                 {
-                    _root.Q<Label>("twofa-secret").text = res.twofaSecret;
+                    _root.Q<Label>("twofa-secret").text = res.twofa.secret;
                     Show(_twofa);
                 }
                 else StartGame();

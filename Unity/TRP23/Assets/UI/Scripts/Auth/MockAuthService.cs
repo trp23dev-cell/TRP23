@@ -38,7 +38,7 @@ namespace TrapMadeIt.UI
             Current = acct;
 
             var res = new AuthResult { ok = true, account = acct };
-            if (r.enable2fa) { s.has2fa = true; res.twofaSecret = GenSecret(); }
+            if (r.enable2fa) { s.has2fa = true; res.twofa = new TwoFactorSetup { secret = GenSecret(), pending = true }; }
             done(res);
         }
 

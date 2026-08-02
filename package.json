@@ -26,7 +26,8 @@
     "check:repo": "node scripts/check-repo-hygiene.mjs",
     "check:api": "node scripts/check-api-security.mjs",
     "admin:create": "node scripts/create-admin.mjs",
-    "check:deploy": "node scripts/check-deploy.mjs"
+    "check:deploy": "node scripts/check-deploy.mjs",
+    "check:csharp": "dotnet build tools/csharp-check/check.csproj -v q --nologo"
   },
   "dependencies": {
     "@capacitor/core": "^7.4.2",
