@@ -27,37 +27,65 @@ namespace TrapMadeIt.World
         public bool Has(Vector2Int t) => available.Contains(t);
         public bool TryCached(Vector2Int t, out TilePayload p) => cache.TryGetValue(t, out p);
 
+        [Tooltip("How many times to retry the manifest before giving up.")]
+        public int manifestRetries = 5;
+
+        /// <summary>
+        /// Fetch the manifest, retrying on failure.
+        ///
+        /// A single failed request used to end the world for the whole session.
+        /// That is wrong for something that has to survive a deploy restarting
+        /// (Railway answers 502 for a few seconds), a phone changing network,
+        /// or a tunnel. Backs off between attempts rather than hammering a
+        /// server that is already unhappy.
+        /// </summary>
         public IEnumerator LoadManifest(Action<bool, string> done)
         {
-            using (var req = UnityWebRequest.Get($"{apiBase.TrimEnd('/')}/api/map/manifest"))
+            string lastError = null;
+
+            for (int attempt = 1; attempt <= Mathf.Max(1, manifestRetries); attempt++)
             {
-                yield return req.SendWebRequest();
-                if (req.result != UnityWebRequest.Result.Success)
+                using (var req = UnityWebRequest.Get($"{apiBase.TrimEnd('/')}/api/map/manifest"))
                 {
-                    done?.Invoke(false, $"could not reach the map: {req.error}");
-                    yield break;
+                    yield return req.SendWebRequest();
+
+                    if (req.result == UnityWebRequest.Result.Success)
+                    {
+                        var json = req.downloadHandler.text;
+                        Manifest = JsonUtility.FromJson<MapManifest>(json);
+                        if (Manifest == null)
+                        {
+                            done?.Invoke(false, "the manifest could not be read");
+                            yield break;
+                        }
+
+                        Manifest.tiles = ParseTileIndex(json);
+                        available.Clear();
+                        foreach (var t in Manifest.tiles) available.Add(t);
+
+                        if (available.Count == 0)
+                        {
+                            done?.Invoke(false, "the manifest carried no tile index — nothing would load");
+                            yield break;
+                        }
+
+                        done?.Invoke(true, null);
+                        yield break;
+                    }
+
+                    lastError = $"HTTP {req.responseCode} {req.error}";
                 }
 
-                var json = req.downloadHandler.text;
-                Manifest = JsonUtility.FromJson<MapManifest>(json);
-                if (Manifest == null)
+                if (attempt < manifestRetries)
                 {
-                    done?.Invoke(false, "the manifest could not be read");
-                    yield break;
+                    float wait = Mathf.Min(1.5f * attempt, 6f);
+                    Debug.LogWarning($"[map] {lastError} — retrying in {wait:0.0}s (attempt {attempt} of {manifestRetries})");
+                    yield return new WaitForSeconds(wait);
                 }
-
-                Manifest.tiles = ParseTileIndex(json);
-                available.Clear();
-                foreach (var t in Manifest.tiles) available.Add(t);
-
-                if (available.Count == 0)
-                {
-                    done?.Invoke(false, "the manifest carried no tile index — nothing would load");
-                    yield break;
-                }
-
-                done?.Invoke(true, null);
             }
+
+            done?.Invoke(false, $"could not reach the map after {manifestRetries} attempts: {lastError}. " +
+                                "If this is a deploy, it may still be restarting.");
         }
 
         /// <summary>
@@ -104,19 +132,32 @@ namespace TrapMadeIt.World
             if (cache.TryGetValue(t, out var hit)) { done?.Invoke(hit); yield break; }
 
             var url = $"{apiBase.TrimEnd('/')}/api/map/tile/{t.x}/{t.y}";
-            using (var req = UnityWebRequest.Get(url))
-            {
-                yield return req.SendWebRequest();
-                if (req.result != UnityWebRequest.Result.Success)
-                {
-                    Debug.LogWarning($"[map] tile {t.x},{t.y} failed: {req.error}");
-                    done?.Invoke(null);
-                    yield break;
-                }
 
-                var payload = JsonUtility.FromJson<TilePayload>(req.downloadHandler.text);
-                if (payload != null) cache[t] = payload;
-                done?.Invoke(payload);
+            // Two attempts. A tile that never arrives leaves a hole in the
+            // ground the player can fall through, so it is worth one retry —
+            // but not worth stalling the whole world over.
+            for (int attempt = 1; attempt <= 2; attempt++)
+            {
+                using (var req = UnityWebRequest.Get(url))
+                {
+                    yield return req.SendWebRequest();
+
+                    if (req.result == UnityWebRequest.Result.Success)
+                    {
+                        var payload = JsonUtility.FromJson<TilePayload>(req.downloadHandler.text);
+                        if (payload != null) cache[t] = payload;
+                        done?.Invoke(payload);
+                        yield break;
+                    }
+
+                    if (attempt == 2)
+                    {
+                        Debug.LogWarning($"[map] tile {t.x},{t.y} failed: HTTP {req.responseCode} {req.error}");
+                        done?.Invoke(null);
+                        yield break;
+                    }
+                }
+                yield return new WaitForSeconds(1f);
             }
         }
     }

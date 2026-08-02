@@ -7,6 +7,7 @@ namespace UnityEngine {
   public class Object {}
   public class MonoBehaviour : Component { public Transform transform => null; public Coroutine StartCoroutine(IEnumerator r) => null; public static void DontDestroyOnLoad(Object o) {} public static void Destroy(Object o) {} }
   public class Coroutine {}
+  public class WaitForSeconds { public WaitForSeconds(float s) {} }
   public static class PlayerPrefs {
     public static string GetString(string k, string d) => d;
     public static void SetString(string k, string v) {}
