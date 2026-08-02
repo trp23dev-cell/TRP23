@@ -920,6 +920,7 @@ async function main() {
     // Water is level, so it needs no subdivision at all; grass and woodland
     // only need to follow the ground loosely. Tessellating these as finely as a
     // pavement tripled the map payload for no visible gain.
+    c.level = level;   // kept so the riverbed carve knows where the surface is
     const mesh = tessellate(c.ring, level, c.kind === "water" ? 1e9 : 22);
     if (!mesh.i.length) continue;
     const mid = centroidOf(c.ring);
@@ -954,6 +955,38 @@ async function main() {
   }
 
 
+  // ---- carve the riverbeds ----
+  // LIDAR cannot measure the bottom of a river: the laser does not come back
+  // through water, so the DTM interpolates the bed to roughly bank height.
+  // Measured, 89% of the ground inside Lincoln's water polygons sat ABOVE the
+  // water surface, by up to 3.26m — so the bed poked through the Brayford and
+  // the Witham and the water read as a puddle in a hole.
+  //
+  // There is no data to recover here, so a bed is made: anything inside a water
+  // polygon is pushed below its surface. Depth tapers from the shore so the
+  // banks still slope in rather than dropping off a shelf.
+  const waterBodies = cover.filter((c) => c.kind === "water");
+  function carveWater(x, z, h) {
+    for (const w of waterBodies) {
+      if (!pointInRing({ x, z }, w.ring)) continue;
+      const level = w.level ?? h;
+      // How far in from the shore, roughly, so the bed dishes rather than steps.
+      let nearest = Infinity;
+      for (const p of w.ring) {
+        const d = (p.x - x) ** 2 + (p.z - z) ** 2;
+        if (d < nearest) nearest = d;
+      }
+      const inset = Math.min(Math.sqrt(nearest), 12) / 12;   // 0 at the shore, 1 well in
+      // The shore figure has to clear the GRID, not just the water: samples
+      // just outside the polygon keep their bank height, and the 5m
+      // interpolation between them and a carved sample can still ride above
+      // the surface. 1.2m at the edge is what takes that under.
+      const depth = 1.2 + inset * 1.6;
+      return Math.min(h, level - depth);
+    }
+    return h;
+  }
+
   // ---- per-tile heightmaps ----
   // Every tile carries the ground beneath it. Samples land exactly on tile
   // boundaries and are shared with the neighbour, so there is no seam and no
@@ -967,7 +1000,9 @@ async function main() {
       let lo = Infinity;
       for (let j = 0; j < n; j += 1) {
         for (let i = 0; i < n; i += 1) {
-          const h = groundAt(originX + i * TERRAIN_STEP, originZ + j * TERRAIN_STEP);
+          const sx = originX + i * TERRAIN_STEP;
+          const sz = originZ + j * TERRAIN_STEP;
+          const h = carveWater(sx, sz, groundAt(sx, sz));
           raw[j * n + i] = h;
           if (h < lo) lo = h;
         }

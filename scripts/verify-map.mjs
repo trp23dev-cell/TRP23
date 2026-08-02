@@ -568,6 +568,28 @@ const main = async () => {
   check("water is level, not draped over the hill", slopedWater === 0,
     `${water.length} bodies of water, ${slopedWater} sloping`);
 
+  // And the bed has to be UNDER it. LIDAR cannot measure a riverbed — the
+  // laser does not return through water — so the DTM interpolates it to about
+  // bank height and it pokes straight through the surface. Untouched, 89% of
+  // the ground inside Lincoln's water sat above the water.
+  let pierced = 0;
+  let bedSamples = 0;
+  for (const c of water) {
+    const level = c.v[1];
+    for (let k = 0; k < c.i.length; k += 3) {
+      const a = c.i[k] * 3, b = c.i[k + 1] * 3, d = c.i[k + 2] * 3;
+      const cx = (c.v[a] + c.v[b] + c.v[d]) / 3;
+      const cz = (c.v[a + 2] + c.v[b + 2] + c.v[d + 2]) / 3;
+      const g = terrain.heightAt(cx, cz);
+      if (g === null) continue;
+      bedSamples += 1;
+      if (g > level) pierced += 1;
+    }
+  }
+  check("the riverbed stays under the water",
+    bedSamples === 0 || pierced / bedSamples < 0.15,
+    `${pierced}/${bedSamples} of the bed above the surface`);
+
   // --- street furniture and bridges ---
   process.stdout.write("\nstreet furniture and bridges:\n");
   const kinds = {};
