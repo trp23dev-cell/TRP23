@@ -21,6 +21,11 @@ namespace TrapMadeIt.World
         [Tooltip("Follows this. Leave empty to use the main camera.")]
         public Transform follow;
 
+        [Tooltip("Hold the followed transform on the ground. PlayerRig switches " +
+                 "this off once a real character controller takes over, so the " +
+                 "two are never both writing the position.")]
+        public bool pinToGround = true;
+
         public Material groundMaterial;
         public Material buildingMaterial;
         public Material roofMaterial;
@@ -167,6 +172,7 @@ namespace TrapMadeIt.World
             // Only pin to the ground when walking. Doing it while flying drags
             // the camera back down the moment you gain height, which makes it
             // impossible to look at the city from above.
+            if (!pinToGround) return;
             var flyer = follow.GetComponent<FlyCamera>();
             if (flyer != null && flyer.Flying) return;
 
@@ -227,7 +233,7 @@ namespace TrapMadeIt.World
                 go.transform.SetParent(transform, false);
 
                 var ground = TerrainMeshBuilder.Build(payload.t, t);
-                if (ground != null) AddMesh(go, "ground", ground, groundMaterial);
+                if (ground != null) AddMesh(go, "ground", ground, groundMaterial, 0f, solid: true);
 
                 // Buildings, merged into two meshes for the whole tile rather
                 // than one object each. Nine hundred separate renderers would
@@ -243,8 +249,10 @@ namespace TrapMadeIt.World
                         if (b.lm == 1) continue;
                         BuildingMeshBuilder.Extrude(b, walls, roofs);
                     }
-                    AddMesh(go, "walls", walls.ToMesh($"walls_{t.x}_{t.y}"), buildingMaterial);
-                    AddMesh(go, "roofs", roofs.ToMesh($"roofs_{t.x}_{t.y}"), roofMaterial);
+                    // Both solid: walls so you cannot walk through a shop, roofs
+                    // so flying down onto one lands you on it.
+                    AddMesh(go, "walls", walls.ToMesh($"walls_{t.x}_{t.y}"), buildingMaterial, 0f, solid: true);
+                    AddMesh(go, "roofs", roofs.ToMesh($"roofs_{t.x}_{t.y}"), roofMaterial, 0f, solid: true);
                 }
 
                 BuildSurfaces(go, payload, t);
@@ -324,7 +332,19 @@ namespace TrapMadeIt.World
 
         static bool warnedNullMaterial;
 
-        static void AddMesh(GameObject parent, string name, Mesh mesh, Material mat, float lift = 0f)
+        /// <summary>
+        /// <paramref name="solid"/> gives the mesh a collider, so a physics-based
+        /// player -- a CharacterController, a Rigidbody, anything standard --
+        /// can stand on it and be stopped by it. Without this the whole city is
+        /// scenery you fall through.
+        ///
+        /// Only the ground and the buildings get one. Roads and paved areas lie
+        /// on the terrain that already has a collider, and colliders for four
+        /// hundred trees and bollards per tile would cost more to bake than
+        /// they are worth. Those come back if anything needs to hit them.
+        /// </summary>
+        static void AddMesh(GameObject parent, string name, Mesh mesh, Material mat,
+                            float lift = 0f, bool solid = false)
         {
             if (mesh == null) return;
             var go = new GameObject(name);
@@ -332,6 +352,14 @@ namespace TrapMadeIt.World
             // Lifted a hair off the terrain so the two do not z-fight.
             if (lift != 0f) go.transform.position = new Vector3(0f, lift, 0f);
             go.AddComponent<MeshFilter>().sharedMesh = mesh;
+            if (solid)
+            {
+                var mc = go.AddComponent<MeshCollider>();
+                // Concave, which is what static level geometry is. Marking it
+                // convex would hull each tile into a lump you cannot walk into.
+                mc.convex = false;
+                mc.sharedMesh = mesh;
+            }
             var mr = go.AddComponent<MeshRenderer>();
             if (mat != null)
             {

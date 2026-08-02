@@ -74,3 +74,22 @@ tools/csharp-check/obj/
 tools/csharp-check/bin/
 tools/collision-check/obj/
 tools/collision-check/bin/
+
+# Unity Starter Assets (Asset Store, Unity Companion License).
+#
+# NOT committed, and that is a judgement call worth knowing about: it is 86 MB
+# of mostly character art, and git keeps every version of it for ever, so this
+# is the one decision here that cannot be undone by a later commit. Reimport it
+# from the Asset Store and run TRAP > Build World Test Scene again.
+#
+# Nothing breaks without it: the setup script checks for the prefab and falls
+# back to the free camera, saying so in the console. If you would rather a
+# fresh checkout just worked, delete these two lines and commit it -- that
+# direction is easy, the other one is not.
+Unity/**/Assets/StarterAssets/
+Unity/**/Assets/StarterAssets.meta
+
+# ...except the one script we edited. It carries the first-person mode, and an
+# ignored folder is a very quiet place for a change to disappear.
+!Unity/**/Assets/StarterAssets/ThirdPersonController/Scripts/ThirdPersonController.cs
+!Unity/**/Assets/StarterAssets/license.txt

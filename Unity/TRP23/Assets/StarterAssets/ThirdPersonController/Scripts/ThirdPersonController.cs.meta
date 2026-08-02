@@ -1,12 +1,11 @@
 fileFormatVersion: 2
-guid: fcf7219bab7fe46a1ad266029b2fee19
+guid: 26e54e5a728a9234ab24fcf1460ed8a2
 MonoImporter:
   externalObjects: {}
   serializedVersion: 2
-  defaultReferences:
-  - icon: {fileID: 2800000, guid: d4743ba2e2a59f946b2125c074582ce7, type: 3}
+  defaultReferences: []
   executionOrder: 0
-  icon: {fileID: 2800000, guid: a186f8a87ca4f4d3aa864638ad5dfb65, type: 3}
+  icon: {instanceID: 0}
   userData: 
   assetBundleName: 
   assetBundleVariant: 
@@ -16,5 +15,5 @@ AssetOrigin:
   packageName: Starter Assets - ThirdPerson | Updates in new CharacterController
     package
   packageVersion: 1.1.7
-  assetPath: Assets/TutorialInfo/Scripts/Readme.cs
+  assetPath: Assets/StarterAssets/ThirdPersonController/Scripts/ThirdPersonController.cs
   uploadId: 879174

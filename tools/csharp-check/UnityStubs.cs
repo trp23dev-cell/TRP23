@@ -5,7 +5,7 @@ using System;
 using System.Collections;
 namespace UnityEngine {
   public class Object {}
-  public class MonoBehaviour : Component { public Transform transform => null; public Coroutine StartCoroutine(IEnumerator r) => null; public static void DontDestroyOnLoad(Object o) {} public static void Destroy(Object o) {} }
+  public class MonoBehaviour : Component { public Transform transform => null; public static T FindAnyObjectByType<T>() where T : Component, new() => new T(); public Coroutine StartCoroutine(IEnumerator r) => null; public static void DontDestroyOnLoad(Object o) {} public static void Destroy(Object o) {} }
   public class Coroutine {}
   public class WaitForSeconds { public WaitForSeconds(float s) {} }
   public static class PlayerPrefs {
@@ -105,6 +105,7 @@ namespace UnityEngine {
   public class Light : Component { public LightType type { get; set; } public float intensity { get; set; } public Transform transform => null; }
   public class MeshFilter : Component { public Mesh sharedMesh { get; set; } }
   public class MeshRenderer : Component { public Material sharedMaterial { get; set; } }
+  public class MeshCollider : Component { public bool convex { get; set; } public Mesh sharedMesh { get; set; } }
   public class Material : Object {
     public Material(Shader s) {}
     public string name { get; set; }
@@ -125,6 +126,13 @@ namespace UnityEngine {
   }
   public enum KeyCode { E, Q, LeftShift }
   public static class Time { public static float deltaTime => 0f; public static float time => 0f; }
+  public class CharacterController : Component {
+    public bool enabled { get; set; } public float height { get; set; }
+    public Vector3 center { get; set; }
+  }
+  public class Rigidbody : Component {
+    public bool isKinematic { get; set; } public Vector3 linearVelocity { get; set; }
+  }
   public class RequireComponentAttribute : System.Attribute { public RequireComponentAttribute(System.Type t) {} }
 }
 // The new Input System, which this project uses (activeInputHandler: 1).
