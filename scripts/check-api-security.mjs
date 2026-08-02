@@ -130,6 +130,24 @@ const main = async () => {
     check("player data needs authentication", other.status === 401 || other.status === 403,
       `HTTP ${other.status}`);
 
+    process.stdout.write("\ncross-origin policy:\n");
+    const evil = await fetch(`${API}/api/health`, { headers: { Origin: "https://evil.example.com" } });
+    check("an unknown origin gets no CORS header",
+      !evil.headers.get("access-control-allow-origin"),
+      evil.headers.get("access-control-allow-origin") || "(none)");
+
+    // The packaged mobile build runs on capacitor://localhost, not on the
+    // site's domain. Break this and the app dies while the website is fine,
+    // which is a miserable thing to debug.
+    const cap = await fetch(`${API}/api/health`, { headers: { Origin: "capacitor://localhost" } });
+    check("the mobile build's origin is allowed",
+      cap.headers.get("access-control-allow-origin") === "capacitor://localhost",
+      cap.headers.get("access-control-allow-origin") || "(none)");
+
+    check("responses vary on Origin so caches do not cross the wires",
+      (cap.headers.get("vary") || "").toLowerCase().includes("origin"),
+      cap.headers.get("vary") || "(none)");
+
     process.stdout.write("\nrate limiting:\n");
     const victim = `victim-${stamp}@example.invalid`;
     await post("/api/players/register", {

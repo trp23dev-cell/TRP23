@@ -118,9 +118,19 @@ configuration:
 
 ## What is deliberately not here
 
-**CORS is `*`.** The API is Bearer-token authenticated with no cookies, so this
-is not a session-riding risk, and the mobile build needs a non-web origin. Worth
-narrowing when the shipping origins are known.
+**CORS is an allowlist, not `*`.** The web game is served from the same origin
+as the API, so it never uses CORS at all — a same-origin request does not carry
+an `Origin` header. The allowlist exists for the packaged mobile build, which
+runs on `capacitor://localhost`, and for local development.
+
+Add `ALLOWED_ORIGINS` (comma separated) if the game is ever served from a
+different domain to the API. A refused origin is logged, so a mistake looks like
+a mistake rather than an outage.
+
+**Unity:** a native player is not a browser and ignores CORS entirely, so a
+desktop or mobile Unity build needs nothing here. A Unity **WebGL** build does —
+it runs in a browser and is subject to these same rules, so whatever origin it
+is hosted on must go in `ALLOWED_ORIGINS`.
 
 **Rate limiting is in memory.** It holds counts in the process, which is right
 for a single instance and wrong the moment the service is scaled to more than

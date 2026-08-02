@@ -195,6 +195,74 @@ async function importShippedMap() {
   }
 }
 
+/**
+ * Cross-origin policy.
+ *
+ * The web game is served from this same origin, so it never uses CORS at all —
+ * a same-origin request does not even carry an Origin header. The only genuine
+ * cross-origin caller is the packaged mobile build, which runs on
+ * capacitor://localhost rather than on the site's domain.
+ *
+ * So the allowlist is small and specific, and `*` is gone. Being permissive was
+ * not a session-riding risk here (Bearer tokens, no cookies) but it let any
+ * page on the internet call this API from a visitor's browser, which is not
+ * something to leave open for no reason.
+ *
+ * ALLOWED_ORIGINS adds to it, comma separated, for when the game is served from
+ * a domain other than the API's.
+ *
+ * UNITY: a native player is not a browser and ignores CORS entirely, so a
+ * desktop or mobile Unity build needs nothing here. A Unity WEBGL build does —
+ * it runs in a browser and is subject to exactly these rules, so whatever
+ * origin it is hosted on has to go in ALLOWED_ORIGINS.
+ */
+const CAPACITOR_ORIGINS = [
+  "capacitor://localhost",
+  "ionic://localhost",
+  "http://localhost",
+  "https://localhost",
+];
+
+const EXTRA_ORIGINS = String(process.env.ALLOWED_ORIGINS || "")
+  .split(",")
+  .map((o) => o.trim().replace(/\/$/, ""))
+  .filter(Boolean);
+
+const rejectedOrigins = new Set();
+
+function allowedOrigin(origin, host) {
+  if (!origin) return null;
+  const clean = origin.replace(/\/$/, "");
+  // The site's own origin. A same-origin request does not need CORS at all, so
+  // this changes nothing functionally — but without it the server logs a
+  // refusal for its OWN domain, which reads like a fault when it is not.
+  if (host && clean.replace(/^https?:\/\//, "") === host) return clean;
+  if (CAPACITOR_ORIGINS.includes(clean)) return clean;
+  if (EXTRA_ORIGINS.includes(clean)) return clean;
+  // Any localhost port, for `vite --host` and for a phone on the same wifi
+  // pointed at a dev machine.
+  if (/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+)(:\d+)?$/.test(clean)) {
+    return clean;
+  }
+  // Say so once. A silently dropped CORS header is the kind of thing that looks
+  // like a server outage from the client side.
+  if (!rejectedOrigins.has(clean)) {
+    rejectedOrigins.add(clean);
+    console.warn(`[cors] refused origin ${clean} — add it to ALLOWED_ORIGINS if that is wrong`);
+  }
+  return null;
+}
+
+/** CORS headers for a request, or an empty object when none are needed. */
+function corsHeaders(req) {
+  const origin = allowedOrigin(req.headers.origin, req.headers.host);
+  if (!origin) return {};
+  return {
+    "Access-Control-Allow-Origin": origin,
+    Vary: "Origin",
+  };
+}
+
 const rateLimiter = createRateLimiter();
 
 /**
@@ -207,7 +275,7 @@ function rateLimited(req, res, bucket) {
   if (verdict.ok) return false;
   res.writeHead(429, {
     "Content-Type": "application/json; charset=utf-8",
-    "Access-Control-Allow-Origin": "*",
+    ...corsHeaders(req),
     "Retry-After": String(verdict.retryAfter),
   });
   res.end(JSON.stringify({
@@ -437,9 +505,11 @@ async function readBody(req) {
 function sendJson(res, statusCode, payload) {
   res.writeHead(statusCode, {
     "Content-Type": "application/json; charset=utf-8",
-    "Access-Control-Allow-Origin": "*",
+    // Computed once per request in handleRequest and parked on the response,
+    // so the eighty-odd sendJson call sites do not all need `req`.
+    ...(res.corsHeaders || {}),
     "Access-Control-Allow-Methods": "GET,PUT,POST,PATCH,DELETE,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Bootstrap-Token",
   });
   res.end(JSON.stringify(payload));
 }
@@ -460,14 +530,14 @@ function sendMapPayload(req, res, json, builtAt, key = "") {
   // serialise to the same number of bytes would serve each other's geometry.
   const etag = `W/"map-${builtAt}-${key}-${json.length}"`;
   if (req.headers["if-none-match"] === etag) {
-    res.writeHead(304, { ETag: etag, "Access-Control-Allow-Origin": "*" });
+    res.writeHead(304, { ETag: etag, ...corsHeaders(req) });
     res.end();
     return;
   }
 
   const headers = {
     "Content-Type": "application/json; charset=utf-8",
-    "Access-Control-Allow-Origin": "*",
+    ...corsHeaders(req),
     "Cache-Control": "no-cache",
     ETag: etag,
   };
@@ -503,13 +573,16 @@ function parsePlayerId(pathname) {
 async function handleRequest(req, res) {
   if (req.method === "OPTIONS") {
     res.writeHead(204, {
-      "Access-Control-Allow-Origin": "*",
+      ...corsHeaders(req),
       "Access-Control-Allow-Methods": "GET,PUT,POST,PATCH,DELETE,OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Bootstrap-Token",
+      "Access-Control-Max-Age": "86400",
     });
     res.end();
     return;
   }
+
+  res.corsHeaders = corsHeaders(req);
 
   const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
   const { pathname } = url;
