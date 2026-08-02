@@ -1,16 +1,17 @@
-import { spawn } from "node:child_process";
 import { totp } from "../server/totp.js";
 
-const base = process.env.SMOKE_API_BASE || "http://localhost:8787";
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+// Points at its own throwaway server unless SMOKE_API_BASE says otherwise.
+// Staff registration is closed now, and the bootstrap token that opens it only
+// works on an instance with no admin — so the test needs a fresh one, and
+// depending on whatever happens to be running on :8787 made it unrepeatable.
+let base = process.env.SMOKE_API_BASE || "";
 
 async function req(path, options = {}) {
+  // options spread FIRST: it carries its own `headers`, and spreading it last
+  // replaced the merged set and dropped Content-Type.
   const res = await fetch(`${base}${path}`, {
-    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
     ...options,
+    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
   });
   const data = await res.json();
   if (!res.ok) {
@@ -19,24 +20,64 @@ async function req(path, options = {}) {
   return data;
 }
 
-async function healthCheck() {
-  try {
-    const res = await fetch(`${base}/api/health`);
-    return res.ok;
-  } catch (_err) {
-    return false;
+/** Start a server with its own database, so the run is repeatable. */
+async function startServer() {
+  const { spawn } = await import("node:child_process");
+  const { mkdtemp, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const path = (await import("node:path")).default;
+  const { fileURLToPath } = await import("node:url");
+
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+  const dir = await mkdtemp(path.join(tmpdir(), "trp23-smoke-"));
+  const port = 8500 + Math.floor(Math.random() * 300);
+  const child = spawn(process.execPath, [path.join(root, "server/mockApiServer.js")], {
+    cwd: root,
+    env: {
+      ...process.env,
+      PORT: String(port),
+      DATA_DIR: dir,
+      ADMIN_BOOTSTRAP_TOKEN: process.env.ADMIN_BOOTSTRAP_TOKEN,
+    },
+    stdio: "ignore",
+  });
+  const stop = async () => { child.kill(); await rm(dir, { recursive: true, force: true }); };
+  const url = `http://127.0.0.1:${port}`;
+  for (let i = 0; i < 80; i += 1) {
+    try {
+      const res = await fetch(`${url}/api/health`);
+      if (res.ok) return { url, stop };
+    } catch { /* not up yet */ }
+    await new Promise((r) => setTimeout(r, 150));
   }
+  await stop();
+  throw new Error("server did not start");
 }
 
 async function run() {
   const runId = Date.now();
   const email = `admin+${runId}@trapmadeit.local`;
-  const password = "admin123";
+  // Staff passwords have a 12 character floor, and staff registration is no
+  // longer open — see the bootstrap token below.
+  const password = `smoke-admin-${runId}`;
   const discountCode = `SMOKE${String(runId).slice(-6)}`;
 
   await req("/api/health");
+  // Staff registration is closed: it needs an existing admin, or the bootstrap
+  // token on a deployment that has none yet. This smoke test therefore needs
+  // ADMIN_BOOTSTRAP_TOKEN set to the same value as the server it is pointed at,
+  // and only works against an instance with no admin — which is what
+  // `npm run test:api` starts.
+  const bootstrap = process.env.ADMIN_BOOTSTRAP_TOKEN;
+  if (!bootstrap) {
+    throw new Error(
+      "ADMIN_BOOTSTRAP_TOKEN must be set, and must match the server's.\n" +
+      "Run `npm run test:api`, which starts a throwaway server with one."
+    );
+  }
   await req("/api/auth/register", {
     method: "POST",
+    headers: { "x-bootstrap-token": bootstrap },
     body: JSON.stringify({ email, password, role: "admin" }),
   });
 
@@ -222,20 +263,27 @@ async function run() {
 }
 
 async function main() {
-  const hasExternalServer = await healthCheck();
+  // Always a throwaway instance unless pointed elsewhere. The old behaviour —
+  // reuse whatever is on :8787, or start one on the real database — meant the
+  // smoke test wrote test accounts and discount codes into development data,
+  // and it broke outright once staff registration was closed, because that
+  // database already has an admin and the bootstrap token only works without
+  // one.
   let server = null;
-
-  if (!hasExternalServer) {
-    server = spawn("node", ["server/mockApiServer.js"], {
-      stdio: "inherit",
-    });
-    await sleep(900);
+  if (process.env.SMOKE_API_BASE) {
+    base = process.env.SMOKE_API_BASE;
+  } else {
+    process.env.ADMIN_BOOTSTRAP_TOKEN =
+      process.env.ADMIN_BOOTSTRAP_TOKEN || "smoke-bootstrap-token-not-a-secret";
+    server = await startServer();
+    base = server.url;
   }
+  console.log(`[smoke-api] ${base}${server ? " (throwaway instance)" : ""}`);
 
   try {
     await run();
   } finally {
-    if (server) server.kill("SIGTERM");
+    if (server) await server.stop();
   }
 }
 
