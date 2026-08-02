@@ -41,6 +41,7 @@ namespace UnityEngine {
     public float x, y, z; public Vector3(float x,float y,float z){this.x=x;this.y=y;this.z=z;}
     public float sqrMagnitude => x*x+y*y+z*z;
     public Vector3 normalized => this;
+    public static Vector3 operator /(Vector3 a, float f) => a;
     public static Vector3 operator +(Vector3 a, Vector3 b) => new Vector3(a.x+b.x,a.y+b.y,a.z+b.z);
     public static Vector3 operator -(Vector3 a, Vector3 b) => new Vector3(a.x-b.x,a.y-b.y,a.z-b.z);
     public static Vector3 operator *(Vector3 a, float f) => new Vector3(a.x*f,a.y*f,a.z*f);
@@ -56,6 +57,7 @@ namespace UnityEngine {
   public struct Quaternion { public static Quaternion Euler(float x,float y,float z) => default; public Vector3 eulerAngles => default; }
   public struct Color {
     public Color(float r,float g,float b){}
+    public static Color white => default;
     public static Color operator *(Color c, float f) => c;
   }
   public static class Mathf {
@@ -69,6 +71,7 @@ namespace UnityEngine {
     public static float Clamp01(float v) => Clamp(v,0f,1f);
     public static float Max(float a,float b) => a>b?a:b;
     public static float Min(float a,float b) => a<b?a:b;
+    public static float Sin(float f) => f;
   }
   public class Mesh : Object {
     public string name; public Vector3[] vertices { get; set; } public Vector2[] uv { get; set; }

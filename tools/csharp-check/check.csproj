@@ -20,6 +20,7 @@
     <Compile Include="../../Unity/TRP23/Assets/World/Scripts/MapClient.cs" />
     <Compile Include="../../Unity/TRP23/Assets/World/Scripts/TerrainMeshBuilder.cs" />
     <Compile Include="../../Unity/TRP23/Assets/World/Scripts/BuildingMeshBuilder.cs" />
+    <Compile Include="../../Unity/TRP23/Assets/World/Scripts/SurfaceMeshBuilder.cs" />
     <Compile Include="../../Unity/TRP23/Assets/World/Scripts/WorldStreamer.cs" />
     <Compile Include="../../Unity/TRP23/Assets/World/Scripts/FlyCamera.cs" />
   </ItemGroup>

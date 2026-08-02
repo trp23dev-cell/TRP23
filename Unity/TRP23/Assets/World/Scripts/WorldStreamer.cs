@@ -25,6 +25,30 @@ namespace TrapMadeIt.World
         public Material buildingMaterial;
         public Material roofMaterial;
 
+        // Everything else gets a flat colour for now. Textures come later; the
+        // point of this pass is that the city has roads, grass and water at all
+        // rather than buildings floating on bare ground.
+        readonly Dictionary<string, Material> palette = new Dictionary<string, Material>();
+
+        static readonly Dictionary<string, Color> Palette = new Dictionary<string, Color>
+        {
+            { "asphalt",  new Color(0.18f, 0.17f, 0.16f) },
+            { "paving",   new Color(0.42f, 0.41f, 0.38f) },
+            { "cobble",   new Color(0.26f, 0.24f, 0.22f) },
+            { "concrete", new Color(0.34f, 0.34f, 0.33f) },
+            { "gravel",   new Color(0.30f, 0.27f, 0.22f) },
+            { "grass",    new Color(0.24f, 0.34f, 0.16f) },
+            { "wood",     new Color(0.16f, 0.24f, 0.11f) },
+            // Water is the one smooth thing in the city, so it is the one thing
+            // that catches the sky — which is what actually reads as water.
+            { "water",    new Color(0.09f, 0.14f, 0.18f) },
+            { "wall",     new Color(0.40f, 0.38f, 0.33f) },
+            { "hedge",    new Color(0.14f, 0.21f, 0.10f) },
+            { "bark",     new Color(0.20f, 0.16f, 0.11f) },
+            { "foliage",  new Color(0.18f, 0.28f, 0.13f) },
+            { "furniture",new Color(0.14f, 0.14f, 0.15f) },
+        };
+
         MapClient client;
         readonly Dictionary<Vector2Int, GameObject> live = new Dictionary<Vector2Int, GameObject>();
         readonly Dictionary<Vector2Int, TerrainPatch> patches = new Dictionary<Vector2Int, TerrainPatch>();
@@ -59,8 +83,16 @@ namespace TrapMadeIt.World
             if (buildingMaterial == null) buildingMaterial = Make(known, new Color(0.55f, 0.50f, 0.44f), 0.08f, "TrapWall");
             if (roofMaterial == null) roofMaterial = Make(known, new Color(0.20f, 0.21f, 0.23f), 0.10f, "TrapRoof");
 
+            foreach (var kv in Palette)
+            {
+                // Water is smooth so it reflects; everything else is matte.
+                float smooth = kv.Key == "water" ? 0.85f : 0.05f;
+                palette[kv.Key] = Make(known, kv.Value, smooth, "Trap_" + kv.Key);
+            }
+
             Debug.Log($"[world] walls: {(buildingMaterial != null ? buildingMaterial.name : "NONE")}, " +
-                      $"roofs: {(roofMaterial != null ? roofMaterial.name : "NONE")}");
+                      $"roofs: {(roofMaterial != null ? roofMaterial.name : "NONE")}, " +
+                      $"{palette.Count} surface materials");
         }
 
         static Material Make(Shader shader, Color colour, float smoothness, string name)
@@ -194,18 +226,89 @@ namespace TrapMadeIt.World
                     AddMesh(go, "roofs", roofs.ToMesh($"roofs_{t.x}_{t.y}"), roofMaterial);
                 }
 
+                BuildSurfaces(go, payload, t);
+
                 live[t] = go;
                 patches[t] = payload.t;
             });
         }
 
+        /// <summary>
+        /// Roads, paved areas, land cover, walls, trees and furniture.
+        ///
+        /// Split by material and merged per tile, so a tile costs a handful of
+        /// draw calls rather than one per object. Land cover sits just under
+        /// the paving, so a path across a park wins where they overlap.
+        /// </summary>
+        void BuildSurfaces(GameObject parent, TilePayload payload, Vector2Int t)
+        {
+            var bySurface = new Dictionary<string, BuildingMeshBuilder.Buffers>();
+            foreach (var k in SurfaceMeshBuilder.Surfaces)
+                bySurface[k] = new BuildingMeshBuilder.Buffers();
+
+            SurfaceMeshBuilder.Roads(payload.r, bySurface);
+
+            // Paved areas: the High Street and every other pedestrianised
+            // street, filled rather than traced.
+            if (payload.a != null)
+            {
+                foreach (var a in payload.a)
+                {
+                    var buf = bySurface.ContainsKey(a.s ?? "paving") ? bySurface[a.s ?? "paving"] : bySurface["paving"];
+                    SurfaceMeshBuilder.Filled(a.v, a.i, buf, Color.white);
+                }
+            }
+
+            foreach (var kv in bySurface)
+                AddMesh(parent, kv.Key, kv.Value.ToMesh($"{kv.Key}_{t.x}_{t.y}"), Mat(kv.Key), 0.06f);
+
+            // Land cover: grass, woodland and the Brayford.
+            var byCover = new Dictionary<string, BuildingMeshBuilder.Buffers>();
+            foreach (var k in SurfaceMeshBuilder.Covers)
+                byCover[k] = new BuildingMeshBuilder.Buffers();
+            if (payload.c != null)
+            {
+                foreach (var c in payload.c)
+                {
+                    var key = byCover.ContainsKey(c.k ?? "grass") ? c.k : "grass";
+                    SurfaceMeshBuilder.Filled(c.v, c.i, byCover[key], Color.white);
+                }
+            }
+            foreach (var kv in byCover)
+            {
+                // Water at ground level; grass a shade under the paving.
+                float lift = kv.Key == "water" ? 0f : 0.03f;
+                AddMesh(parent, kv.Key, kv.Value.ToMesh($"{kv.Key}_{t.x}_{t.y}"), Mat(kv.Key), lift);
+            }
+
+            var stone = new BuildingMeshBuilder.Buffers();
+            var hedge = new BuildingMeshBuilder.Buffers();
+            SurfaceMeshBuilder.Walls(payload.l, stone, hedge);
+            AddMesh(parent, "walls_boundary", stone.ToMesh($"bwall_{t.x}_{t.y}"), Mat("wall"));
+            AddMesh(parent, "hedges", hedge.ToMesh($"hedge_{t.x}_{t.y}"), Mat("hedge"));
+
+            var trunks = new BuildingMeshBuilder.Buffers();
+            var canopies = new BuildingMeshBuilder.Buffers();
+            SurfaceMeshBuilder.Trees(payload.w, trunks, canopies);
+            AddMesh(parent, "trunks", trunks.ToMesh($"trunk_{t.x}_{t.y}"), Mat("bark"));
+            AddMesh(parent, "canopies", canopies.ToMesh($"canopy_{t.x}_{t.y}"), Mat("foliage"));
+
+            var furniture = new BuildingMeshBuilder.Buffers();
+            SurfaceMeshBuilder.Furniture(payload.f, furniture);
+            AddMesh(parent, "furniture", furniture.ToMesh($"furn_{t.x}_{t.y}"), Mat("furniture"));
+        }
+
+        Material Mat(string key) => palette.TryGetValue(key, out var m) ? m : buildingMaterial;
+
         static bool warnedNullMaterial;
 
-        static void AddMesh(GameObject parent, string name, Mesh mesh, Material mat)
+        static void AddMesh(GameObject parent, string name, Mesh mesh, Material mat, float lift = 0f)
         {
             if (mesh == null) return;
             var go = new GameObject(name);
             go.transform.SetParent(parent.transform, false);
+            // Lifted a hair off the terrain so the two do not z-fight.
+            if (lift != 0f) go.transform.position = new Vector3(0f, lift, 0f);
             go.AddComponent<MeshFilter>().sharedMesh = mesh;
             var mr = go.AddComponent<MeshRenderer>();
             if (mat != null)
