@@ -90,7 +90,17 @@ namespace UnityEngine {
   public class Light : Component { public LightType type { get; set; } public float intensity { get; set; } public Transform transform => null; }
   public class MeshFilter : Component { public Mesh sharedMesh { get; set; } }
   public class MeshRenderer : Component { public Material sharedMaterial { get; set; } }
-  public class Material : Object { public Material(Shader s) {} public string name { get; set; } public Color color { get; set; } }
+  public class Material : Object {
+    public Material(Shader s) {}
+    public string name { get; set; }
+    public Color color { get; set; }
+    public Shader shader { get; set; }
+    public bool HasProperty(string n) => false;
+    public void SetColor(string n, Color c) {}
+    public void SetFloat(string n, float f) {}
+    public void EnableKeyword(string k) {}
+    public static implicit operator bool(Material m) => false;
+  }
   public class Shader : Object { public static Shader Find(string n) => null; }
   public static class Input {
     public static bool GetMouseButton(int b) => false;

@@ -32,7 +32,37 @@ namespace TrapMadeIt.World
         Vector2Int? lastTile;
         bool ready;
 
-        void Awake() => client = GetComponent<MapClient>();
+        void Awake()
+        {
+            client = GetComponent<MapClient>();
+            // Make our own if the scene did not supply them.
+            //
+            // A missing material renders magenta, which looks like a broken
+            // shader and sends you hunting in the wrong place — it has done
+            // twice already. Materials built HERE are safe where editor-built
+            // ones were not: this component holds the reference for its whole
+            // life, so nothing can collect them on entering Play.
+            groundMaterial = groundMaterial ? groundMaterial : Fallback(new Color(0.32f, 0.35f, 0.27f), 0.05f);
+            buildingMaterial = buildingMaterial ? buildingMaterial : Fallback(new Color(0.55f, 0.50f, 0.44f), 0.08f);
+            roofMaterial = roofMaterial ? roofMaterial : Fallback(new Color(0.20f, 0.21f, 0.23f), 0.10f);
+        }
+
+        static Material Fallback(Color colour, float smoothness)
+        {
+            var shader = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
+            if (shader == null)
+            {
+                Debug.LogError("[world] no usable shader — surfaces will render magenta.");
+                return null;
+            }
+            var mat = new Material(shader) { name = "TrapFallback" };
+            // URP uses _BaseColor; Material.color writes _Color, which URP/Lit
+            // does not have and silently ignores.
+            if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", colour);
+            else mat.color = colour;
+            if (mat.HasProperty("_Smoothness")) mat.SetFloat("_Smoothness", smoothness);
+            return mat;
+        }
 
         IEnumerator Start()
         {
