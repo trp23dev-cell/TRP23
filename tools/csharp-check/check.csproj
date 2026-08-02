@@ -4,6 +4,8 @@
     <Nullable>disable</Nullable>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <NoWarn>CS0649;CS0169</NoWarn>
+    <!-- Compile the same branch the project actually runs. -->
+    <DefineConstants>ENABLE_INPUT_SYSTEM</DefineConstants>
     <BaseIntermediateOutputPath>obj/</BaseIntermediateOutputPath>
   </PropertyGroup>
   <ItemGroup>

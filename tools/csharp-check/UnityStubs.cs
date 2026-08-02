@@ -35,6 +35,7 @@ namespace UnityEngine {
 namespace UnityEngine {
   public struct Vector2 { public float x, y; public Vector2(float x, float y){this.x=x;this.y=y;} }
   public struct Vector3 {
+    public static Vector3 zero => default;
     public float x, y, z; public Vector3(float x,float y,float z){this.x=x;this.y=y;this.z=z;}
     public float sqrMagnitude => x*x+y*y+z*z;
     public Vector3 normalized => this;
@@ -90,6 +91,29 @@ namespace UnityEngine {
   public enum KeyCode { E, Q, LeftShift }
   public static class Time { public static float deltaTime => 0f; }
   public class RequireComponentAttribute : System.Attribute { public RequireComponentAttribute(System.Type t) {} }
+}
+// The new Input System, which this project uses (activeInputHandler: 1).
+// Stubbed so the ENABLE_INPUT_SYSTEM branch of FlyCamera is actually compiled
+// rather than skipped — the legacy branch compiling proves nothing about the
+// one that runs.
+namespace UnityEngine.InputSystem {
+  public class ButtonControl { public bool isPressed => false; }
+  public class Vector2Control { public Vector2 ReadValue() => default; }
+  public class Mouse {
+    public static Mouse current => null;
+    public ButtonControl rightButton => null;
+    public Vector2Control delta => null;
+  }
+  public class Keyboard {
+    public static Keyboard current => null;
+    public ButtonControl wKey => null;
+    public ButtonControl aKey => null;
+    public ButtonControl sKey => null;
+    public ButtonControl dKey => null;
+    public ButtonControl qKey => null;
+    public ButtonControl eKey => null;
+    public ButtonControl leftShiftKey => null;
+  }
 }
 namespace UnityEngine.SceneManagement {
   public static class SceneManager { public static void LoadScene(string name) {} }
