@@ -37,13 +37,16 @@ namespace TrapMadeIt.World
             client = GetComponent<MapClient>();
 
             // Take the shader from the ground material rather than looking it
-            // up by name.
+            // up by name. This is the fix for three rounds of magenta.
             //
-            // The ground renders correctly, so whatever shader IT holds is
-            // definitely valid and definitely loaded. Shader.Find depends on
-            // the shader being reachable by name at runtime, which is an
-            // assumption — and the magenta says an assumption in here is wrong.
-            // Borrowing a known-good one removes the guess.
+            // Shader.Find("Universal Render Pipeline/Lit") returns NULL at
+            // runtime here. URP shaders are not reachable by name unless
+            // something already references them, and `new Material(null)` is
+            // exactly what magenta is. The ground material renders correctly,
+            // so the shader IT holds is known-good and known-loaded — borrowing
+            // that is reliable where a name lookup is not.
+            //
+            // Anything else needing a shader at runtime should do the same.
             Shader known = groundMaterial != null ? groundMaterial.shader : null;
             if (known == null) known = Shader.Find("Universal Render Pipeline/Lit");
             if (known == null) known = Shader.Find("Universal Render Pipeline/Simple Lit");
