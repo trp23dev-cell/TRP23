@@ -56,6 +56,9 @@ namespace TrapMadeIt.World
         MapClient client;
         readonly Dictionary<Vector2Int, GameObject> live = new Dictionary<Vector2Int, GameObject>();
         readonly Dictionary<Vector2Int, TerrainPatch> patches = new Dictionary<Vector2Int, TerrainPatch>();
+
+        /// Footprints for the tiles currently in, so walking hits walls.
+        public WorldCollision Collision { get; } = new WorldCollision();
         readonly HashSet<Vector2Int> inFlight = new HashSet<Vector2Int>();
         Vector2Int? lastTile;
         bool ready;
@@ -146,6 +149,11 @@ namespace TrapMadeIt.World
                 var s = client.Manifest.spawn;
                 follow.position = new Vector3(s[0], client.Manifest.terrainRange[1] + 50f, s[1]);
                 follow.rotation = Quaternion.Euler(0f, client.Manifest.spawnYaw * Mathf.Rad2Deg, 0f);
+
+                // Hand the camera the collider set. Doing it here rather than
+                // having the camera go looking keeps the dependency one-way.
+                var walker = follow.GetComponent<FlyCamera>();
+                if (walker != null) walker.world = this;
             }
 
             Refresh(true);
@@ -204,6 +212,7 @@ namespace TrapMadeIt.World
                 Destroy(live[t]);
                 live.Remove(t);
                 patches.Remove(t);
+                Collision.RemoveTile(t);
             }
         }
 
@@ -242,6 +251,7 @@ namespace TrapMadeIt.World
 
                 live[t] = go;
                 patches[t] = payload.t;
+                Collision.AddTile(t, payload.b);
             });
         }
 

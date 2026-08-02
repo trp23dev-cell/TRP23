@@ -72,3 +72,5 @@ Unity/**/[Rr]ecordings/
 Thumbs.db
 tools/csharp-check/obj/
 tools/csharp-check/bin/
+tools/collision-check/obj/
+tools/collision-check/bin/

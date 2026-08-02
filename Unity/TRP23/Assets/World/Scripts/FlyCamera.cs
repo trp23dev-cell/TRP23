@@ -29,6 +29,12 @@ namespace TrapMadeIt.World
 
         public bool Flying { get; private set; } = true;
 
+        /// <summary>
+        /// Set by WorldStreamer once the map is in. Walking consults it so you
+        /// hit walls; flying ignores it, or you could not get above the roofs.
+        /// </summary>
+        [HideInInspector] public WorldStreamer world;
+
         float yaw, pitch;
         float lastSpaceTap = -10f;
 
@@ -72,7 +78,13 @@ namespace TrapMadeIt.World
             // Walking keeps you on the ground, so forward means forward along
             // the street rather than into the pavement when looking down.
             if (!Flying) step.y = 0f;
-            transform.position += step;
+
+            var next = transform.position + step;
+            // Buildings only stop you on foot. Flying through them is how you
+            // check the inside of a roof, and blocking it would make the fly
+            // mode useless for the thing it exists to do.
+            if (!Flying && world != null) next = world.Collision.Resolve(transform.position, next);
+            transform.position = next;
         }
 
 #if ENABLE_INPUT_SYSTEM

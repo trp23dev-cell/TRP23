@@ -27,7 +27,8 @@
     "check:api": "node scripts/check-api-security.mjs",
     "admin:create": "node scripts/create-admin.mjs",
     "check:deploy": "node scripts/check-deploy.mjs",
-    "check:csharp": "dotnet build tools/csharp-check/check.csproj -v q --nologo"
+    "check:csharp": "dotnet build tools/csharp-check/check.csproj -v q --nologo",
+    "check:collision": "dotnet run --project tools/collision-check/check.csproj -c Release -v q --nologo"
   },
   "dependencies": {
     "@capacitor/core": "^7.4.2",

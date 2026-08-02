@@ -21,6 +21,7 @@ namespace UnityEngine {
   }
   public class HeaderAttribute : Attribute { public HeaderAttribute(string h) {} }
   public class TooltipAttribute : Attribute { public TooltipAttribute(string t) {} }
+  public class HideInInspector : Attribute {}
   public class SerializeFieldAttribute : Attribute {}
   public class GameObject : Object {
     public GameObject() {}
@@ -60,10 +61,15 @@ namespace UnityEngine {
     public static Color white => default;
     public static Color operator *(Color c, float f) => c;
   }
+  // These used to be shaped like stubs -- Sqrt returning its argument, and
+  // FloorToInt truncating toward zero, which is a DIFFERENT number from floor
+  // for anything negative, and half of Lincoln is at negative coordinates.
+  // Fine while nothing ran, and a trap the moment something did. They are real
+  // now, so logic compiled against them can also be executed against them.
   public static class Mathf {
-    public static float Sqrt(float f) => f;
+    public static float Sqrt(float f) => (float)System.Math.Sqrt(f);
     public const float Deg2Rad = 0.0174533f, Rad2Deg = 57.2958f;
-    public static int FloorToInt(float f) => (int)f;
+    public static int FloorToInt(float f) => (int)System.Math.Floor(f);
     public static float Abs(float f) => f < 0 ? -f : f;
     public static int Abs(int i) => i < 0 ? -i : i;
     public static float Clamp(float v,float a,float b) => v<a?a:(v>b?b:v);
@@ -71,7 +77,8 @@ namespace UnityEngine {
     public static float Clamp01(float v) => Clamp(v,0f,1f);
     public static float Max(float a,float b) => a>b?a:b;
     public static float Min(float a,float b) => a<b?a:b;
-    public static float Sin(float f) => f;
+    public static float Sin(float f) => (float)System.Math.Sin(f);
+    public static float MaxValue => float.MaxValue;
   }
   public class Mesh : Object {
     public string name; public Vector3[] vertices { get; set; } public Vector2[] uv { get; set; }

@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <NoWarn>CS0649;CS0169;CS0108;CS0414</NoWarn>
+    <AssemblyName>collision-check</AssemblyName>
+    <RootNamespace>TrapCollisionCheck</RootNamespace>
+    <BaseIntermediateOutputPath>obj/</BaseIntermediateOutputPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- The REAL collision code, not a copy of it. A copy would drift, and a
+         test of a copy proves nothing about what Unity runs. -->
+    <Compile Include="../csharp-check/UnityStubs.cs" />
+    <Compile Include="../../Unity/TRP23/Assets/World/Scripts/TrapGeo.cs" />
+    <Compile Include="../../Unity/TRP23/Assets/World/Scripts/TileModels.cs" />
+    <Compile Include="../../Unity/TRP23/Assets/World/Scripts/WorldCollision.cs" />
+    <Compile Include="Program.cs" />
+  </ItemGroup>
+</Project>
