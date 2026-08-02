@@ -112,7 +112,12 @@ namespace TrapMadeIt.World
             if (!ready || follow == null) return;
             Refresh(false);
 
-            // Keep the player on the ground once the tile under them exists.
+            // Only pin to the ground when walking. Doing it while flying drags
+            // the camera back down the moment you gain height, which makes it
+            // impossible to look at the city from above.
+            var flyer = follow.GetComponent<FlyCamera>();
+            if (flyer != null && flyer.Flying) return;
+
             if (TryGroundHeight(follow.position.x, follow.position.z, out float y))
             {
                 var p = follow.position;

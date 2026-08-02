@@ -58,8 +58,12 @@ namespace TrapMadeIt.World.EditorTools
             streamer.roofMaterial = roof;
 
             EditorSceneManager.MarkSceneDirty(scene);
-            Debug.Log("[TRAP] World test scene built. Press Play. " +
-                      "Right-drag to look, WASD to move, Q/E down and up, shift to hurry.");
+            Debug.Log("[TRAP] World test scene built. Press Play.\n" +
+                      "  right-drag  look\n" +
+                      "  WASD        move\n" +
+                      "  double-tap space  fly / walk\n" +
+                      "  Q / E       down / up (flying only)\n" +
+                      "  shift       hurry");
         }
 
         /// <summary>

@@ -41,7 +41,9 @@ namespace UnityEngine {
     public float sqrMagnitude => x*x+y*y+z*z;
     public Vector3 normalized => this;
     public static Vector3 operator +(Vector3 a, Vector3 b) => new Vector3(a.x+b.x,a.y+b.y,a.z+b.z);
+    public static Vector3 operator -(Vector3 a, Vector3 b) => new Vector3(a.x-b.x,a.y-b.y,a.z-b.z);
     public static Vector3 operator *(Vector3 a, float f) => new Vector3(a.x*f,a.y*f,a.z*f);
+    public static Vector3 Cross(Vector3 a, Vector3 b) => default;
   }
   public struct Vector2Int {
     public int x, y; public Vector2Int(int x,int y){this.x=x;this.y=y;}
@@ -65,6 +67,7 @@ namespace UnityEngine {
     public static int Clamp(int v,int a,int b) => v<a?a:(v>b?b:v);
     public static float Clamp01(float v) => Clamp(v,0f,1f);
     public static float Max(float a,float b) => a>b?a:b;
+    public static float Min(float a,float b) => a<b?a:b;
   }
   public class Mesh : Object {
     public string name; public Vector3[] vertices { get; set; } public Vector2[] uv { get; set; }
@@ -78,6 +81,7 @@ namespace UnityEngine {
   }
   namespace Rendering { public enum IndexFormat { UInt16, UInt32 } }
   public class Transform : Component {
+    public T GetComponent<T>() where T : Component, new() => new T();
     public Vector3 position { get; set; } public Quaternion rotation { get; set; }
     public void SetParent(Transform p, bool w) {}
     public Vector3 TransformDirection(Vector3 v) => v;
@@ -109,7 +113,7 @@ namespace UnityEngine {
     public static float GetAxisRaw(string n) => 0f;
   }
   public enum KeyCode { E, Q, LeftShift }
-  public static class Time { public static float deltaTime => 0f; }
+  public static class Time { public static float deltaTime => 0f; public static float time => 0f; }
   public class RequireComponentAttribute : System.Attribute { public RequireComponentAttribute(System.Type t) {} }
 }
 // The new Input System, which this project uses (activeInputHandler: 1).
@@ -117,7 +121,7 @@ namespace UnityEngine {
 // rather than skipped — the legacy branch compiling proves nothing about the
 // one that runs.
 namespace UnityEngine.InputSystem {
-  public class ButtonControl { public bool isPressed => false; }
+  public class ButtonControl { public bool isPressed => false; public bool wasPressedThisFrame => false; }
   public class Vector2Control { public Vector2 ReadValue() => default; }
   public class Mouse {
     public static Mouse current => null;
@@ -133,6 +137,7 @@ namespace UnityEngine.InputSystem {
     public ButtonControl qKey => null;
     public ButtonControl eKey => null;
     public ButtonControl leftShiftKey => null;
+    public ButtonControl spaceKey => null;
   }
 }
 namespace UnityEngine.SceneManagement {
