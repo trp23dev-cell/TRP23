@@ -82,11 +82,30 @@ so it takes a bootstrap token supplied out of band:
 
 After that, further staff accounts are created by an admin using their session.
 
-## 3. Before you invite anyone real
+## 3. Check it from outside
+
+```bash
+npm run check:deploy -- --url https://<your-app>.up.railway.app
+```
+
+Every failure this catches is silent. A misconfigured deploy answers 200, serves
+the game and looks completely fine — until a redeploy wipes every account, or a
+handful of logins locks out the world. Run it after the first deploy and after
+any change to the variables.
+
+```
+configuration:
+  ok  the database is on a persistent volume — DATA_DIR is set
+  ok  the proxy is trusted — TRUST_PROXY=1
+  ok  running in production mode — NODE_ENV=production
+```
+
+## 4. Before you invite anyone real
 
 - [ ] Volume mounted and `DATA_DIR` set — otherwise accounts vanish on redeploy
 - [ ] `ADMIN_BOOTSTRAP_TOKEN` removed after first use
 - [ ] `npm run check:repo` passes — no keys, keystores or databases tracked
+- [ ] `npm run check:deploy -- --url https://<your-app>.up.railway.app` is clean
 - [ ] `npm run check:api` passes against the deployed URL:
       `API=https://<your-app>.up.railway.app npm run check:api`
 - [ ] Any credential that was ever committed has been **revoked and reissued**,

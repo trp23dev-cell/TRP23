@@ -453,7 +453,31 @@ async function handleRequest(req, res) {
   const pctx = playerAuthContext(req);
 
   if (req.method === "GET" && pathname === "/api/health") {
-    sendJson(res, 200, { ok: true, service: "mock-api", schemaVersion: store.getSchemaVersion() });
+    // Readiness, not just liveness. A deploy can answer 200 while being
+    // misconfigured in ways nobody notices until it costs something: the
+    // database on ephemeral disk (every redeploy wipes accounts), or the proxy
+    // untrusted (every player shares one rate-limit bucket). Both are silent.
+    //
+    // Booleans only, no paths or secrets. This is the same posture a readiness
+    // probe exposes, and being able to check it from outside is worth more than
+    // the little it tells anyone.
+    const manifest = store.getMapManifest();
+    sendJson(res, 200, {
+      ok: true,
+      service: "mock-api",
+      schemaVersion: store.getSchemaVersion(),
+      deploy: {
+        // false means the database lives inside the deployment and every
+        // redeploy destroys it.
+        persistentStorage: !!process.env.DATA_DIR,
+        // false behind a proxy means the rate limiter sees one address for
+        // everyone.
+        trustProxy: process.env.TRUST_PROXY === "1",
+        production: process.env.NODE_ENV === "production",
+        mapTiles: manifest?.tiles?.length || 0,
+        staffAccounts: store.countAdminUsers(),
+      },
+    });
     return;
   }
 
