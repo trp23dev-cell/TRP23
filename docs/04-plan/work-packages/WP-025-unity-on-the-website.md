@@ -13,7 +13,11 @@
 
 The founder's intent is to **replace the web build on the website with Unity**. That is the right long-term direction — one codebase, one source of truth — but it deserves a spike before it becomes a commitment, because it is not the same as shipping Unity to phones as an app.
 
-**The honest risk, stated up front.** The current web build's superpower is that it is **~550 KB and playable in three seconds from a link**. For a clothing brand, that low-friction shop window is worth a great deal. A Unity WebGL build is typically tens of megabytes, takes appreciably longer to start, and on **mobile browsers** — especially iOS Safari, which enforces hard memory limits — a streamed 4 km² city is a genuinely difficult ask. Unity 6 has improved this materially (WebGPU, better memory handling), but it has not made mobile web equivalent to native.
+**The honest risk, stated up front — and narrowed.** The current web build's superpower is that it is **~550 KB and playable in three seconds from a link**. For a clothing brand, that low-friction shop window is worth a great deal.
+
+**The map is not the problem.** All of Lincoln is 5.8 MB gzipped, which is unremarkable. The weight is the **Unity WebGL runtime and the engine's memory footprint** — tens of megabytes before any content, against a hard ceiling in iOS Safari in particular. Unity 6 has improved this materially (WebGPU, better memory handling), but it has not made mobile web equivalent to native.
+
+So the question is narrower than it first looked: not *"can we deliver the city to a browser"* — plainly yes — but *"does a Unity WebGL page still load fast enough, and survive on an iPhone, to do the job the current page does?"*
 
 So the question is not "can Unity build to the web" — it can. It is: **does the resulting page still do the job the current one does?** If it takes 30 seconds to load and dies on an iPhone, replacing the web build makes the funnel worse, not better.
 

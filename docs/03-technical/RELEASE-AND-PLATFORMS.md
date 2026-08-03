@@ -46,7 +46,7 @@ Offline play (a console cannot require a server for single-player) · certificat
 | Render pipeline | URP | URP, reduced | URP, reduced | URP |
 | Target frame rate | 60 | 30–60 | 60 | 60 |
 | Texture budget | full | halved | halved | full |
-| Streaming radius | 3×3 tiles | 2×2 | 2×2 | 3×3 |
+| Map delivery | bundled | **bundled** | **bundled** | bundled |
 | Shadows | dynamic | baked + one dynamic | baked + one dynamic | dynamic |
 | Text entry | keyboard | touch | touch | controller keyboard |
 | Payments | web | Play Billing / web | IAP / web | platform only |
@@ -65,8 +65,15 @@ Set against the **worst** supported device, not the development machine. Provisi
 | Draw calls | < 2,000 | < 400 |
 | Triangles | < 3 M | < 500 k |
 | Texture memory | < 2 GB | < 512 MB |
-| Streaming hitch | < 5 ms | < 10 ms |
+| Streaming hitch | n/a — map is bundled | n/a — map is bundled |
 | Cold start | < 15 s | < 25 s |
+
+**The map ships inside the build, not over the network.** The whole 4 km² of
+Lincoln is 5.8 MB gzipped — 294 tiles, 6,947 buildings — which is nothing
+against a 100–500 MB app. Streaming it was a *browser* constraint that got
+carried into a platform which does not have one. The network path survives only
+so a rebuilt map can reach existing installs without a store release. See
+[WP-026](../04-plan/work-packages/WP-026-offline-map.md).
 
 **Stable playability beats screenshots.** The directive is explicit: a stable 60 FPS unless another target is deliberately approved.
 

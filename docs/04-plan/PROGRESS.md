@@ -50,6 +50,7 @@ Full work packages are written **as each is picked up**, one horizon ahead — n
 | 023 | Analytics with consent | AI | S | ⬜ | — |
 | [024](work-packages/WP-024-unity-mobile-parity.md) | **Unity mobile parity with the deployed web build** | AI + **HUMAN** | L | ⬜ | 010, 011, 021 |
 | [025](work-packages/WP-025-unity-on-the-website.md) | Unity on the website — WebGL feasibility spike | AI + **HUMAN** | S | ⬜ | 024 |
+| [026](work-packages/WP-026-offline-map.md) | **Ship the map with the app** (5.8 MB — stop streaming on mobile) | AI + **HUMAN** | M | ⬜ | 008 |
 
 ---
 

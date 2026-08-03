@@ -129,6 +129,7 @@ Effort bands, not dates: **S** ≈ days · **M** ≈ 1–3 weeks · **L** ≈ 1�
 | 023 | Analytics events with consent | AI | S |
 | 024 | **Unity mobile parity with the deployed web build** | AI + **HUMAN** | L |
 | 025 | Unity on the website — WebGL feasibility spike | AI + **HUMAN** | S |
+| 026 | **Ship the map with the app** — 5.8 MB, no streaming on mobile | AI + **HUMAN** | M |
 
 **Exit criteria:** a stranger plays it on a phone and a PC without help and understands what TRP23 is · 60 FPS on target hardware · every valuable action server-authoritative.
 **Not included:** multiplayer · player-rented shops · real payments taken · consoles · cities beyond Lincoln.
@@ -241,5 +242,5 @@ Live status: **[PROGRESS.md](PROGRESS.md)**.
 | Horizon | Packages | Done |
 |---|---|---|
 | 0 — Stabilise | 9 | 5 |
-| 1 — Vertical slice | 16 | 0 (1 partial) |
+| 1 — Vertical slice | 17 | 0 (1 partial) |
 | 2–5 | titles only, by design | — |

@@ -43,7 +43,9 @@ WebGL (see **WP-025** — that is a different build with different constraints) 
 
 **Do not port the web UI markup.** Unity's UI Toolkit already mirrors the visual language in `TrapTokens.uss`. Parity means *the player can do the same things and it looks like the same brand* — not that the DOM was translated element for element.
 
-**The mid-range Android is the target that decides everything.** A flagship phone will run 4 km² of streamed Lincoln; a three-year-old Android is where the budget gets set (see `RELEASE-AND-PLATFORMS.md`).
+**The mid-range Android is the target that decides everything.** A flagship phone will run 4 km² of Lincoln; a three-year-old Android is where the budget gets set (see `RELEASE-AND-PLATFORMS.md`).
+
+**The map ships with the app** — see [WP-026](WP-026-offline-map.md). What remains on mobile is a *rendering* budget (how much geometry is live at once), not a delivery one.
 
 **Touch and gamepad are the same problem.** Both are "no mouse, no hover". Building touch properly now makes the console requirement mostly free — so do it once, through Unity's Input System, which is already in the manifest.
 
