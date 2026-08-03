@@ -1,3 +1,11 @@
+> ⚠️ **SUPERSEDED — 3 August 2026.** Replaced by [`docs/01-audit/MASTER-REPOSITORY-AUDIT.md`](../../docs/01-audit/MASTER-REPOSITORY-AUDIT.md).
+>
+> Describes the Phase 2 scaffold as it was designed, not as it turned out.
+>
+> Kept for history. **Do not treat as current status.**
+
+---
+
 # Phase 2 Foundation (Non-Breaking)
 
 This scaffold adds content management primitives without changing the live gameplay code paths yet.

@@ -30,7 +30,7 @@ Access to this repository does not grant any license to use associated trademark
 - `src/data/contentStore.js`: Local storage content store + import/export.
 - `src/admin.js`: Admin page logic.
 - `src/admin.css`: Admin page styles.
-- `docs/PHASE2-FOUNDATION.md`: Notes on what was scaffolded and next integration steps.
+- `docs/` — see [docs/README.md](docs/README.md) for the full documentation index.
 - `TRAP-MADE-IT-game.html`: Original single-file prototype kept for reference.
 
 ## Run locally
@@ -108,8 +108,8 @@ http://localhost:8787/api/health
 - Optimization (code-splitting and lazy loading) can be tackled as the next step.
 - Admin scaffold now syncs to local mock API with local fallback and supports JSON import/export for handoff/versioning.
 - Mock API data persists in SQLite at `server/storage/trapmadeit.db`.
-- Render pipeline baseline and asset migration plan are documented in `docs/RENDER-PIPELINE.md`.
-- Unity handoff packaging and import guidance are documented in `docs/UNITY-HANDOFF.md`.
+- Render pipeline baseline and asset migration plan are documented in `docs/03-technical/RENDER-PIPELINE.md`.
+- Unity handoff packaging and import guidance are documented in `docs/03-technical/UNITY-HANDOFF.md`.
 
 ## Mock API Scope
 
@@ -164,57 +164,56 @@ Run end-to-end backend verification (starts mock API, executes route checks, the
 npm run test:api
 ```
 
-## Quality Gates CI
+## Quality gates
 
-- Workflow: `.github/workflows/quality-gates.yml`
-- Runs on push/PR and executes:
-	- `npm run validate:rooms`
-	- `npm run build`
-	- `npm run test:api`
-	- `npm run export:unity`
+> **There is no CI.** `.github/` does not exist. This section previously
+> described a `quality-gates.yml` workflow running on push; it was never
+> created, so for two weeks nothing was checked on push while the README said
+> otherwise. Standing these up is a tracked item — see
+> [docs/MASTER-REPOSITORY-AUDIT.md](docs/01-audit/MASTER-REPOSITORY-AUDIT.md) D5.
 
-## iOS App Pipeline (TestFlight)
-
-This repository now includes Capacitor scaffolding to package the app for iPhone distribution via TestFlight.
-
-- Config file: `capacitor.config.ts`
-- iOS env template: `.env.ios.example`
-- Release guide: `docs/IOS-TESTFLIGHT-RELEASE.md`
-
-Common commands:
+Until then these are run by hand, and all five must pass before a deploy:
 
 ```bash
-npm run ios:prepare
-npm run ios:sync
-npm run ios:open
+npm run validate:rooms   # room asset registry preflight
+npm run build            # Vite production build
+npm run test:api         # route liveness against a throwaway server
+npm run check:api        # security + economy integrity suite
+npm run check:trap       # the trap card's five states
+npm run check:repo       # no credentials or databases tracked
 ```
 
-Note: final iOS archive/signing/upload requires macOS + Xcode and Apple Developer credentials.
-
-Team release automation:
-
-- GitHub Actions workflow: `.github/workflows/ios-testflight.yml`
-- Full setup and secrets checklist: `docs/IOS-TESTFLIGHT-RELEASE.md`
-
-## Android App Pipeline (Google Play + Direct APK)
-
-This repository now includes Capacitor scaffolding to package the app for Android distribution via APK or Google Play Store.
-
-- Config file: `capacitor.config.ts`
-- Android env template: `.env.android.example`
-- Release guide: `docs/ANDROID-RELEASE.md`
-
-Common commands:
+Two more need the .NET SDK and cover the Unity client without opening Unity:
 
 ```bash
-npm run android:prepare
-npm run android:sync
-npm run android:open
+npm run check:csharp     # compiles the C# against Unity stubs
+npm run check:world      # collision/geometry checks
 ```
 
-Team release automation:
+## Mobile packaging (iOS / Android) — not yet generated
 
-- GitHub Actions workflow: `.github/workflows/android-release.yml`
-- Full setup and secrets checklist: `docs/ANDROID-RELEASE.md`
+> **What exists:** `capacitor.config.ts` and two release guides
+> ([iOS](docs/05-operations/IOS-TESTFLIGHT-RELEASE.md), [Android](docs/05-operations/ANDROID-RELEASE.md)).
+>
+> **What does not exist:** the `ios/` and `android/` projects, the
+> `.env.ios.example` and `.env.android.example` templates, and the
+> `ios-testflight.yml` / `android-release.yml` workflows. All four were
+> described here as if present. They are not, and `npm run ios:open` will fail
+> until `npx cap add ios` has been run.
 
-Note: final Android APK signing requires keystore credentials and Google Play distribution requires a developer account (one-time 25 USD).
+The `ios:*` and `android:*` scripts in `package.json` are the intended entry
+points once the platform projects are generated:
+
+```bash
+npx cap add ios          # generates ios/    (needs macOS + Xcode)
+npx cap add android      # generates android/ (needs Android Studio)
+```
+
+Final iOS archive/signing/upload requires macOS, Xcode and Apple Developer
+credentials. Android release signing requires a keystore, and Google Play
+distribution requires a developer account (one-time 25 USD).
+
+**Note on direction:** the mobile path is under review. See
+[docs/MASTER-REPOSITORY-AUDIT.md](docs/01-audit/MASTER-REPOSITORY-AUDIT.md) §G — the
+recommendation is that Unity becomes the shipped client for PC/iOS/Android and
+this Capacitor-wrapped web build stays as the instant-play shop window.

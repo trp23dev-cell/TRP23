@@ -1,0 +1,418 @@
+# Execution Log
+
+One entry per work session, per the master directive §23. Newest last.
+
+---
+
+## Session 1 — 3 August 2026
+
+### Objective
+
+Complete repository audit per master directive §3. Produce `docs/MASTER-REPOSITORY-AUDIT.md`. No implementation until the audit is confirmed.
+
+### Files inspected
+
+All 271 tracked files were listed and classified. Read in full or in substantial part:
+
+- **Docs:** `README.md`, `Build_Progress.md`, `Bible_Planning_Devwork.MD`, `Team_Brief_The_Real_Build.md`, all 8 files in `docs/`, `Bibile /` directory listing (14 volumes, PDF/DOCX — titles and structure only)
+- **Server:** `server/mockApiServer.js` (1,790 lines, read in full), `server/storage/sqliteStore.js` (schema + all transaction primitives), `server/rateLimit.js`, `server/totp.js`, `server/dev-full.js`
+- **Client:** `src/game.js` (outline + key functions), `src/world/*` (all 8), `src/render/*` (all 5), `src/data/*` (all 5), `src/api/*` (all 10), `src/admin.js`, `index.html`
+- **Scripts:** `scripts/build-map-tiles.mjs`, `check-api-security.mjs`, `check-repo-hygiene.mjs`, `export-unity-handoff.mjs`, `lib/*`
+- **Unity:** all 28 tracked `.cs` files, `Packages/manifest.json`, `ProjectSettings/ProjectVersion.txt`, scene inventory
+- **Config:** `package.json`, `.gitignore`, `vite.config.js`, `railway.json`, `nixpacks.toml`, `capacitor.config.ts`, `.claude/settings.json`
+- **Git:** 85 commits, full log since 2026-07-27, `--diff-filter=A` scan for historical secrets
+
+### Commands run
+
+```
+npm run validate:rooms     ✅ "registry preflight: clean"
+npm run check:repo         ✅ "271 tracked files, no credentials or databases"
+npm run build              ✅ 41 modules, 3.01s (chunk-size warning)
+npm run test:api           ✅ "all checks passed"
+npm run check:api          ✅ 18/18 security checks passed
+```
+
+Not run: `npm run check:csharp`, `npm run check:world` (require .NET SDK), Unity editor (no licence in this environment). Unity runtime state is therefore asserted from source — recorded as D14.
+
+### Findings
+
+Full detail in `docs/MASTER-REPOSITORY-AUDIT.md`. Headlines:
+
+- **The project is further along than its own documentation claims.** Real Lincoln from OSM + LIDAR, streamed to two clients from one server, with collision, weather and a progress-driven light arc.
+- **Four defects reproduced empirically** against a throwaway server on a clean database (not inferred from reading):
+  - `/api/rewards/claim` pays `body.rewardCoins` — asked for 999,999,999 on a 150-coin mission, got it
+  - `/api/wallet/topup` — unlimited 1,000,000-coin credits, no payment processor, no env gate
+  - `GET /api/commerce/orders` — HTTP 200 with no auth header, returns all orders with player ids
+  - Deep-link SPA fallback — `serveStatic(res, "/index.html")` passes 2 args to a 3-arg function; `/some/deep/link` → 404
+- **All five quality gates pass green over the above**, because no test covers the economy.
+- **CI does not exist.** `README.md` documents three GitHub Actions workflows, two env templates and iOS/Android projects. None are present.
+- **`docs/COMPLETION-STATUS.md` marks 21/21 items "COMPLETE"** including commerce and the admin dashboard.
+- **Secrets remain in git history** in two copies, including `trapmadeit.db`. The Apple `.p8` was revoked 2026-07-31 and is inert; the database is not, and whether it held real player rows is an open factual question with GDPR consequences.
+- **Chapter names disagree across three files** — only `defaultContent.js` reaches the player.
+
+### Decisions
+
+1. **Doc scope** (founder, this session): produce the full document set from the brief, consolidating rather than repeating `Bible_Planning_Devwork.MD`. The audit supersedes that document's Part 1 only.
+2. **Money-path fixes** (founder, this session): first implementation batch, immediately after audit sign-off.
+3. **Client architecture** (delegated to me, this session): **Unity is the product; the web build becomes a frozen shop window.** Reasoning in audit §G. Conditional on verifying the Unity project actually runs (D14).
+4. **Source of truth** established per audit §F. Four documents marked for superseded banners rather than deletion, per §3F of the directive.
+
+### Files changed
+
+- `docs/MASTER-REPOSITORY-AUDIT.md` — new
+- `docs/CLAUDE-EXECUTION-LOG.md` — new (this file)
+
+No source code changed. No commits made.
+
+### Unresolved issues
+
+- **D4:** did `server/storage/trapmadeit.db` contain real player rows when committed? Founder question. Determines breach-notification duty.
+- **D14:** Unity runtime unverified. Blocks acting on the §G recommendation.
+- **Live exposure:** the Railway deploy has D1a/D1b/D1c open right now.
+- Founder decisions still open from `Bible_Planning_Devwork.MD` §F: two-currency model, Apple IAP position on coin top-ups, Stripe vs Shopify headless, narrative charter sign-off, launch scope, founder legal name (Kamani Dean Smith vs KimaniTheBarber in the README copyright).
+
+### Next recommended action
+
+Founder reads and confirms the audit. On confirmation: first implementation batch (audit §H), then the remaining directive documents (§4–§21) written against this audit rather than the 27 July snapshot.
+
+---
+
+## Session 2 — 3 August 2026
+
+### Objective
+
+Audit confirmed by founder; Unity confirmed running (closes D14, unblocks audit §G). Two tasks: implement the money-path batch (audit §H), then design the mission system and the premises/merchant system per founder instruction.
+
+### Decisions
+
+1. **Unity verified working by the founder** — the §G recommendation (Unity is the product, web becomes a frozen shop window) is now actionable.
+2. **Mission design:** the core mechanic is the **Commitment** — a promise the player sets, measured in real elapsed time, that the world remembers, with a repair path for every break. Rationale in `MISSION-DESIGN-BIBLE.md` §3.
+3. **Premises abstraction:** the bank, the barber and future rentable shopfronts are **one system in three operator configurations** (HOUSE / PARTNER / PLAYER), not three features. Building the barber properly *is* building the merchant platform.
+4. **The barber booking carries no payment** — paid in the chair, as today. Removes e-money, PSD2, Apple IAP, chargebacks and refunds from v1 entirely, and is why it can ship before real commerce.
+5. **Tenancies should be earned with Standing, not bought with money** — recommendation pending founder sign-off; it is a doctrine decision.
+
+### Files changed
+
+**Money-path batch (audit §H):**
+
+- `server/mockApiServer.js`
+  - `/api/rewards/claim` — reward amount and discount code now read from the server-held catalogue; unknown missions 404; response reports what was actually granted
+  - `/api/wallet/topup` — 404 unless `ALLOW_DEV_TOPUP=1`
+  - `/api/commerce/orders` — staff see all and may filter; players see only their own; anonymous 401
+  - `serveStatic` deep-link fallback — arg-order bug fixed
+  - `/api/health` — added `deploy.devTopup`
+- `scripts/check-api-security.mjs` — new **economy integrity** section (12 checks) and a deep-link check
+- `scripts/smoke-api.mjs` — real catalogue mission ids; authenticated order-book call
+- `index.html` — top-up row hidden by default; removed the "£10 = 1,000 Trap Coins" price the site could not honour
+- `src/game.js` — reveals the top-up row only when the server reports the route open
+- `README.md` — corrected the false CI and iOS/Android claims
+
+**Design:**
+
+- `docs/MISSION-DESIGN-BIBLE.md` — new
+- `docs/MERCHANT-AND-PLAYER-BUSINESS-SYSTEM.md` — new
+
+No commits made.
+
+### Commands run
+
+```
+npm run check:api        ✅ 32 checks (was 18) — incl. 12 new economy checks
+npm run test:api         ✅ all checks passed
+npm run build            ✅ 4.31s
+npm run validate:rooms   ✅ clean
+npm run check:repo       ✅ 271 tracked files, no credentials or databases
+```
+
+Two intermediate failures occurred and were fixed:
+- Economy baseline was stale — the `board` claim legitimately paid its catalogue 100 coins, so the assertion, not the server, was wrong.
+- `smoke-api.mjs` called the order book unauthenticated, which the fix correctly rejected.
+
+### Findings
+
+Original exploit re-run against the patched server:
+
+| | Before | After |
+|---|---|---|
+| Claim 999,999,999 on a 150-coin mission | granted | **granted 150** |
+| Topup 1,000,000 | granted | **404** |
+| `GET /api/commerce/orders` anonymous | 200 + all orders | **401** |
+| `GET /some/deep/link` | 404 | **200** |
+
+### Unresolved issues
+
+- **D4 unanswered:** did `server/storage/trapmadeit.db` hold real player rows when committed? Determines GDPR breach-notification duty.
+- **The barber has not been asked.** Blocks the flagship mission; his current diary process determines the design.
+- Founder decisions open: earned vs bought tenancies; deletion of the purchase-gated `own1` mission; permission to use real trading names (NatWest, JD); two-currency model; under-18 booking policy.
+- D2 (single-entry ledger, no idempotency keys) untouched — must be fixed before real money.
+- D5 (no CI) untouched — the five gates still run only by hand.
+
+### Next recommended action
+
+Founder answers §13 of the mission bible and §8 of the merchant doc. Highest-value build, independent of those answers: **"Name your trap"** (Chapter 01 card + Chapter 06 callback) — the emotional spine, near-zero technical risk, already scoped in `Build_Progress.md` 7.1.
+
+---
+
+## Session 3 — 3 August 2026
+
+### Objective
+
+Act on founder direction: delete the purchase-gated mission; incorporate booking deposits, real-money shopfront rent, character creation and Lincoln rendering into the design; and produce the register of real-world integrations the founder asked for.
+
+### Context established this session
+
+- **Kimani (the barber) owns the project.** Richard is lead developer. This resolves `Bible_Planning_Devwork.MD` §1.5's open founder-name question and collapses most of the third-party-partner design in the merchant doc — though his *customers* remain third parties whose data and safety are ours to protect.
+
+### Decisions
+
+1. **`own1` deleted** (founder-approved). Content bumped to **v3**; client cache key bumped to match, per the `Build_Progress.md` 6.2 lesson.
+2. **`own2`/`own3` retained deliberately.** Same doctrine contradiction, but deleting them bare would leave chapters 03 and 05 with a single mission each. They are **replaced, not deleted**, in the chapter rebuild.
+3. **Booking deposits — design revised.** "No payment at all" does not survive contact with a real business: a no-show costs a chair that cannot be resold. A deposit becomes a **real card payment to the barber that never converts to coins**.
+4. **The Trust marriage** — high Trust books without a deposit, low Trust pays one. Makes Trust financially meaningful (a credit rating earned by keeping your word) and gives a player a reason to care about it on day one.
+5. **Tenancy resolved** — **earned eligibility, paid rent**. Standing decides if you are considered; rent (£10–50/mo by size and location) is what you pay once you are. Preserves doctrine and the revenue line.
+6. **Google Street View rejected** as an asset source — its terms prohibit derivative 3D assets. The existing OSM + LIDAR pipeline plus the team's *own* photography and photogrammetry is both legal and better.
+7. **Character creation: fixed archetypes, not continuous sliders.** Flagged as the single biggest technical risk in the project — the product is clothing, and every garment must fit every body. 4–6 archetypes make garment fitting a finite authored cost; sliders make it an unbounded runtime problem that damages how the real product looks.
+8. **The invariant that keeps everything simple:** game coins and real money never convert in either direction.
+
+### Files changed
+
+- `src/data/defaultContent.js` — `own1` removed; version 2 → 3 with rationale
+- `src/data/contentStore.js` — cache key v2 → v3
+- `src/game.js` — `own1` removed from `BASE_LEVELS` and from `afterPurchase`
+- `docs/REAL-WORLD-INTEGRATION-REGISTER.md` — **new**, the founder-requested register
+- `docs/MISSION-DESIGN-BIBLE.md` — §7 revised for deposits + the Trust marriage
+- `docs/MERCHANT-AND-PLAYER-BUSINESS-SYSTEM.md` — §3 tenancy resolution, §4 rewritten, §8 updated
+
+No commits made.
+
+### Commands run
+
+```
+npm run build      ✅ 11.28s
+npm run test:api   ✅ all checks passed
+npm run check:api  ✅ all security checks passed
+```
+
+### Unresolved issues
+
+- 🔴 **Did anyone outside the team ever sign up?** Unanswered. Determines whether the database in public git history is a reportable GDPR breach. Explained to the founder in plain terms this session: deleting the file does not remove it; history rewrite + force push + cache purge is required.
+- 🔴 **How does Kimani run his diary today?** Blocks the entire booking design.
+- Register §7 carries seven further open items (deposit level, under-18 policy, Stripe vs Shopify, trading names, archetype count, accountant, two-currency model).
+
+### Next recommended action
+
+Unchanged: **"Name your trap"**. It depends on none of the open questions and is the emotional spine of the game.
+
+---
+
+## Session 4 — 3 August 2026
+
+### Objective
+
+Founder answered both blockers. Build **"Name your trap"** — the card the player writes in Chapter 01 and is asked about in Chapter 06.
+
+### Founder answers
+
+1. **Only the team ever signed up.** The database in git history holds team and test accounts only. **No GDPR breach, no notification duty, no clock.** Recommendation given: leave history alone (a rewrite invalidates every clone for no real gain), but rotate any password reused elsewhere, since scrypt hashes for team accounts are in a public repo. **D4 downgraded from 🔴 to hygiene.**
+2. **Kimani takes bookings by DM, phone and walk-in.** No existing software.
+
+### Consequences of answer 2
+
+We are not *integrating* with a booking system — **we are becoming one**. Technically simpler (one source of truth, no sync, no cross-system double-booking) but operationally much higher stakes: if the game holds his diary it must be reliable enough to run a business on.
+
+Two design consequences recorded:
+
+- **Walk-ins are the likeliest failure mode.** He takes someone off the street while the game sells that slot; he gets double-booked once and never trusts it again. The staff view needs *"block out the next hour"* as **one tap**, working on a phone in his pocket.
+- **Deposits apply to game bookings only**, never to his existing regulars. Asking a ten-year customer for a card deposit is a good way to lose them.
+
+### Files changed
+
+- `src/data/trapCard.js` — **new.** Pure state machine: five states, plus normalisers
+- `scripts/check-trap-card.mjs` — **new.** 17 checks
+- `package.json` — added `check:trap`
+- `index.html` — `#trapSlot` in the case file panel
+- `src/styles.css` — `.trap-card` styling; pinned like the mission cards but paler and tilted the other way, because it is the player's card and not the game's
+- `src/game.js` — `state.trapStatement` / `state.trapAnswer`, persisted through `progress`; `renderTrapCard()`; `escapeHtml()`; hover tag corrected **"THE DRAWING BOARD" → "YOUR CASE FILE"** (stale copy missed when the case file was flipped in Build_Progress 1.2 — the panel was retitled, the 3D world was not)
+
+### Design decisions
+
+- **The statement is private.** Shown back only to the player — never on the leaderboard, never in community, never to staff. Verified: it does not appear in `/api/community/leaderboard`. This is deliberate — people will write true things about themselves, and the moment it is public it stops being honest and starts needing moderation.
+- **It locks when they leave Chapter 01.** Editable while still there (typos), fixed afterwards. This is what makes Chapter 06 land: they are reading something they could not quietly have edited on the way.
+- **Never scored, in either chapter.** *"It still holds me"* is an honest answer and the game says so. The moment it scores, it stops being a mirror and becomes a test.
+- **Refactored for testability.** The five-state decision was extracted from the DOM renderer so it can be tested without a browser — no puppeteer in the project and none added.
+
+### Commands run
+
+```
+npm run check:trap       ✅ 17/17
+npm run build            ✅ 6.94s
+npm run validate:rooms   ✅ clean
+npm run test:api         ✅ all checks passed
+npm run check:api        ✅ all security checks passed
+npm run check:repo       ✅ clean
+```
+
+Plus, beyond the standard gates:
+- **Profile round-trip verified** against a throwaway server: statement written, read back byte-identical (including quotes and a `<script>` tag), answer persisted, and confirmed absent from the public leaderboard.
+- **Headless Chrome load** — clean, no console errors, before and after the refactor.
+
+**Not verified:** the visual appearance and click behaviour of the card. No browser automation is available and none was added. The state machine is unit-tested and the page loads clean, but **someone should look at it.**
+
+### Unresolved issues
+
+- The card is unverified visually — needs a human to open Chapter 01 and look.
+- `own2`/`own3` still purchase-gated, awaiting chapter rebuild.
+- D2 (single-entry ledger, no idempotency), D5 (no CI) untouched.
+- Register §7 open items: deposit level, under-18 policy, Stripe vs Shopify, trading names, archetype count, accountant, two-currency model.
+
+### Next recommended action
+
+Founder opens Chapter 01 and looks at the card. Then either the **commitment engine** (the mechanic everything else depends on) or **CI**, which is now the highest-value untouched infrastructure.
+
+---
+
+## Session 5 — 3 August 2026
+
+### Objective
+
+Correct a sequencing error: the trap card was built in the **web** client, which the agreed architecture (audit §G) freezes to bug fixes and content-data updates only. New systems belong in Unity. Port it, and put the shared-logic problem to bed while doing so.
+
+### The error, plainly
+
+Session 4 built a new system in the client we are freezing, because the scaffolding was already there and it was the easier path. The founder caught it. The trade-off should have been raised before starting, not discovered afterwards.
+
+**What survived the correction:** the server work (client-agnostic — Unity hits the same API) and the state machine, which became the specification. **What was misplaced:** the web UI. It is retained as a working visual reference for the Unity version rather than reverted, since deleting it would cost the reference and gain nothing.
+
+### Decisions
+
+1. **The trap card now exists in Unity**, driven by the same server state.
+2. **Two implementations, one table.** The state machine exists in JS and C#, and both are held against `src/data/trapCard.cases.json`. This is the direct antidote to audit **D9** (Unity's `MockAuthService` re-typed the web's signup regex by hand, and the two can now disagree with nothing noticing). Add a case to the table and both clients are held to it.
+3. **A narrow write route.** `PUT /api/player/:id/case-file`. The general profile route replaces `progress` **wholesale**, so a client sending only the two trap fields would silently destroy `currentLevel`, `missionProgress`, `walked` and `viewed` — the player's entire save. The narrow route can only touch the card.
+4. **Server-side normalisation.** The 180-character cap was enforced only by a `maxlength` attribute, which is a suggestion. Trim, cap and the answer whitelist now live on the server.
+5. **The case file is a HUD button in Unity, not a prop on a wall.** In the web build it could only be opened by standing in front of a board inside a chapter, which made the one thing that is actually *yours* the hardest thing in the game to look at.
+
+### Files changed
+
+**Unity:**
+- `Assets/UI/Scripts/CaseFile/TrapCardState.cs` — **new**, the C# state machine
+- `Assets/UI/Scripts/Auth/CaseFileService.cs` — **new**, fetch + narrow write, with hand-rolled JSON string escaping so a player writing `he said "I'm done"` cannot break the request
+- `Assets/UI/Scripts/TrapCardController.cs` — **new**, drives the five states; defensively bound so a renamed UXML element cannot take the whole HUD down
+- `Assets/UI/Menu/GameHud.uxml` — CASE FILE button + panel
+- `Assets/UI/Styles/TrapHud.uss` — `.trap-card`, pale index card against the dark HUD
+- `Assets/UI/Scripts/TrapHudController.cs` — wiring
+
+**Server / shared:**
+- `server/mockApiServer.js` — `PUT /api/player/:id/case-file`; `TRAP_STATEMENT_MAX`, `TRAP_ANSWERS`
+- `src/data/trapCard.cases.json` — **new**, the shared table
+- `src/data/trapCard.js` — **bug fixed**, see below
+- `scripts/check-trap-card.mjs` — rewritten to run the table against both clients
+- `scripts/check-api-security.mjs` — new **case file** section (7 checks)
+- `tools/trapcard-check/` — **new** dotnet console runner, compiling the *real* `TrapCardState.cs` rather than a copy (same reasoning as `tools/collision-check`)
+- `tools/csharp-check/check.csproj` — covers `UI/Scripts/CaseFile/*.cs`
+- `tools/csharp-check/UnityStubs.cs` — added `kHttpVerbPUT`/`DELETE`/`HEAD`; the stub was missing verbs real Unity has
+
+### The parity check found a real bug on its first run
+
+`trapCardState` in JS did a **truthy** check on `answer`, so any junk value that ever reached a saved profile — a legacy string, a typo — counted as an answer and **the player was never asked the question at all**. The C# copy normalised first and was correct. Fixed in JS.
+
+This is exactly the class of defect the shared table exists to catch, and it justified the approach within minutes of existing.
+
+### Commands run
+
+```
+npm run check:trap       ✅ 21 cases × 2 implementations
+npm run check:csharp     ✅ Build succeeded, 0 errors
+npm run check:world      ✅
+npm run validate:rooms   ✅
+npm run build            ✅
+npm run test:api         ✅
+npm run check:api        ✅ incl. 7 new case-file checks
+npm run check:repo       ✅
+```
+
+Manual end-to-end against a throwaway server: a narrow write preserved `currentLevel 3`, `levelsCleared 2`, `walked 42` and `missionProgress` intact; quotes survived; 500 characters stored as 180; `"cleared"` rejected as an answer; and a second player aiming at the first player's id wrote to **their own** card, leaving the first untouched.
+
+### Not verified
+
+- **The Unity UI itself.** `TrapCardController.cs` and `TrapHudController.cs` are not compile-checked — `UnityElements` is not stubbed, and `TrapHudController` was never covered either. This is a **pre-existing gap**, now slightly larger. The editor will report any error immediately on import.
+- **`.meta` files** for the four new Unity assets are not created; Unity generates them on first import.
+
+### Unresolved issues
+
+- Unity has a world and a shell but **no chapter flow**, so `_level` in the HUD is hardcoded to 0. The card is reachable and works; which chapter you are "in" is not yet a real concept in Unity.
+- `TrapHudController` carries a **hardcoded three-item product catalogue** in C# while the web reads `/api/content` — another D9 instance, not yet fixed.
+- Unity HUD still says `LEVEL 01`; content renamed LEVEL → CHAPTER (Vol 6). Stale copy.
+- `own2`/`own3` still purchase-gated; D2 (ledger idempotency) and D5 (no CI) untouched.
+
+### Next recommended action
+
+Founder-requested: a full plan system under a restructured `docs/` tree, incorporating the newly added PDF. Then Unity's chapter flow, which is what `_level` is waiting for.
+
+---
+
+## Session 6 — 3 August 2026
+
+### Objective
+
+Restructure `docs/` and build a plan system the team can follow religiously — covering AI-executable work, human-only work, version control, progress tracking, scheduled audits and testing. Incorporate the founder's newly added `TRP23_Master_Vision_and_Development_Plan.pdf`. Target: Unity alone, on PC / iOS / Android, consoles eventually.
+
+### The PDF
+
+27 pages. It is the original master directive, professionally typeset for the team — the same 28 sections, no new requirements. Its value is as the shareable artefact, so it is now the entry point at `00-vision/`. Nothing in the existing design contradicted it.
+
+### Files changed
+
+**Structure** — 25 renames, git history preserved:
+
+```
+docs/
+  00-vision/     directive PDF · bible/ (14 volumes) · Bible_Planning_Devwork · Team_Brief
+  01-audit/      MASTER-REPOSITORY-AUDIT · audits/
+  02-design/     missions · merchant · +6 stubs
+  03-technical/  TESTING-STRATEGY · RELEASE-AND-PLATFORMS · render · unity handoff · +6 stubs
+  04-plan/       MASTER-PLAN · PROGRESS · HUMAN-TASKS · DECISION-REGISTER · AUDIT-SCHEDULE · work-packages/
+  05-operations/ real-world register · railway · ios · android · +2 stubs
+  06-log/        this file · Build_Progress
+  _superseded/   3 files, each with a banner naming its replacement
+```
+
+**Fixed on the way:** the Bible lived in a folder called `Bibile ` **with a trailing space**, which git tracked but which breaks tooling and tab-completion. Now `docs/00-vision/bible/`.
+
+**New:** `docs/README.md` (index + source-of-truth table), `04-plan/MASTER-PLAN.md`, `PROGRESS.md`, `HUMAN-TASKS.md`, `DECISION-REGISTER.md`, `AUDIT-SCHEDULE.md`, `work-packages/_TEMPLATE.md` + WP-001..008, `03-technical/TESTING-STRATEGY.md`, `03-technical/RELEASE-AND-PLATFORMS.md`, 14 tracked stubs.
+
+### Design decisions
+
+1. **The work package is the atomic unit.** Nothing gets built that is not a WP with acceptance criteria, verification commands, a named owner (AI or HUMAN) and an explicit "not included" fence.
+2. **Full WPs are written one horizon ahead, no further.** Beyond that, titles only. Writing detailed Horizon 4 specs today would be invention, and the directive forbids fake precision where evidence is insufficient.
+3. **Done means verified.** A row is ticked only when its commands were run and the output is in this log. Written directly against the failure mode of `_superseded/COMPLETION-STATUS.md`, which marked 21 of 21 items COMPLETE against a system with no payment processor.
+4. **Audits are scheduled, not triggered by suspicion** — the faucet survived because nobody was worried.
+5. **Console constraints applied now, not at porting time.** Three decisions change today: tenancy billing stays **web-only, outside the game client** (D-115); UGC needs moderation designed in with the feature; every UI must be gamepad-navigable from the first screen.
+6. **Model guidance recorded:** Opus for architecture, money, security and safeguarding; Sonnet for mechanical work. Never a smaller model on economy, auth or safeguarding code — that is exactly where a subtle wrong answer looks right.
+
+### Gaps this surfaced that were not in the directive
+
+Recorded in `MASTER-PLAN.md` §4. The two that matter most:
+
+- **No account recovery exists.** No password reset, no email verification. A player who forgets their password is permanently locked out — in production, today.
+- **Backups are unproven.** One SQLite file on one Railway volume, never restored. This now blocks WP-005, because a ledger migration without a tested restore is gambling with the only copy.
+
+### Commands run
+
+```
+npm run check:trap    ✅   npm run test:api     ✅
+npm run check:repo    ✅   npm run check:csharp ✅
+npm run build         ✅
+```
+
+Plus a link checker across every `.md` in `docs/` and the root README: **0 broken links** after repairing the paths the restructure moved.
+
+### Unresolved issues
+
+- Unchanged and still blocking: **D-01** (how Kimani takes bookings today) and the seven other open decisions.
+- **H-01 and H-02 outstanding** — nobody has looked at the trap card in either client.
+- 14 design/technical documents are tracked stubs, scheduled but unwritten.
+- WP-004 (CI) is the highest-value open package: it is what stops the next silent defect.
+
+### Next recommended action
+
+**WP-004 — continuous integration.** Independent of every open decision, and it converts eight hand-run gates into something that cannot be forgotten.

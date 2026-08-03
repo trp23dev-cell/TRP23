@@ -1,3 +1,11 @@
+> ⚠️ **SUPERSEDED — 3 August 2026.** Replaced by [`docs/01-audit/MASTER-REPOSITORY-AUDIT.md`](../../docs/01-audit/MASTER-REPOSITORY-AUDIT.md).
+>
+> It marked 21 of 21 items COMPLETE — including commerce and the admin dashboard — against a system with no payment processor and a 176-line admin page. Its own footnote admitted "complete" meant "scaffolding exists", but the word above the footnote is what got remembered.
+>
+> Kept for history. **Do not treat as current status.**
+
+---
+
 # Completion Status Against Requested Scope
 
 This file maps implementation status to the requested plan with no visual/gameplay redesign changes.

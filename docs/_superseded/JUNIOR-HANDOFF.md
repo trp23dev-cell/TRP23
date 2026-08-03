@@ -1,3 +1,11 @@
+> ⚠️ **SUPERSEDED — 3 August 2026.** Replaced by [`docs/README.md`](../../docs/README.md).
+>
+> Describes the Phase 1/2 repository structure, which predates the Lincoln map pipeline, the Unity client and everything since.
+>
+> Kept for history. **Do not treat as current status.**
+
+---
+
 # Junior Handoff - Current Build Status
 
 ## What is now implemented

@@ -1,6 +1,6 @@
 # Build Progress
 
-**Runs alongside:** [Team_Brief_The_Real_Build.md](Team_Brief_The_Real_Build.md)
+**Runs alongside:** [Team_Brief_The_Real_Build.md](../00-vision/Team_Brief_The_Real_Build.md)
 **Last updated:** 27 July 2026
 
 Tick things off here as they land. Every item traces back to a section of the team brief so nothing drifts from the Bible.
