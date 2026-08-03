@@ -288,6 +288,44 @@ const MIGRATIONS = [
       );
     `);
   },
+
+  // Account recovery.
+  //
+  // There was none. Forget your password and you were locked out of your
+  // account, your progress and your wallet permanently — in production, with
+  // real accounts on it. That is not a missing feature so much as a trapdoor.
+  //
+  // Two tables, and both store HASHES rather than the secret itself. A reset
+  // token in the clear is a password equivalent: anyone who reads the database
+  // could take any account without ever knowing a password. Hashing them means
+  // a leaked database yields nothing usable, which is the same reason we do not
+  // store passwords either.
+  (db) => {
+    db.exec(`
+      -- Single-use, short-lived tokens for password reset. 'kind' is here so
+      -- the same table can carry email verification later without a migration.
+      CREATE TABLE IF NOT EXISTS auth_tokens (
+        tokenHash TEXT PRIMARY KEY,
+        playerId  TEXT NOT NULL,
+        kind      TEXT NOT NULL,
+        createdAt TEXT NOT NULL,
+        expiresAt INTEGER NOT NULL,
+        usedAt    TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_auth_tokens_player ON auth_tokens(playerId, kind);
+
+      -- One-time codes that get a player past 2FA when the authenticator is
+      -- gone. Without these, losing a phone means losing the account — so 2FA,
+      -- a security feature, becomes the likeliest way to be locked out.
+      CREATE TABLE IF NOT EXISTS recovery_codes (
+        codeHash  TEXT PRIMARY KEY,
+        playerId  TEXT NOT NULL,
+        createdAt TEXT NOT NULL,
+        usedAt    TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_recovery_player ON recovery_codes(playerId);
+    `);
+  },
 ];
 
 // Apply any migrations the DB has not yet seen, each in its own transaction.
@@ -761,6 +799,90 @@ export function createSqliteStore({ dbPath }) {
     touchPlayer.run(nowIso(), playerId);
   }
 
+  // ---------------- ACCOUNT RECOVERY ----------------
+  // Everything here stores a HASH, never the secret. A reset token in the clear
+  // is a password equivalent, and the whole point of not storing passwords is
+  // that reading the database should not hand somebody the accounts.
+
+  const insertAuthToken = db.prepare(
+    "INSERT INTO auth_tokens(tokenHash, playerId, kind, createdAt, expiresAt, usedAt) VALUES(?, ?, ?, ?, ?, NULL)",
+  );
+  const selectAuthToken = db.prepare(
+    "SELECT tokenHash, playerId, kind, expiresAt, usedAt FROM auth_tokens WHERE tokenHash = ? AND kind = ?",
+  );
+  const consumeAuthTokenStmt = db.prepare(
+    "UPDATE auth_tokens SET usedAt = ? WHERE tokenHash = ? AND usedAt IS NULL",
+  );
+  const clearPlayerTokens = db.prepare("DELETE FROM auth_tokens WHERE playerId = ? AND kind = ?");
+  const sweepAuthTokens = db.prepare("DELETE FROM auth_tokens WHERE expiresAt < ?");
+
+  /** Store a reset token. Any earlier unused one for the same player is dropped:
+   *  asking for a second email should invalidate the first, or a forwarded old
+   *  message stays live. */
+  function createAuthToken({ tokenHash, playerId, kind, expiresAt }) {
+    sweepAuthTokens.run(Date.now());
+    clearPlayerTokens.run(playerId, kind);
+    insertAuthToken.run(tokenHash, playerId, kind, nowIso(), expiresAt);
+  }
+
+  /** Claim a token atomically. Returns the playerId, or null if it is unknown,
+   *  expired, or already spent. The UPDATE is what makes it single-use: two
+   *  simultaneous requests cannot both win it. */
+  const consumeAuthToken = db.transaction(({ tokenHash, kind }) => {
+    const row = selectAuthToken.get(tokenHash, kind);
+    if (!row) return null;
+    if (row.usedAt) return null;
+    if (row.expiresAt < Date.now()) return null;
+    const info = consumeAuthTokenStmt.run(nowIso(), tokenHash);
+    return info.changes === 1 ? row.playerId : null;
+  });
+
+  const updatePlayerPassword = db.prepare("UPDATE player_accounts SET passwordHash = ? WHERE playerId = ?");
+  const deleteAllPlayerSessions = db.prepare("DELETE FROM player_sessions WHERE playerId = ?");
+
+  /** Set a new password and sign every device out.
+   *
+   *  The sign-out is not tidiness. If the reset happened because somebody else
+   *  had the account, leaving their session alive means the password change
+   *  achieved nothing. */
+  const setPlayerPassword = db.transaction(({ playerId, passwordHash }) => {
+    updatePlayerPassword.run(passwordHash, playerId);
+    deleteAllPlayerSessions.run(playerId);
+  });
+
+  const insertRecoveryCode = db.prepare(
+    "INSERT INTO recovery_codes(codeHash, playerId, createdAt, usedAt) VALUES(?, ?, ?, NULL)",
+  );
+  const clearRecoveryCodes = db.prepare("DELETE FROM recovery_codes WHERE playerId = ?");
+  const selectRecoveryCode = db.prepare(
+    "SELECT codeHash, usedAt FROM recovery_codes WHERE codeHash = ? AND playerId = ?",
+  );
+  const useRecoveryCodeStmt = db.prepare(
+    "UPDATE recovery_codes SET usedAt = ? WHERE codeHash = ? AND usedAt IS NULL",
+  );
+  const countRecoveryCodesStmt = db.prepare(
+    "SELECT COUNT(*) AS n FROM recovery_codes WHERE playerId = ? AND usedAt IS NULL",
+  );
+
+  /** Replace a player's recovery codes wholesale. Regenerating invalidates the
+   *  old set, so an old printout cannot still open the account. */
+  const replaceRecoveryCodes = db.transaction(({ playerId, codeHashes }) => {
+    clearRecoveryCodes.run(playerId);
+    const at = nowIso();
+    for (const h of codeHashes) insertRecoveryCode.run(h, playerId, at);
+  });
+
+  /** Spend one recovery code. Single-use, enforced by the UPDATE. */
+  const useRecoveryCode = db.transaction(({ playerId, codeHash }) => {
+    const row = selectRecoveryCode.get(codeHash, playerId);
+    if (!row || row.usedAt) return false;
+    return useRecoveryCodeStmt.run(nowIso(), codeHash).changes === 1;
+  });
+
+  function countRecoveryCodes(playerId) {
+    return countRecoveryCodesStmt.get(playerId)?.n ?? 0;
+  }
+
   function createPlayerSession(token, playerId, expiresAt) {
     insertPlayerSession.run(token, playerId, nowIso(), expiresAt || null);
     return { token, playerId, expiresAt: expiresAt || null };
@@ -1021,6 +1143,12 @@ export function createSqliteStore({ dbPath }) {
     findPlayerByEmail,
     findPlayerByUsername,
     findPlayerByIdentifier,
+    createAuthToken,
+    consumeAuthToken,
+    setPlayerPassword,
+    replaceRecoveryCodes,
+    useRecoveryCode,
+    countRecoveryCodes,
     setPlayerCredentials,
     registerPlayerAccount,
     setPlayer2faSecret,

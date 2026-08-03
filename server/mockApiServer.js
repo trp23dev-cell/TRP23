@@ -9,6 +9,42 @@ import { defaultWorld } from "../src/data/defaultWorld.js";
 import { createSqliteStore, STARTING_COINS } from "./storage/sqliteStore.js";
 import { generateTotpSecret, verifyTotp, otpauthUrl } from "./totp.js";
 import { createRateLimiter, clientAddress } from "./rateLimit.js";
+import { sendMail, mailReady, mailTransport } from "./mailer.js";
+
+// ---------------------------------------------------------------------------
+// ACCOUNT RECOVERY
+//
+// Reset links live for 30 minutes. Long enough to walk to a computer, short
+// enough that an old message in an inbox is not a standing key to the account.
+const RESET_TTL_MS = 30 * 60 * 1000;
+const RECOVERY_CODE_COUNT = 10;
+
+/** Tokens and recovery codes are stored hashed, so reading the database does
+ *  not hand anybody the accounts. SHA-256 is right here and scrypt is not:
+ *  these are 128+ bits of server-generated randomness, not user-chosen
+ *  passwords, so there is nothing to brute-force and no reason to be slow. */
+function hashSecret(secret) {
+  return createHash("sha256").update(String(secret)).digest("hex");
+}
+
+/** Unambiguous alphabet — no O/0, no I/1/l. These get written on paper and read
+ *  back by someone who has just lost their phone and is not enjoying it. */
+const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+
+function generateRecoveryCode() {
+  const bytes = randomBytes(10);
+  let out = "";
+  for (let i = 0; i < 10; i += 1) {
+    out += CODE_ALPHABET[bytes[i] % CODE_ALPHABET.length];
+    if (i === 4) out += "-";
+  }
+  return out;
+}
+
+/** Normalise for comparison, so "abcde-fghij" matches "ABCDE-FGHIJ". */
+function normaliseRecoveryCode(code) {
+  return String(code || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
 
 // The trap card. Mirrored in src/data/trapCard.js and, for Unity, in
 // TrapCardState.cs — all three held to src/data/trapCard.cases.json.
@@ -245,8 +281,11 @@ function allowedOrigin(origin, host) {
   if (CAPACITOR_ORIGINS.includes(clean)) return clean;
   if (EXTRA_ORIGINS.includes(clean)) return clean;
   // Any localhost port, for `vite --host` and for a phone on the same wifi
-  // pointed at a dev machine.
-  if (/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+)(:\d+)?$/.test(clean)) {
+  // pointed at a dev machine. A development affordance, so it is off in
+  // production — where nobody is legitimately calling us from 192.168.x.x and
+  // leaving it on is a standing allowance nobody chose.
+  if (process.env.NODE_ENV !== "production"
+    && /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+)(:\d+)?$/.test(clean)) {
     return clean;
   }
   // Say so once. A silently dropped CORS header is the kind of thing that looks
@@ -578,6 +617,20 @@ function parseMapTile(pathname) {
   return m ? { tileX: Number(m[1]), tileZ: Number(m[2]) } : null;
 }
 
+/** Where a reset link should point.
+ *
+ *  PUBLIC_BASE_URL when set, because behind a proxy the Host header is the only
+ *  other clue and it can be spoofed — and a reset link is the one email where
+ *  sending somebody to an attacker's domain is worst. Falls back to the request
+ *  host for local development, where there is no proxy and no risk. */
+function resetBaseUrl(req) {
+  const configured = process.env.PUBLIC_BASE_URL;
+  if (configured) return configured.replace(/\/$/, "");
+  const host = req.headers.host || "localhost";
+  const proto = /^localhost|^127\.0\.0\.1|^\[::1\]/.test(host) ? "http" : "https";
+  return `${proto}://${host}`;
+}
+
 function parsePlayerId(pathname) {
   const match = pathname.match(/^\/api\/player\/([^/]+)$/);
   return match ? decodeURIComponent(match[1]) : null;
@@ -634,6 +687,10 @@ async function handleRequest(req, res) {
         // top-up affordance when it is not, rather than offering a button that
         // 404s and a price we cannot currently honour.
         devTopup: process.env.ALLOW_DEV_TOPUP === "1",
+        // false means password resets are generated and then thrown away. A
+        // player would ask for a link, be told one was sent, and never get it.
+        mail: mailReady(),
+        mailTransport: mailTransport(),
       },
     });
     return;
@@ -890,14 +947,40 @@ async function handleRequest(req, res) {
     }
     if (account.twofaEnabled) {
       const code = String(body.code || "").trim();
-      if (!code) {
+      const recoveryCode = String(body.recoveryCode || "").trim();
+      if (!code && !recoveryCode) {
         sendJson(res, 401, { ok: false, error: "two-factor code required", twofaRequired: true });
         return;
       }
-      if (!verifyTotp(account.twofaSecret, code)) {
-        // Knowing the password but not the code is still an attempt.
+
+      // A recovery code stands in for the authenticator when the phone is gone.
+      // Single-use, so the same slip of paper cannot be used twice — and the
+      // password is still required, so a found code alone is not enough.
+      let passed = false;
+      if (recoveryCode) {
+        passed = store.useRecoveryCode({
+          playerId: account.playerId,
+          codeHash: hashSecret(normaliseRecoveryCode(recoveryCode)),
+        });
+        if (passed) {
+          await logAudit("players.login.recoveryCode", null, {
+            playerId: account.playerId,
+            remaining: store.countRecoveryCodes(account.playerId),
+          });
+        }
+      } else {
+        passed = verifyTotp(account.twofaSecret, code);
+      }
+
+      if (!passed) {
+        // Knowing the password but not the second factor is still an attempt,
+        // and a wrong recovery code counts the same as a wrong TOTP.
         rateLimiter.failAccount(identifier);
-        sendJson(res, 401, { ok: false, error: "invalid two-factor code", twofaRequired: true });
+        sendJson(res, 401, {
+          ok: false,
+          error: recoveryCode ? "that recovery code is not valid or has been used" : "invalid two-factor code",
+          twofaRequired: true,
+        });
         return;
       }
     }
@@ -907,6 +990,164 @@ async function handleRequest(req, res) {
     const { token, expiresAt } = issuePlayerSession(account.playerId);
     await logAudit("players.login", null, { playerId: account.playerId });
     sendJson(res, 200, { ok: true, playerId: account.playerId, token, expiresAt, account: sanitizeAccount(account) });
+    return;
+  }
+
+  // ---------------- ACCOUNT RECOVERY ----------------
+  //
+  // Until now there was none. Forget your password and you lost your account,
+  // your progress and your wallet, permanently.
+  //
+  // Every route here answers the SAME WAY whether or not the account exists.
+  // A recovery form that says "no such email" is a way to find out who has an
+  // account, and for a game about people's private circumstances that is worth
+  // more care than usual.
+
+  // Ask for a reset link.
+  if (req.method === "POST" && pathname === "/api/players/forgot-password") {
+    if (rateLimited(req, res, "login")) return;
+    const body = JSON.parse((await readBody(req)) || "{}");
+    const identifier = String(body.identifier || body.email || body.username || "").trim().toLowerCase();
+
+    // Answered before we know anything, and identically in every case.
+    const answer = () => sendJson(res, 200, {
+      ok: true,
+      message: "If that account exists, a reset link is on its way.",
+    });
+
+    const account = identifier ? store.findPlayerByIdentifier(identifier) : null;
+    if (!account?.email) { answer(); return; }
+
+    const token = randomBytes(32).toString("hex");
+    store.createAuthToken({
+      tokenHash: hashSecret(token),
+      playerId: account.playerId,
+      kind: "password-reset",
+      expiresAt: Date.now() + RESET_TTL_MS,
+    });
+
+    const link = `${resetBaseUrl(req)}/reset-password?token=${token}`;
+    const mail = await sendMail({
+      to: account.email,
+      subject: "Reset your TRAP MADE IT password",
+      text: `Somebody asked to reset the password for ${account.username || account.email}.\n\n`
+        + `${link}\n\nThis link works once and expires in 30 minutes.\n\n`
+        + `If it wasn't you, ignore this — nothing has changed, and your password still works.`,
+    });
+    if (!mail.ok) {
+      // The player is told the same thing either way; we are not.
+      console.error(`[recovery] reset email failed for ${account.playerId}: ${mail.error}`);
+    }
+    await logAudit("players.forgotPassword", null, { playerId: account.playerId, delivered: mail.ok });
+    answer();
+    return;
+  }
+
+  // Complete the reset.
+  if (req.method === "POST" && pathname === "/api/players/reset-password") {
+    if (rateLimited(req, res, "login")) return;
+    const body = JSON.parse((await readBody(req)) || "{}");
+    const token = String(body.token || "").trim();
+    const password = String(body.password || "");
+
+    if (password.length < 8) {
+      sendJson(res, 400, { ok: false, error: "password must be at least 8 characters" });
+      return;
+    }
+    const playerId = token ? store.consumeAuthToken({ tokenHash: hashSecret(token), kind: "password-reset" }) : null;
+    if (!playerId) {
+      sendJson(res, 400, { ok: false, error: "that link has expired or has already been used" });
+      return;
+    }
+
+    // Sets the password AND signs every device out. If the reset happened
+    // because somebody else was in the account, leaving their session alive
+    // would make the whole exercise pointless.
+    store.setPlayerPassword({ playerId, passwordHash: hashPlayerPassword(password) });
+    rateLimiter.succeeded(String(store.getPlayerAccount(playerId)?.email || "").toLowerCase());
+
+    // A reset does NOT clear two-factor, and that is the entire point of two
+    // factors. Somebody who has taken over an inbox has one of them; making the
+    // reset skip the second would turn 2FA into decoration.
+    const account = store.getPlayerAccount(playerId);
+    await logAudit("players.resetPassword", null, { playerId });
+    sendJson(res, 200, {
+      ok: true,
+      message: "Password changed. Sign in with your new password.",
+      twofaStillRequired: !!account?.twofaEnabled,
+    });
+    return;
+  }
+
+  // Remind me of my username.
+  if (req.method === "POST" && pathname === "/api/players/forgot-username") {
+    if (rateLimited(req, res, "login")) return;
+    const body = JSON.parse((await readBody(req)) || "{}");
+    const email = String(body.email || "").trim().toLowerCase();
+    const answer = () => sendJson(res, 200, {
+      ok: true,
+      message: "If that email has an account, we've sent the username to it.",
+    });
+
+    const account = email ? store.findPlayerByEmail(email) : null;
+    if (!account?.username) { answer(); return; }
+
+    const mail = await sendMail({
+      to: account.email,
+      subject: "Your TRAP MADE IT username",
+      text: `Your username is: ${account.username}\n\n`
+        + `If you also need your password, use "forgot password" on the sign-in screen.`,
+    });
+    if (!mail.ok) console.error(`[recovery] username email failed for ${account.playerId}: ${mail.error}`);
+    answer();
+    return;
+  }
+
+  // Generate (or replace) two-factor recovery codes.
+  //
+  // Without these, 2FA is the likeliest way to lose an account: the phone goes
+  // in a puddle and the security feature becomes the lock-out. Shown once,
+  // stored hashed, single-use.
+  if (req.method === "POST" && pathname === "/api/players/2fa/recovery-codes") {
+    if (!pctx) {
+      sendJson(res, 401, { ok: false, error: "player authentication required" });
+      return;
+    }
+    const account = store.getPlayerAccount(pctx.playerId);
+    if (!account?.twofaEnabled) {
+      sendJson(res, 400, { ok: false, error: "enable two-factor first" });
+      return;
+    }
+    const body = JSON.parse((await readBody(req)) || "{}");
+    // Proving current control before issuing new codes, so a borrowed unlocked
+    // phone cannot quietly mint a permanent way back in.
+    if (!verifyTotp(account.twofaSecret, String(body.code || "").trim())) {
+      sendJson(res, 400, { ok: false, error: "enter a current code from your authenticator app" });
+      return;
+    }
+
+    const codes = Array.from({ length: RECOVERY_CODE_COUNT }, generateRecoveryCode);
+    store.replaceRecoveryCodes({
+      playerId: pctx.playerId,
+      codeHashes: codes.map((c) => hashSecret(normaliseRecoveryCode(c))),
+    });
+    await logAudit("players.2fa.recoveryCodes", null, { playerId: pctx.playerId });
+    sendJson(res, 200, {
+      ok: true,
+      codes,
+      message: "Save these somewhere safe. Each works once, and this is the only time they are shown.",
+    });
+    return;
+  }
+
+  if (req.method === "GET" && pathname === "/api/players/2fa/recovery-codes") {
+    if (!pctx) {
+      sendJson(res, 401, { ok: false, error: "player authentication required" });
+      return;
+    }
+    // How many are left, never the codes themselves — they exist only in the
+    // response that created them.
+    sendJson(res, 200, { ok: true, remaining: store.countRecoveryCodes(pctx.playerId) });
     return;
   }
 

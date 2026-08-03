@@ -17,13 +17,14 @@
 | [001](work-packages/WP-001-repository-audit.md) | Complete repository audit | AI | ✅ | [Audit](../01-audit/MASTER-REPOSITORY-AUDIT.md) · log S1. 271 files, 5 gates run, 4 defects reproduced |
 | [002](work-packages/WP-002-close-money-paths.md) | Close client-controlled money paths | AI | ✅ | log S2. Mint→150, faucet→404, orders→401, deep link→200. `check:api` 18→32 checks |
 | [003](work-packages/WP-003-docs-and-plan-system.md) | Docs restructure + plan system | AI | ✅ | This folder. log S6 |
-| [004](work-packages/WP-004-continuous-integration.md) | Continuous integration | AI | ⬜ | — |
+| [004](work-packages/WP-004-continuous-integration.md) | Continuous integration | AI | ✅ | log S7. Two-job workflow; drift check verified in both directions; `__trapDebug` absent from bundle; prod CORS refuses private networks |
 | [005](work-packages/WP-005-ledger-integrity.md) | Ledger idempotency + double-entry | AI | ⬜ | — |
 | [006](work-packages/WP-006-founder-decisions.md) | Founder decisions resolved | **HUMAN** | 🔨 | 2 of 8 resolved — see [DECISION-REGISTER](DECISION-REGISTER.md) |
 | [007](work-packages/WP-007-backups.md) | Backups + a tested restore | AI + **HUMAN** | ⬜ | — |
 | [008](work-packages/WP-008-unity-health.md) | Unity health + package audit | AI + **HUMAN** | ⬜ | Unity confirmed running by founder 3 Aug; formal audit outstanding |
+| [009](work-packages/WP-009-account-recovery.md) | Account recovery | AI | ✅ | log S7. 15 checks incl. the 2FA-bypass test. **No mail provider yet — H-11** |
 
-**Horizon 0 exit:** ⬜ blocked on 004, 005, 006, 007, 008.
+**Horizon 0 exit:** ⬜ blocked on 005, 006, 007, 008.
 
 ---
 
@@ -47,6 +48,8 @@ Full work packages are written **as each is picked up**, one horizon ahead — n
 | 021 | Mobile builds on real devices | **HUMAN** + AI | M | ⬜ | 010 |
 | 022 | Accessibility baseline | AI | S | ⬜ | 010 |
 | 023 | Analytics with consent | AI | S | ⬜ | — |
+| [024](work-packages/WP-024-unity-mobile-parity.md) | **Unity mobile parity with the deployed web build** | AI + **HUMAN** | L | ⬜ | 010, 011, 021 |
+| [025](work-packages/WP-025-unity-on-the-website.md) | Unity on the website — WebGL feasibility spike | AI + **HUMAN** | S | ⬜ | 024 |
 
 ---
 
@@ -63,14 +66,14 @@ Known, accepted for now, tracked so it is never *forgotten* rather than *decided
 | Ref | Item | Where it goes |
 |---|---|---|
 | D2 | Ledger single-entry, no idempotency keys | WP-005 |
-| D5 | No CI | WP-004 |
+
 | D7 | Two persistence models (relational + JSON blobs) | H2 |
 | D8 | 1,790-line if-chain server, no router or validation layer | H2 |
 | D9 | Duplicated contracts JS↔C# | Pattern solved in WP-018; apply in WP-011 |
 | D10 | `src/game.js` monolith | Frozen client — will not be fixed |
-| D11 | `window.__trapDebug` ungated in production | WP-004 |
-| D12 | No GDPR posture, no age gate, **no account recovery** | WP-006 + H2 |
-| D13 | CORS allows private-network origins in production | WP-004 |
+
+| D12 | No GDPR posture, no age gate | WP-006 + H2 |
+
 | D16 | Single-instance assumptions | H3 |
 | — | `own2`/`own3` still purchase-gated | WP-010 |
 | — | Unity HUD says "LEVEL", content says "CHAPTER" | WP-011 |

@@ -44,7 +44,17 @@ async function startServer(existingDir = null) {
   const port = 8900 + Math.floor(Math.random() * 400);
   const child = spawn(process.execPath, [path.join(ROOT, "server/mockApiServer.js")], {
     cwd: ROOT,
-    env: { ...process.env, PORT: String(port), DATA_DIR: dir, ADMIN_BOOTSTRAP_TOKEN: BOOTSTRAP },
+    env: {
+      ...process.env,
+      PORT: String(port),
+      DATA_DIR: dir,
+      ADMIN_BOOTSTRAP_TOKEN: BOOTSTRAP,
+      // Writes mail to disk instead of sending it, so the reset flow can be
+      // followed end to end — the token is only ever in the email, which is the
+      // whole point of it.
+      MAIL_TRANSPORT: "file",
+      MAIL_DIR: path.join(dir, "mail"),
+    },
     stdio: "ignore",
   });
   const base = `http://127.0.0.1:${port}`;
@@ -160,6 +170,142 @@ const main = async () => {
     check("responses vary on Origin so caches do not cross the wires",
       (cap.headers.get("vary") || "").toLowerCase().includes("origin"),
       cap.headers.get("vary") || "(none)");
+
+    // Deliberately BEFORE the rate-limiting section. That section floods
+    // registration until it is throttled, which is the point of it — but it
+    // also means anything registering after it silently gets a 429 and the
+    // test that depended on the account fails for the wrong reason.
+    // ------------------------------------------------------------------
+    // ACCOUNT RECOVERY
+    //
+    // There was none at all: forgetting a password lost the account, the
+    // progress and the wallet, permanently. The dangerous part of adding it is
+    // that a reset flow is a way INTO every account, so it is tested harder
+    // than the thing it replaces.
+    //
+    // The one that matters most: a reset must not become a way past two-factor.
+    // ------------------------------------------------------------------
+    process.stdout.write("\naccount recovery:\n");
+
+    const recEmail = `rec-${stamp}@example.invalid`;
+    const recUser = `rec${stamp}`.slice(0, 18);
+    await post("/api/players/register", { username: recUser, email: recEmail, password: "theoldpassword" });
+
+    const unknown = await post("/api/players/forgot-password", { identifier: `nobody-${stamp}@example.invalid` });
+    const known = await post("/api/players/forgot-password", { identifier: recEmail });
+    check("a recovery request does not reveal whether the account exists",
+      unknown.status === known.status
+        && JSON.stringify(unknown.json?.message) === JSON.stringify(known.json?.message),
+      `unknown ${unknown.status}, known ${known.status}`);
+
+    // The suite runs the server with MAIL_TRANSPORT=file, so the link is
+    // readable — which is the only way to test the rest of the flow.
+    const { readdirSync, readFileSync: rf } = await import("node:fs");
+    const mailDir = path.join(server.dir, "mail");
+    let resetToken = null;
+    try {
+      const files = readdirSync(mailDir).sort();
+      for (const f of files.reverse()) {
+        const m = rf(path.join(mailDir, f), "utf8").match(/token=([a-f0-9]{64})/);
+        if (m) { resetToken = m[1]; break; }
+      }
+    } catch { /* no mail written */ }
+
+    check("a reset link is actually generated and sent", !!resetToken,
+      resetToken ? "token found in the outbox" : "no token in the outbox");
+
+    if (resetToken) {
+      check("a short password is refused",
+        (await post("/api/players/reset-password", { token: resetToken, password: "short" })).status === 400,
+        "7 characters");
+
+      const done = await post("/api/players/reset-password", { token: resetToken, password: "thenewpassword" });
+      check("a valid token resets the password", done.json?.ok === true, `HTTP ${done.status}`);
+
+      check("the same token cannot be used twice",
+        (await post("/api/players/reset-password", { token: resetToken, password: "anotherpassword" })).status === 400,
+        "replay");
+
+      check("the old password no longer works",
+        (await post("/api/players/login", { identifier: recEmail, password: "theoldpassword" })).status === 401,
+        "old credentials");
+
+      check("the new password works",
+        (await post("/api/players/login", { identifier: recEmail, password: "thenewpassword" })).json?.ok === true,
+        "new credentials");
+    }
+
+    check("a made-up token is refused",
+      (await post("/api/players/reset-password", { token: "f".repeat(64), password: "somethinglong" })).status === 400,
+      "forged token");
+
+    const fu = await post("/api/players/forgot-username", { email: recEmail });
+    const fuUnknown = await post("/api/players/forgot-username", { email: `nope-${stamp}@example.invalid` });
+    check("a username reminder does not reveal whether the email exists",
+      fu.status === fuUnknown.status
+        && JSON.stringify(fu.json?.message) === JSON.stringify(fuUnknown.json?.message),
+      `known ${fu.status}, unknown ${fuUnknown.status}`);
+
+    // --- the 2FA bypass check ---
+    //
+    // Somebody who has taken over an inbox has ONE factor. If a password reset
+    // also cleared two-factor, they would have both, and 2FA would be
+    // decoration. So a reset must change the password and nothing else.
+    const tfEmail = `tf-${stamp}@example.invalid`;
+    const tfReg = await post("/api/players/register", {
+      username: `tf${stamp}`.slice(0, 18), email: tfEmail, password: "theoldpassword", enable2fa: true,
+    });
+    const tfAuth = { Authorization: `Bearer ${tfReg.json?.token}` };
+    const tfSecret = tfReg.json?.twofa?.secret;
+
+    if (tfSecret) {
+      const { totp } = await import("../server/totp.js");
+      await post("/api/players/2fa/enable", { code: totp(tfSecret) }, tfAuth);
+
+      const codesRes = await post("/api/players/2fa/recovery-codes", { code: totp(tfSecret) }, tfAuth);
+      const codes = codesRes.json?.codes || [];
+      check("enabling 2FA can be backed by recovery codes", codes.length === 10,
+        `${codes.length} codes issued`);
+
+      await post("/api/players/forgot-password", { identifier: tfEmail });
+      let tfToken = null;
+      try {
+        for (const f of readdirSync(mailDir).sort().reverse()) {
+          const body = rf(path.join(mailDir, f), "utf8");
+          if (!body.includes(tfEmail)) continue;
+          const m = body.match(/token=([a-f0-9]{64})/);
+          if (m) { tfToken = m[1]; break; }
+        }
+      } catch { /* none */ }
+
+      if (tfToken) {
+        const r = await post("/api/players/reset-password", { token: tfToken, password: "thenewpassword" });
+        check("a reset on a 2FA account says two-factor is still required",
+          r.json?.twofaStillRequired === true, JSON.stringify(r.json?.twofaStillRequired));
+
+        const bypass = await post("/api/players/login", { identifier: tfEmail, password: "thenewpassword" });
+        check("**a password reset does not get you past two-factor**",
+          bypass.status === 401 && bypass.json?.twofaRequired === true,
+          `HTTP ${bypass.status}`);
+      }
+
+      if (codes.length) {
+        const withCode = await post("/api/players/login",
+          { identifier: tfEmail, password: "thenewpassword", recoveryCode: codes[0] });
+        check("a recovery code gets you in when the authenticator is gone",
+          withCode.json?.ok === true, `HTTP ${withCode.status}`);
+
+        check("and that code cannot be used a second time",
+          (await post("/api/players/login",
+            { identifier: tfEmail, password: "thenewpassword", recoveryCode: codes[0] })).status === 401,
+          "replay");
+
+        check("a recovery code alone is not enough without the password",
+          (await post("/api/players/login",
+            { identifier: tfEmail, password: "wrongpassword", recoveryCode: codes[1] })).status === 401,
+          "code without password");
+      }
+    }
 
     process.stdout.write("\nrate limiting:\n");
     const victim = `victim-${stamp}@example.invalid`;

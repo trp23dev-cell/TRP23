@@ -37,6 +37,47 @@ if (found.length) {
   process.exit(1);
 }
 
+// ---------------------------------------------------------------------------
+// DOCUMENTATION DRIFT
+//
+// The README described three GitHub Actions workflows, two env templates and
+// iOS/Android projects. None of them existed. Nothing was being checked on
+// push, everybody believed it was, and that belief is the reason nobody went
+// looking while a live route was minting unlimited coins.
+//
+// A README that claims infrastructure it does not have is worse than one that
+// admits it has none, so claiming it is now a test.
+// ---------------------------------------------------------------------------
+import { existsSync } from "node:fs";
+import { readFileSync } from "node:fs";
+
+const readme = readFileSync("README.md", "utf8");
+const drift = [];
+
+// Naming a file that is missing is only a problem when the README is CLAIMING
+// it. Saying plainly that something does not exist yet is the opposite — it is
+// the honest thing we want people to do — so a line that negates itself is
+// skipped. Without this the check punishes the exact behaviour it exists to
+// encourage.
+const NEGATED = /\bdo(?:es)? not exist\b|\bnot yet\b|\bare absent\b|\bis absent\b|\bmissing\b|\bnever (?:created|existed)\b|\bwas never\b/i;
+
+// Per PARAGRAPH, not per line. Prose wraps: "What does not exist:" routinely
+// sits on one line and the filenames it is disclaiming on the next, and a
+// line-by-line check flags the second while ignoring the first.
+for (const block of readme.split(/\n\s*\n/)) {
+  if (NEGATED.test(block)) continue;
+  for (const m of block.matchAll(/`?(\.github\/workflows\/[\w.-]+|\.env[\w.]*\.example)`?/g)) {
+    if (!existsSync(m[1])) drift.push(m[1]);
+  }
+}
+if (drift.length) {
+  process.stderr.write("README.md references files that do not exist:\n");
+  for (const d of [...new Set(drift)]) process.stderr.write(`  ${d}\n`);
+  process.stderr.write("\nEither create them or stop claiming them. Documented-but-absent\n"
+    + "infrastructure is worse than none, because it stops people looking.\n");
+  process.exit(1);
+}
+
 // The map is the one thing in server/storage that SHOULD ship.
 const hasMap = tracked.includes("server/storage/map-export.json.gz");
 process.stdout.write(

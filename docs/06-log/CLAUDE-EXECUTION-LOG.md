@@ -416,3 +416,81 @@ Plus a link checker across every `.md` in `docs/` and the root README: **0 broke
 ### Next recommended action
 
 **WP-004 — continuous integration.** Independent of every open decision, and it converts eight hand-run gates into something that cannot be forgotten.
+
+---
+
+## Session 7 — 3 August 2026
+
+### Objective
+
+WP-004 (continuous integration) and WP-009 (account recovery). Founder also asked, mid-session, that work be committed as it goes and tracked in the docs — both now done.
+
+### Committed
+
+Six commits, having previously worked five sessions without one:
+
+| | |
+|---|---|
+| `a906aaca` | The client could name its own reward, and did not have to be asked |
+| `73f43042` | Remove the mission you completed by buying something |
+| `b4a0edb7` | Name your trap, and hand it back five chapters later |
+| `51b1bf06` | A documentation tree, and a plan we can actually follow |
+| `4529cb0e` | Check it on every push, instead of hoping somebody remembers |
+| `10d7382e` | Give people a way back into their own accounts |
+
+### WP-004 — continuous integration ✅
+
+`.github/workflows/quality-gates.yml`. Two jobs: Node gates finish in about a minute, .NET gates need an SDK. A developer waiting on a `dotnet restore` to learn their CSS is broken stops running CI.
+
+Three hardening items folded in, each a one-liner CI would otherwise flag forever:
+
+- **`__trapDebug` behind `import.meta.env.DEV`** — compiled out of production rather than merely unreachable. CI greps the bundle. Verified: 0 occurrences across all six chunks.
+- **Private-network CORS off in production.** Verified in both modes: production refuses `192.168.1.50` and `localhost` while still allowing `capacitor://localhost`; development allows all three.
+- **`check:repo` fails on README drift** — the exact failure that started this, where three workflows were documented and none existed.
+
+**The drift check needed a second pass.** First version flagged the two `.env.*.example` files my own README explicitly describes as *not existing* — punishing the honesty it exists to encourage. Fixed by skipping paragraphs containing a negation. Then it still failed, because prose wraps: *"What does not exist:"* sat on one line and the filenames on the next, so line-by-line checking saw only the second. Now per paragraph. Verified in both directions — a planted false claim fails, the honest README passes.
+
+### WP-009 — account recovery ✅
+
+Surfaced by the docs restructure as a gap in nobody's plan. There was **no recovery of any kind**: forget your password and the account, progress and wallet were gone permanently, on a live deploy.
+
+Built: password reset by email, username reminder, and ten one-time 2FA recovery codes. Migration 7 adds `auth_tokens` and `recovery_codes`, both storing hashes only.
+
+**The decision that mattered most: a reset must not become a 2FA bypass.** Somebody who has taken an inbox holds one factor; if the reset also cleared two-factor they would hold both, and 2FA would be decoration. The reset changes the password and nothing else, and there is a check named after exactly that.
+
+Also: no enumeration (every recovery route answers identically whether or not the account exists), reset signs every device out, recovery codes use an alphabet without `O`/`0` or `I`/`1`/`l` because they are read back by someone who has just lost their phone.
+
+`server/mailer.js` is an interface with a development transport, and it **fails loudly when unconfigured** rather than pretending to send — a quiet helpful placeholder is precisely how the coin faucet survived two weeks. `/api/health` now reports whether mail can be delivered.
+
+### Commands run
+
+```
+check:repo ✅  validate:rooms ✅  build ✅  test:api ✅
+check:api  ✅  check:trap ✅  check:csharp ✅  check:world ✅
+```
+
+`check:api` is now **52 checks**, up from 18 when this began.
+
+Plus, beyond the gates: CORS verified under `NODE_ENV=production` and development; the drift check verified against both a planted false claim and the honest README; `__trapDebug` confirmed absent from every production chunk.
+
+### One test failed for the wrong reason
+
+The recovery checks failed on first run — no reset token in the outbox. Not a bug in the feature: the rate-limiting section immediately above floods registration until it throttles, which is its job, so the recovery accounts registered afterwards were silently getting 429s. The section now runs *before* it, with a comment explaining why, so nobody re-introduces the ordering.
+
+### Added to the plan
+
+Two work packages from the founder's mid-session request that Unity reach parity with the deployed web build:
+
+- **WP-024** — Unity mobile parity. A feature-by-feature matrix against the Railway build, then the work to close it. Landscape gate, virtual joystick, tap-to-interact and the product viewer do not exist in Unity at all.
+- **WP-025** — Unity on the website. Deliberately a **feasibility spike, not a commitment**. Unity WebGL can replace the site, but the current build's superpower is being ~550 KB and playable in three seconds, and a streamed 4 km² city in mobile Safari is a genuinely hard ask. Three honest outcomes are written down in advance, including *"keep Three.js for mobile web"* — which is not a failure but the split the frozen-shop-window model already assumes.
+
+### Unresolved
+
+- 🔴 **H-11 — no email provider.** Reset links are generated and thrown away on the live deploy. The feature is complete and tested; nothing reaches a player until a provider exists.
+- 🔴 **H-01/H-02** — nobody has looked at the trap card in either client.
+- 🔴 **D-01** — how Kimani takes bookings today. Still blocking WP-017.
+- Horizon 0 now blocked on WP-005, 006, 007, 008.
+
+### Next recommended action
+
+**WP-007 (backups)** before **WP-005 (ledger)** — the ledger migration touches live balances, and doing that without a proven restore is gambling with the only copy. WP-007 needs Richard for the Railway steps.

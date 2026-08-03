@@ -100,6 +100,23 @@ Ask specifically: (a) VAT on a monthly digital subscription for a shopfront, (b)
 
 Needed before **Tier 3+** tenancy: marketplace liability, consumer rights, product safety, distance selling, deposit forfeiture enforceability, terms for under-18s, and what happens to paid tenancies if the game shuts down.
 
+### H-11 · An email provider
+**Who:** Richard · **Time:** 1 hr · **Blocks:** account recovery actually reaching anyone · **Needs:** domain access
+
+Password reset is built and tested, but **there is no email provider**, so on the live deploy a reset link is generated and thrown away. A player would ask for one, be told it was sent, and never receive it.
+
+The server refuses to pretend: unconfigured, it logs the failure loudly and `/api/health` reports `mail: false`. But nothing reaches a player until this is done.
+
+1. Pick a provider — **Postmark** or **Resend** (both have free tiers adequate for this)
+2. Verify the sending domain (SPF and DKIM records on DNS)
+3. Add to Railway: `MAIL_TRANSPORT`, `MAIL_FROM`, `PUBLIC_BASE_URL`, and the provider's API key
+4. Implement the transport branch in `server/mailer.js` — or ask me to, once the account exists
+5. Request a reset for your own account and confirm the email arrives
+
+**Worked if:** `/api/health` reports `"mail": true` and a real reset email lands in a real inbox.
+
+**`PUBLIC_BASE_URL` matters more than it looks.** Without it the reset link is built from the `Host` header, which behind a proxy can be spoofed — and a reset email is the worst possible place to send somebody to an attacker's domain.
+
 ---
 
 ## 🟡 Ongoing

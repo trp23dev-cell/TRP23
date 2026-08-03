@@ -94,11 +94,12 @@ Effort bands, not dates: **S** ≈ days · **M** ≈ 1–3 weeks · **L** ≈ 1�
 | 001 | Complete repository audit | AI | ✅ |
 | 002 | Close the client-controlled money paths | AI | ✅ |
 | 003 | Documentation restructure + this plan system | AI | ✅ |
-| 004 | Continuous integration | AI | ⬜ |
+| 004 | Continuous integration | AI | ✅ |
 | 005 | Ledger idempotency and double-entry | AI | ⬜ |
 | 006 | Founder decisions resolved and recorded | **HUMAN** | 🔨 |
 | 007 | Backups, and a restore that has actually been tested | AI + **HUMAN** | ⬜ |
 | 008 | Unity project health check and package audit | AI + **HUMAN** | ⬜ |
+| 009 | Account recovery — reset, username, 2FA codes | AI | ✅ |
 
 **Exit criteria:** CI green on every push · no client-writable value anywhere · a restore proven from backup · every §6 decision recorded · Horizon 0 audit passed.
 **Not included:** any new gameplay.
@@ -126,6 +127,8 @@ Effort bands, not dates: **S** ≈ days · **M** ≈ 1–3 weeks · **L** ≈ 1�
 | 021 | Mobile builds — first real iOS/Android device runs | **HUMAN** + AI | M |
 | 022 | Accessibility baseline | AI | S |
 | 023 | Analytics events with consent | AI | S |
+| 024 | **Unity mobile parity with the deployed web build** | AI + **HUMAN** | L |
+| 025 | Unity on the website — WebGL feasibility spike | AI + **HUMAN** | S |
 
 **Exit criteria:** a stranger plays it on a phone and a PC without help and understands what TRP23 is · 60 FPS on target hardware · every valuable action server-authoritative.
 **Not included:** multiplayer · player-rented shops · real payments taken · consoles · cities beyond Lincoln.
@@ -237,6 +240,6 @@ Live status: **[PROGRESS.md](PROGRESS.md)**.
 
 | Horizon | Packages | Done |
 |---|---|---|
-| 0 — Stabilise | 8 | 3 |
-| 1 — Vertical slice | 14 | 0 (1 partial) |
+| 0 — Stabilise | 9 | 5 |
+| 1 — Vertical slice | 16 | 0 (1 partial) |
 | 2–5 | titles only, by design | — |
