@@ -19,7 +19,32 @@ namespace TrapMadeIt.UI.EditorTools
         const string MenuScene    = "Assets/Scenes/TrapMenu.unity";
         const string GameScene    = "Assets/Scenes/TrapGame.unity";
 
-        [MenuItem("TRAP/Build UI (Menu only)")]
+        /// <summary>
+        /// Everything, in the order that works.
+        ///
+        /// This exists because the order MATTERED and nothing said so. The
+        /// world setup writes the game scene; the menu setup writes the menu
+        /// and points Play at the game scene. Run only the second and the menu
+        /// happily loads whatever the game scene was last time -- which, for a
+        /// project that once had a placeholder plane in it, is a flat grey
+        /// nothing and no city. That is not a mistake a person should be able
+        /// to make from a menu, so here is the one item that does both.
+        /// </summary>
+        [MenuItem("TRAP/Build Everything (City + Menu)", priority = 0)]
+        public static void BuildAll()
+        {
+            TrapMadeIt.World.EditorTools.TrapWorldSetup.Build();   // writes the game scene
+            var panel = EnsurePanelSettings();
+            BuildMenuScene(panel);
+            AddScenesToBuild();
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+            EditorSceneManager.OpenScene(MenuScene);
+            Debug.Log("[TRAP] City and menu built. Press Play — the menu is first in " +
+                      "Build Settings, and ENTER loads Lincoln.");
+        }
+
+        [MenuItem("TRAP/Build UI (Menu only)", priority = 20)]
         public static void Build()
         {
             var panel = EnsurePanelSettings();
@@ -31,6 +56,22 @@ namespace TrapMadeIt.UI.EditorTools
             Debug.Log("[TRAP] Menu built. The GAME scene comes from " +
                       "TRAP > Build World Test Scene, which builds Lincoln and the " +
                       "HUD together into the same scene.");
+            WarnIfGameSceneHasNoCity();
+        }
+
+        /// <summary>
+        /// Say so, loudly, if the scene the menu's Play button loads has no city
+        /// in it. Silence here means pressing Play and finding an empty world,
+        /// with nothing anywhere pointing at why.
+        /// </summary>
+        static void WarnIfGameSceneHasNoCity()
+        {
+            var text = System.IO.File.Exists(GameScene) ? System.IO.File.ReadAllText(GameScene) : "";
+            if (text.Contains("WorldStreamer")) return;
+
+            Debug.LogWarning($"[TRAP] {GameScene} has no WorldStreamer, so ENTER will load an " +
+                             "empty scene. Run TRAP > Build Everything (City + Menu), or " +
+                             "TRAP > Build World Test Scene first.");
         }
 
         /// <summary>

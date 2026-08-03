@@ -25,7 +25,7 @@ namespace TrapMadeIt.World.EditorTools
         // would be doing nothing anyway: the camera simply parents to the
         // character's PlayerCameraRoot, which the controller already drives.
 
-        [MenuItem("TRAP/Build World Test Scene")]
+        [MenuItem("TRAP/Build World Test Scene", priority = 10)]
         public static void Build()
         {
             // White walls and roofs are not a mistake. TRAP/Vertex Colour
@@ -146,6 +146,8 @@ namespace TrapMadeIt.World.EditorTools
 
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene, TrapUiSetup.GameScenePath);
+            Debug.Log($"[TRAP] saved the game scene to {TrapUiSetup.GameScenePath} — " +
+                      "this is what the menu's ENTER button loads.");
             Debug.Log(player != null
                 ? "[TRAP] World test scene built, first person. Press Play.\n" +
                   "  mouse   look\n" +
