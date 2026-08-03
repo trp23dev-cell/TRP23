@@ -108,3 +108,51 @@
 .store-card { border-color: var(--line); border-width: 1px; padding: 16px; margin: 7px; width: 220px; }
 .store-card .sc-name { font-size: 20px; color: var(--bone); }
 .store-card .sc-price { font-size: 22px; color: var(--gold); -unity-font-style: bold; margin-top: 6px; }
+
+/* ---- THE TRAP CARD ----
+   The one thing on the case file the player writes themselves. Rendered as a
+   pale index card against the dark HUD, the way the web build pins it to the
+   corkboard: it should read as paper the player wrote on, not as another panel
+   the game is showing them. */
+.trap-card {
+    background-color: #f5efe0;
+    padding: 18px;
+    margin-top: 6px;
+}
+.trap-card .trap-q {
+    font-size: 17px;
+    color: #241d12;
+    margin-bottom: 10px;
+}
+.trap-input-field {
+    min-height: 62px;
+    margin-bottom: 8px;
+}
+.trap-input-field > #unity-text-input {
+    background-color: rgba(0, 0, 0, 0);
+    border-color: #b3a68c;
+    border-left-width: 0; border-right-width: 0; border-top-width: 0;
+    border-bottom-width: 1px;
+    color: #241d12;
+    font-size: 16px;
+    padding: 4px 0;
+}
+.trap-said {
+    font-size: 18px;
+    color: #241d12;
+    white-space: normal;
+    margin-bottom: 8px;
+}
+.trap-note {
+    font-size: 11px;
+    letter-spacing: 1px;
+    color: #7a6b52;
+    margin-bottom: 10px;
+    white-space: normal;
+}
+/* The card is light, so the shared dark-on-dark button styling is unreadable
+   on it. */
+.trap-card .btn-outline {
+    color: #241d12;
+    border-color: #7a6b52;
+}

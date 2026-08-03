@@ -1,0 +1,71 @@
+{
+  "_comment": [
+    "The trap card's behaviour, as one table, checked against BOTH implementations:",
+    "  src/data/trapCard.js                                  (web)",
+    "  Unity/TRP23/Assets/UI/Scripts/CaseFile/TrapCardState.cs (Unity)",
+    "",
+    "Neither copy owns the truth. Hand-transcribed rules between the two clients",
+    "are how contracts drift apart — Unity's MockAuthService re-typed the web's",
+    "signup regex by hand and the two can now disagree without anything noticing",
+    "(audit D9). This file is the antidote: add a case here and both clients are",
+    "held to it.",
+    "",
+    "  npm run check:trap",
+    "",
+    "lastLevel is 5 throughout: six chapters, zero-indexed."
+  ],
+
+  "lastLevel": 5,
+
+  "states": [
+    { "name": "Chapter 01 with nothing written offers the blank card",
+      "level": 0, "statement": "", "answer": null, "expect": "write" },
+
+    { "name": "Chapter 01 with something written lets you change it",
+      "level": 0, "statement": "the quick money", "answer": null, "expect": "edit" },
+
+    { "name": "whitespace is not 'written'",
+      "level": 0, "statement": "   \n  ", "answer": null, "expect": "write" },
+
+    { "name": "Chapter 02 shows it, locked",
+      "level": 1, "statement": "the quick money", "answer": null, "expect": "locked" },
+
+    { "name": "Chapter 05 still shows it, locked",
+      "level": 4, "statement": "the quick money", "answer": null, "expect": "locked" },
+
+    { "name": "the final chapter asks the question",
+      "level": 5, "statement": "the quick money", "answer": null, "expect": "ask" },
+
+    { "name": "and once answered, shows the answer",
+      "level": 5, "statement": "the quick money", "answer": "freed", "expect": "answered" },
+
+    { "name": "'it still holds me' is a real answer, not an unanswered state",
+      "level": 5, "statement": "the quick money", "answer": "holds", "expect": "answered" },
+
+    { "name": "a junk answer is treated as unanswered, not as an answer",
+      "level": 5, "statement": "the quick money", "answer": "cleared", "expect": "ask" },
+
+    { "name": "a player who skipped writing sees nothing mid-game",
+      "level": 3, "statement": "", "answer": null, "expect": "hidden" },
+
+    { "name": "...and nothing at the end either — there is nothing to ask about",
+      "level": 5, "statement": "", "answer": null, "expect": "hidden" },
+
+    { "name": "the final chapter NEVER offers an edit box",
+      "level": 5, "statement": "the quick money", "answer": null, "expect": "ask" }
+  ],
+
+  "statements": [
+    { "name": "statements are trimmed", "in": "  the quick money  ", "expect": "the quick money" },
+    { "name": "null statement is empty, not 'null'", "in": null, "expect": "" },
+    { "name": "inner whitespace is left alone", "in": "  a  b  ", "expect": "a  b" }
+  ],
+
+  "answers": [
+    { "name": "'freed' survives", "in": "freed", "expect": "freed" },
+    { "name": "'holds' survives", "in": "holds", "expect": "holds" },
+    { "name": "only the two real answers survive", "in": "cleared", "expect": null },
+    { "name": "empty is not an answer", "in": "", "expect": null },
+    { "name": "null is not an answer", "in": null, "expect": null }
+  ]
+}

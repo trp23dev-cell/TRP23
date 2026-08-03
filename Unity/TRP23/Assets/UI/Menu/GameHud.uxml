@@ -24,6 +24,11 @@
         <ui:VisualElement class="hud-actions">
             <ui:Button name="open-store" text="🛍  STORE" class="hud-act" />
             <ui:Button name="open-bank" text="🏦  BANK" class="hud-act" />
+            <!-- A button, not a board on a wall. In the web build the case file
+                 could only be opened by standing in front of a prop inside a
+                 chapter, which means the one thing that is actually YOURS was
+                 the hardest thing in the game to look at. -->
+            <ui:Button name="open-casefile" text="📂  CASE FILE" class="hud-act" />
             <ui:Button name="open-account" text="GUEST" class="hud-act" />
         </ui:VisualElement>
 
@@ -81,6 +86,46 @@
                     <ui:Button name="bank-withdraw" text="WITHDRAW" class="btn-outline" />
                 </ui:VisualElement>
                 <ui:Label name="bank-msg" text="" class="msg" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <!-- CASE FILE PANEL
+             The card the player writes in Chapter 01 and is asked about in the
+             final chapter. Five states, driven from TrapCardController; only
+             one of these blocks is ever visible at a time. -->
+        <ui:VisualElement name="panel-casefile" class="overlay hidden">
+            <ui:VisualElement class="panel modal-panel">
+                <ui:VisualElement class="panel-head">
+                    <ui:Label text="YOUR CASE FILE" class="panel-name" />
+                    <ui:Button name="casefile-close" text="✕" class="btn-outline" />
+                </ui:VisualElement>
+
+                <ui:VisualElement name="trap-card" class="trap-card">
+                    <ui:Label name="trap-question" text="WHAT'S TRAPPING ME" class="trap-q" />
+
+                    <!-- write / edit -->
+                    <ui:VisualElement name="trap-write">
+                        <ui:TextField name="trap-input" multiline="true" max-length="180" class="trap-input-field" />
+                        <ui:Label text="No right answer. It stays private." class="trap-note" />
+                        <ui:Button name="trap-save" text="PUT IT ON THE BOARD" class="btn-outline" />
+                    </ui:VisualElement>
+
+                    <!-- locked / ask / answered -->
+                    <ui:VisualElement name="trap-read" class="hidden">
+                        <ui:Label name="trap-said" text="" class="trap-said" />
+                        <ui:Label name="trap-note" text="In your words, Chapter 01." class="trap-note" />
+                        <ui:VisualElement name="trap-ask" class="hidden">
+                            <ui:Label text="Does this still hold you?" class="trap-q" />
+                            <ui:VisualElement style="flex-direction: row;">
+                                <ui:Button name="trap-freed" text="NOT ANY MORE" class="btn-outline" style="margin-right: 8px;" />
+                                <ui:Button name="trap-holds" text="IT STILL DOES" class="btn-outline" />
+                            </ui:VisualElement>
+                            <ui:Label text="Either answer is allowed. Neither is scored." class="trap-note" />
+                        </ui:VisualElement>
+                    </ui:VisualElement>
+
+                    <ui:Label name="trap-msg" text="" class="msg" />
+                </ui:VisualElement>
             </ui:VisualElement>
         </ui:VisualElement>
 

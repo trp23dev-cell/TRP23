@@ -13,6 +13,9 @@
     <!-- Globbed for the same reason as World/Scripts: a new file here was
          silently unchecked until somebody noticed. -->
     <Compile Include="../../Unity/TRP23/Assets/UI/Scripts/Auth/*.cs" />
+    <!-- Pure logic, no engine surface — so it is checked here rather than left
+         to the editor. CaseFileService above depends on it. -->
+    <Compile Include="../../Unity/TRP23/Assets/UI/Scripts/CaseFile/*.cs" />
     <Compile Include="../../Unity/TRP23/Assets/UI/Scripts/SceneFlow.cs" />
     <!-- Globbed, not listed. A new script under World/Scripts is checked the
          moment it exists; an explicit list silently skips it, which is the one

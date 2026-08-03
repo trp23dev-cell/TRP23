@@ -340,6 +340,9 @@ namespace UnityEngine.Networking {
     public enum Result { Success, ConnectionError, ProtocolError, DataProcessingError }
     public const string kHttpVerbPOST = "POST";
     public const string kHttpVerbGET = "GET";
+    public const string kHttpVerbPUT = "PUT";
+    public const string kHttpVerbDELETE = "DELETE";
+    public const string kHttpVerbHEAD = "HEAD";
     public static string EscapeURL(string s) => s;
     public UnityWebRequest(string url, string verb) {}
     public static UnityWebRequest Get(string url) => new UnityWebRequest(url, "GET");

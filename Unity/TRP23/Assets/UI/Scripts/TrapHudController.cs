@@ -17,6 +17,14 @@ namespace TrapMadeIt.UI
         private int _bank;
         private bool _haveBalances;
         private WalletService _wallet;
+        private TrapCardController _caseFile;
+
+        // Which chapter the player is in, and how many there are. Hardcoded
+        // until Unity has the chapter flow — the card only needs to know
+        // "first", "middle" or "last", and wiring it to a chapter system that
+        // does not exist yet would be inventing an interface for nothing.
+        private int _level;
+        private const int LastLevel = 5;
         private readonly HashSet<string> _owned = new HashSet<string>();
 
         private struct Drop { public string id, name; public int price; public Drop(string i, string n, int p) { id = i; name = n; price = p; } }
@@ -37,12 +45,20 @@ namespace TrapMadeIt.UI
             _wallet = flow.GetComponent<WalletService>();
             if (_wallet == null) _wallet = flow.gameObject.AddComponent<WalletService>();
 
+            // Same reasoning as the wallet: it runs coroutines, and one that
+            // dies with the scene would cancel a save mid-flight.
+            var caseFileService = flow.GetComponent<CaseFileService>();
+            if (caseFileService == null) caseFileService = flow.gameObject.AddComponent<CaseFileService>();
+            _caseFile = new TrapCardController(_root, caseFileService);
+
             _root.Q<Button>("open-store").clicked += () => ShowPanel("panel-store", true);
             // Open first, then reload: the panel should appear at once and fill
             // in, rather than hanging on the network before it shows at all.
             _root.Q<Button>("open-bank").clicked += () => { ShowPanel("panel-bank", true); Reload(null); };
             _root.Q<Button>("open-account").clicked += () => { RefreshAccount(); ShowPanel("panel-account", true); };
+            _root.Q<Button>("open-casefile").clicked += () => { ShowPanel("panel-casefile", true); _caseFile.Show(_level, LastLevel); };
 
+            _root.Q<Button>("casefile-close").clicked += () => ShowPanel("panel-casefile", false);
             _root.Q<Button>("store-close").clicked += () => ShowPanel("panel-store", false);
             _root.Q<Button>("bank-close").clicked += () => ShowPanel("panel-bank", false);
             _root.Q<Button>("account-close").clicked += () => ShowPanel("panel-account", false);

@@ -1,0 +1,15 @@
+/home/richard-t-martin/TRP23/tools/trapcard-check/bin/Release/net10.0/trapcard-check
+/home/richard-t-martin/TRP23/tools/trapcard-check/bin/Release/net10.0/trapcard-check.deps.json
+/home/richard-t-martin/TRP23/tools/trapcard-check/bin/Release/net10.0/trapcard-check.runtimeconfig.json
+/home/richard-t-martin/TRP23/tools/trapcard-check/bin/Release/net10.0/trapcard-check.dll
+/home/richard-t-martin/TRP23/tools/trapcard-check/bin/Release/net10.0/trapcard-check.pdb
+/home/richard-t-martin/TRP23/tools/trapcard-check/obj/Release/net10.0/check.GeneratedMSBuildEditorConfig.editorconfig
+/home/richard-t-martin/TRP23/tools/trapcard-check/obj/Release/net10.0/check.AssemblyInfoInputs.cache
+/home/richard-t-martin/TRP23/tools/trapcard-check/obj/Release/net10.0/check.AssemblyInfo.cs
+/home/richard-t-martin/TRP23/tools/trapcard-check/obj/Release/net10.0/check.csproj.CoreCompileInputs.cache
+/home/richard-t-martin/TRP23/tools/trapcard-check/obj/Release/net10.0/check.sourcelink.json
+/home/richard-t-martin/TRP23/tools/trapcard-check/obj/Release/net10.0/trapcard-check.dll
+/home/richard-t-martin/TRP23/tools/trapcard-check/obj/Release/net10.0/refint/trapcard-check.dll
+/home/richard-t-martin/TRP23/tools/trapcard-check/obj/Release/net10.0/trapcard-check.pdb
+/home/richard-t-martin/TRP23/tools/trapcard-check/obj/Release/net10.0/check.genruntimeconfig.cache
+/home/richard-t-martin/TRP23/tools/trapcard-check/obj/Release/net10.0/ref/trapcard-check.dll
