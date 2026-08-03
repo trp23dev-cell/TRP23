@@ -23,7 +23,7 @@ namespace TrapMadeIt.World
     {
         /// The surface kinds the tiler emits, each wanting its own material.
         public static readonly string[] Surfaces =
-            { "asphalt", "paving", "cobble", "concrete", "gravel" };
+            { "asphalt", "paving", "cobble", "concrete", "gravel", "kerb" };
 
         public static readonly string[] Covers = { "grass", "wood", "water" };
 
@@ -34,14 +34,33 @@ namespace TrapMadeIt.World
         /// the hill instead of cutting a level shelf through it — and a bridge
         /// deck carries its own heights and stays clear of the water.
         /// </summary>
-        public static void Roads(RoadData[] roads, Dictionary<string, BuildingMeshBuilder.Buffers> byS)
+        /// A kerb is 125mm in this country, and that upstand is what makes a
+        /// street read as a street rather than a coloured stripe on the ground.
+        const float KerbHeight = 0.125f;
+
+        /// Footway each side. Narrow enough for a medieval lane, wide enough to
+        /// walk two abreast, which is what most of Lincoln actually has.
+        const float PavementWidth = 1.9f;
+
+        /// Below this it is a footpath or an alley, and kerbing it would lay a
+        /// pavement beside something that already IS the pavement.
+        const float KerbedFrom = 4.5f;
+
+        public static void Roads(RoadData[] roads, Dictionary<string, BuildingMeshBuilder.Buffers> byS,
+                                 bool kerbs = true)
         {
             if (roads == null) return;
             foreach (var r in roads)
             {
                 if (r.p == null || r.p.Length < 4) continue;
                 var buf = Pick(byS, r.s, "asphalt");
+                var kerbBuf = Pick(byS, "kerb", "concrete");
+                var pavementBuf = Pick(byS, "paving", "concrete");
+
                 float half = Mathf.Max(r.w, 0.5f) * 0.5f;
+                // A bridge deck carries its own heights and has a parapet, not a
+                // kerb and a footway laid on ground that is not underneath it.
+                bool kerbed = kerbs && r.w >= KerbedFrom && r.br != 1;
                 int count = r.p.Length / 2;
                 float along = 0f;
 
@@ -56,16 +75,60 @@ namespace TrapMadeIt.World
                     float len = Mathf.Sqrt(ex * ex + ez * ez);
                     if (len < 0.01f) continue;
 
-                    float nx = ez / len * half, nz = -ex / len * half;
+                    float ux = ez / len, uz = -ex / len;      // across the road
+                    float nx = ux * half, nz = uz * half;
+
                     AddQuad(buf,
                         new Vector3(ax + nx, ay, az + nz),
                         new Vector3(bx + nx, by, bz + nz),
                         new Vector3(bx - nx, by, bz - nz),
                         new Vector3(ax - nx, ay, az - nz),
                         along, along + len, r.w, Color.white);
+
+                    if (kerbed)
+                    {
+                        Kerb(kerbBuf, pavementBuf, ax, ay, az, bx, by, bz, ux, uz, half, along, len, 1f);
+                        Kerb(kerbBuf, pavementBuf, ax, ay, az, bx, by, bz, ux, uz, half, along, len, -1f);
+                    }
                     along += len;
                 }
             }
+        }
+
+        /// <summary>
+        /// One side of the street: the vertical face of the kerb, and the
+        /// footway behind it.
+        ///
+        /// The FACE is the part that matters. A pavement drawn flat at road
+        /// level is invisible; it is the shadow line along the upstand that
+        /// tells you where the carriageway stops and you are allowed to stand.
+        /// Both follow the road's own elevations, so a kerb climbing Steep Hill
+        /// climbs with it instead of sinking into it.
+        /// </summary>
+        static void Kerb(BuildingMeshBuilder.Buffers kerb, BuildingMeshBuilder.Buffers pavement,
+                         float ax, float ay, float az, float bx, float by, float bz,
+                         float ux, float uz, float half, float along, float len, float side)
+        {
+            float ix = ux * half * side, iz = uz * half * side;
+            float ox = ux * (half + PavementWidth) * side, oz = uz * (half + PavementWidth) * side;
+
+            var a0 = new Vector3(ax + ix, ay, az + iz);
+            var b0 = new Vector3(bx + ix, by, bz + iz);
+            var b1 = new Vector3(bx + ix, by + KerbHeight, bz + iz);
+            var a1 = new Vector3(ax + ix, ay + KerbHeight, az + iz);
+
+            // Wound so the face looks at the road it is holding back, which is
+            // the opposite way round on the two sides of the street.
+            if (side > 0f) AddQuad(kerb, a0, b0, b1, a1, along, along + len, KerbHeight, Color.white);
+            else AddQuad(kerb, a1, b1, b0, a0, along, along + len, KerbHeight, Color.white);
+
+            var p0 = new Vector3(ax + ix, ay + KerbHeight, az + iz);
+            var p1 = new Vector3(bx + ix, by + KerbHeight, bz + iz);
+            var p2 = new Vector3(bx + ox, by + KerbHeight, bz + oz);
+            var p3 = new Vector3(ax + ox, ay + KerbHeight, az + oz);
+
+            if (side > 0f) AddQuad(pavement, p0, p1, p2, p3, along, along + len, PavementWidth, Color.white);
+            else AddQuad(pavement, p3, p2, p1, p0, along, along + len, PavementWidth, Color.white);
         }
 
         /// Paved areas and land cover. Both arrive already tessellated onto the

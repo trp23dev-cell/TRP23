@@ -56,6 +56,9 @@ namespace TrapMadeIt.World
             { "bark",     new Color(0.20f, 0.16f, 0.11f) },
             { "foliage",  new Color(0.18f, 0.28f, 0.13f) },
             { "furniture",new Color(0.14f, 0.14f, 0.15f) },
+            // Kerbstone: paler than the road, darker than the flags behind it,
+            // which is what makes the line along the carriageway read at all.
+            { "kerb",     new Color(0.46f, 0.45f, 0.42f) },
         };
 
         MapClient client;
@@ -297,7 +300,15 @@ namespace TrapMadeIt.World
             }
 
             foreach (var kv in bySurface)
-                AddMesh(parent, kv.Key, kv.Value.ToMesh($"{kv.Key}_{t.x}_{t.y}"), Mat(kv.Key), 0.06f);
+            {
+                // The footway and its kerb are things you STAND on -- they are
+                // 125mm above the road, and without a collider the player walks
+                // at road level with the pavement passing through their shins.
+                // The carriageway itself does not need one: it lies on terrain
+                // that already has a collider.
+                bool solid = kv.Key == "paving" || kv.Key == "kerb";
+                AddMesh(parent, kv.Key, kv.Value.ToMesh($"{kv.Key}_{t.x}_{t.y}"), Mat(kv.Key), 0.06f, solid);
+            }
 
             // Land cover: grass, woodland and the Brayford.
             var byCover = new Dictionary<string, BuildingMeshBuilder.Buffers>();
