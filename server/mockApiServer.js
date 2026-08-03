@@ -10,6 +10,11 @@ import { createSqliteStore, STARTING_COINS } from "./storage/sqliteStore.js";
 import { generateTotpSecret, verifyTotp, otpauthUrl } from "./totp.js";
 import { createRateLimiter, clientAddress } from "./rateLimit.js";
 
+// The trap card. Mirrored in src/data/trapCard.js and, for Unity, in
+// TrapCardState.cs — all three held to src/data/trapCard.cases.json.
+const TRAP_STATEMENT_MAX = 180;
+const TRAP_ANSWERS = ["holds", "freed"];
+
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,20}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_RE = /^\+?[0-9][0-9\s().-]{6,19}$/;
@@ -625,6 +630,10 @@ async function handleRequest(req, res) {
         // about the token itself, and it is useless without it, but it turns
         // "403 and I cannot tell why" into an answerable question.
         bootstrapReady: !!process.env.ADMIN_BOOTSTRAP_TOKEN && store.countAdminUsers() === 0,
+        // Whether the coins-from-nothing route is open. The client hides its
+        // top-up affordance when it is not, rather than offering a button that
+        // 404s and a price we cannot currently honour.
+        devTopup: process.env.ALLOW_DEV_TOPUP === "1",
       },
     });
     return;
@@ -1053,6 +1062,53 @@ async function handleRequest(req, res) {
     }
   }
 
+  // ---------------- CASE FILE ----------------
+  // PUT /api/player/:id/case-file — the card the player writes in Chapter 01.
+  //
+  // A NARROW route on purpose. PUT /api/player/:id replaces `progress`
+  // wholesale, so a client sending only the two trap fields would silently
+  // destroy currentLevel, missionProgress, walked and viewed — the player's
+  // entire save. Unity needs to write these two fields without holding the
+  // whole profile, so it gets a route that can only touch them.
+  //
+  // The statement is PRIVATE: shown back only to its author, never on the
+  // leaderboard, never in community, never to staff.
+  const caseFileMatch = pathname.match(/^\/api\/player\/([^/]+)\/case-file$/);
+  if (caseFileMatch && req.method === "PUT") {
+    const playerId = resolveActingPlayer(ctx, pctx, decodeURIComponent(caseFileMatch[1]));
+    if (!playerId) {
+      sendJson(res, 401, { ok: false, error: "player authentication required" });
+      return;
+    }
+    try {
+      const body = JSON.parse((await readBody(req)) || "{}");
+      const state = store.getPlayerState(playerId) || createDefaultPlayerProfile(playerId);
+      const progress = { ...(state.progress || {}) };
+
+      // Normalised HERE, not just in the client. The 180-character cap was only
+      // ever enforced by a maxlength attribute, which is a suggestion.
+      if (body.trapStatement !== undefined) {
+        progress.trapStatement = String(body.trapStatement || "").trim().slice(0, TRAP_STATEMENT_MAX);
+      }
+      if (body.trapAnswer !== undefined) {
+        progress.trapAnswer = TRAP_ANSWERS.includes(body.trapAnswer) ? body.trapAnswer : null;
+      }
+
+      state.progress = progress;
+      state.updatedAt = new Date().toISOString();
+      store.setPlayerState(playerId, state);
+      sendJson(res, 200, {
+        ok: true,
+        trapStatement: progress.trapStatement || "",
+        trapAnswer: progress.trapAnswer || null,
+      });
+      return;
+    } catch {
+      sendJson(res, 400, { ok: false, error: "Invalid JSON payload." });
+      return;
+    }
+  }
+
   if (pathname === "/api/events" && req.method === "POST") {
     try {
       const body = JSON.parse(await readBody(req) || "{}");
@@ -1301,8 +1357,20 @@ async function handleRequest(req, res) {
   }
 
   if (pathname === "/api/commerce/orders" && req.method === "GET") {
-    const playerFilter = url.searchParams.get("playerId");
-    sendJson(res, 200, { ok: true, orders: store.getOrders(playerFilter || null) });
+    // This answered 200 to anybody, with every order in the system and the
+    // player id on each one — a customer list, unauthenticated. Staff see
+    // everything (and may filter); a player sees their own orders and nobody
+    // else's, whatever they put in the query string.
+    const requested = url.searchParams.get("playerId");
+    if (requiresRole(ctx, ["admin", "ops", "product"])) {
+      sendJson(res, 200, { ok: true, orders: store.getOrders(requested || null) });
+      return;
+    }
+    if (!pctx) {
+      sendJson(res, 401, { ok: false, error: "player authentication required" });
+      return;
+    }
+    sendJson(res, 200, { ok: true, orders: store.getOrders(pctx.playerId) });
     return;
   }
 
@@ -1394,7 +1462,25 @@ async function handleRequest(req, res) {
       return;
     }
 
-    const rewardCoins = Math.max(0, Number(body.rewardCoins || 0));
+    // The reward is whatever the CATALOGUE says it is. It used to be whatever
+    // the request body said it was, which meant a mission worth 150 coins paid
+    // 999,999,999 to anyone who asked — the dedupe key stopped a second claim
+    // and never looked at the amount. The client may only name WHICH mission it
+    // cleared; the server decides what that is worth.
+    const content = await readJson(contentFile, defaultContent);
+    const chapter = (content.chapters || []).find((c) => c.id === body.levelId);
+    const mission = (chapter?.missions || []).find((m) => m.id === body.missionId);
+    if (!mission) {
+      sendJson(res, 404, { ok: false, error: "unknown mission" });
+      return;
+    }
+    const rewardCoins = Math.max(0, Number(mission.rewardCoins || 0));
+
+    // Same rule for the chapter deal code. A claimed code is an entitlement
+    // worth real money off a real garment, so it comes from the chapter, not
+    // from the caller. Only the `stash` mission carries one.
+    const discountCode = mission.id === "stash" ? (chapter.stash?.code || null) : null;
+
     // Atomic: dedupe on claimKey and credit the ledger in one transaction.
     const outcome = store.claimReward({
       claimKey,
@@ -1402,7 +1488,7 @@ async function handleRequest(req, res) {
       levelId: body.levelId,
       missionId: body.missionId,
       rewardCoins,
-      discountCode: body.discountCode || null,
+      discountCode,
     });
     if (!outcome.claimed) {
       sendJson(res, 409, { ok: false, error: "reward already claimed for this mission", walletCoins: outcome.walletBalance });
@@ -1410,16 +1496,20 @@ async function handleRequest(req, res) {
     }
 
     // Record the earned discount code on the player's entitlements.
-    if (body.discountCode) {
+    if (discountCode) {
       const state = store.getPlayerState(playerIdInput) || createDefaultPlayerProfile(playerIdInput);
       const codes = new Set(state.entitlements?.codes || []);
-      codes.add(String(body.discountCode));
+      codes.add(String(discountCode));
       state.entitlements = { ...(state.entitlements || {}), codes: [...codes] };
       store.setPlayerState(playerIdInput, state);
     }
 
-    await logAudit("rewards.claim", ctx, { claimKey, playerId: playerIdInput, missionId: body.missionId });
-    sendJson(res, 201, { ok: true, walletCoins: outcome.walletBalance });
+    await logAudit("rewards.claim", ctx, { claimKey, playerId: playerIdInput, missionId: body.missionId, rewardCoins });
+    // Answer with what was actually granted, not what was asked for. The client
+    // credits its own HUD optimistically from the same catalogue, so these
+    // normally agree — and when they do not, the server's number is the one
+    // that is true and the client can correct itself.
+    sendJson(res, 201, { ok: true, walletCoins: outcome.walletBalance, rewardCoins, discountCode });
     return;
   }
 
@@ -1637,9 +1727,22 @@ async function handleRequest(req, res) {
     return;
   }
 
-  // POST /api/wallet/topup — credit coins. Dev/testing affordance (the old
-  // client "top-up" button). Gate/replace with real payments before launch.
+  // POST /api/wallet/topup — credit coins from nothing.
+  //
+  // There is no payment processor behind this and there never was: it is the
+  // old client's "top-up" button, and on a public deploy it was an unlimited
+  // faucet — a million coins a call, as many calls as you like. It is now OFF
+  // unless someone deliberately turns it on, because the safe default for a
+  // route that creates money is that it does not exist.
+  //
+  // Set ALLOW_DEV_TOPUP=1 for local work. When real payments land, this route
+  // is deleted rather than gated — a purchase will credit coins as a side
+  // effect of a settled payment, which is a different route with a receipt.
   if (pathname === "/api/wallet/topup" && req.method === "POST") {
+    if (process.env.ALLOW_DEV_TOPUP !== "1") {
+      sendJson(res, 404, { ok: false, error: "Not found" });
+      return;
+    }
     const body = JSON.parse((await readBody(req)) || "{}");
     const pid = resolveActingPlayer(ctx, pctx, String(body.playerId || "").trim());
     const amount = Math.max(1, Math.min(1_000_000, Number(body.amount || 0)));
@@ -1769,7 +1872,10 @@ async function handleRequest(req, res) {
   if (req.method === "GET" && !pathname.startsWith("/api/")) {
     if (await serveStatic(req, res, pathname)) return;
     // Unknown route -> fall back to the game shell so deep links still load.
-    if (await serveStatic(res, "/index.html")) return;
+    // This was called with two arguments against a three-argument function, so
+    // `pathname` arrived undefined, the read missed, and every deep link 404ed
+    // while looking like it was handled.
+    if (await serveStatic(req, res, "/index.html")) return;
   }
 
   sendJson(res, 404, { ok: false, error: "Not found" });

@@ -8,6 +8,7 @@ import { DEFAULT_VISUAL_SETTINGS, QUALITY_PROFILES, ROOM_LIGHT_PROFILES } from "
 import { applyRoomAssetLayer, ROOM_ASSET_REGISTRY } from "./render/roomAssetRegistry";
 import { formatRegistryValidationReport, validateRoomAssetRegistry } from "./render/roomAssetValidation";
 import { getContent, getContentRemoteFirst } from "./data/contentStore";
+import { trapCardState, normaliseTrapStatement, normaliseTrapAnswer, TRAP_MAX } from "./data/trapCard";
 import { createBigMap } from "./world/bigMap";
 import {
   buildFreeRoamWorld,
@@ -147,7 +148,12 @@ const BASE_LEVELS=[
   stashHint:'Check where the pots used to live.',
   missions:[
    {id:'inspect',title:'Inspect the drop',  desc:'Give a set a full 360° inspection in the viewer.',                 reward:'+150 coins', coins:150},
-   {id:'own1',   title:'First move',        desc:'Buy your first piece with Trap Coins. Every plan starts with one move.', reward:'+250 coins', coins:250},
+   // `own1` ("Buy your first piece") was removed at content v3: it was a
+   // mission you cleared by paying, and Vol 11 says rewards come from
+   // participation, not spend. `own2`/`own3` below are the same contradiction
+   // and survive only because removing them would leave chapters 03 and 05
+   // with one mission each. They are replaced, not deleted — see
+   // docs/MISSION-DESIGN-BIBLE.md §10.
    {id:'stash',  title:'Find the archive',  desc:'Somebody planned their way out of this kitchen. They left the record.', reward:'CHAPTER DEAL + 500 coins', coins:0},
   ]},
  {num:'03', name:'THE GRAVEYARD SHIFT', sub:'Money never sleeps. Neither do you.',
@@ -257,8 +263,16 @@ function missionProgressSnapshot(){
 }
 
 // ---------------- GAME STATE ----------------
+// trapStatement: what the player writes on their own card in Chapter 01.
+//   It is PRIVATE — shown back only to them, never on the leaderboard, never in
+//   community, never to staff. That is a deliberate design constraint, not an
+//   oversight: people will write true things about themselves on it, and the
+//   moment it is public it stops being honest and starts needing moderation.
+// trapAnswer: what they said in Chapter 06 when asked whether it still holds
+//   them. null until asked. 'holds' is not a failure state.
 const state={ coins:1600, owned:[], level:0, walked:0, inspected:false,
-  viewed:new Set(), codes:[], levelsCleared:0 };
+  viewed:new Set(), codes:[], levelsCleared:0,
+  trapStatement:'', trapAnswer:null };
 
 let playerId=getOrCreatePlayerId();
 let progressHydrated=false;
@@ -282,6 +296,8 @@ function applyProfileToState(profile){
   state.viewed = new Set(Array.isArray(profile.progress?.viewed) ? profile.progress.viewed : []);
   state.codes = Array.isArray(profile.entitlements?.codes) ? profile.entitlements.codes : [];
   state.levelsCleared = typeof profile.progress?.levelsCleared==='number' ? profile.progress.levelsCleared : 0;
+  state.trapStatement = normaliseTrapStatement(profile.progress?.trapStatement);
+  state.trapAnswer = normaliseTrapAnswer(profile.progress?.trapAnswer);
   restoreMissionProgress(profile.progress?.missionProgress);
   account = profile.account || null;
 }
@@ -308,6 +324,8 @@ function persistProgress(){
   profile.progress.inspected=state.inspected;
   profile.progress.viewed=Array.from(state.viewed);
   profile.progress.missionProgress=missionProgressSnapshot();
+  profile.progress.trapStatement=state.trapStatement;
+  profile.progress.trapAnswer=state.trapAnswer;
   profile.entitlements.codes=[...state.codes];
 
   if(persistTimer) clearTimeout(persistTimer);
@@ -463,6 +481,116 @@ function clearMission(id){
   }
   persistProgress();
 }
+// ---------------- THE TRAP CARD ----------------
+// One card on the case file that the player writes themselves in Chapter 01,
+// and which is handed back to them in Chapter 06 with a single question.
+//
+// The rules it follows, and why:
+//  - It is never scored. There is no right answer and no points, in either
+//    chapter. The moment it scores, it stops being a mirror and becomes a test.
+//  - It locks once they leave Chapter 01. That is what makes Chapter 06 land:
+//    they are reading something they cannot quietly have edited on the way.
+//  - "It still holds me" is an honest answer, not a failure. The game says so.
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function saveTrapStatement(text){
+  state.trapStatement=normaliseTrapStatement(text);
+  persistProgress();
+  renderTrapCard();
+}
+
+function answerTrapCard(answer){
+  state.trapAnswer=answer;
+  persistProgress();
+  renderTrapCard();
+  queuePlayerEvent('trap_card_answered',{ answer });
+  toast(answer==='freed'
+    ? "THAT'S THE WHOLE POINT — <span class=\"gold\">KEEP GOING</span>"
+    : "STILL HONEST — <span class=\"gold\">THAT COUNTS TOO</span>");
+}
+
+function renderTrapCard(){
+  const slot=$('#trapSlot');
+  if(!slot) return;
+  const view=trapCardState({
+    level:state.level,
+    lastLevel:LEVELS.length-1,
+    statement:state.trapStatement,
+    answer:state.trapAnswer,
+  });
+  const written=view==='edit';
+  const said=`<div class="tc-said">${escapeHtml(state.trapStatement)}</div>`;
+
+  if(view==='hidden'){ slot.innerHTML=''; return; }
+
+  // 1 & 2 — Chapter 01: write it, or change it while still here.
+  if(view==='write'||view==='edit'){
+    slot.innerHTML=`<div class="trap-card">
+      <div class="tc-num">02</div>
+      <div class="tc-q">What's trapping me</div>
+      <textarea id="trapInput" rows="2" maxlength="${TRAP_MAX}"
+        placeholder="Write it in your own words. Nobody else sees this.">${escapeHtml(state.trapStatement)}</textarea>
+      <div class="tc-actions">
+        <button id="trapSave">${written?'Change it':'Put it on the board'}</button>
+      </div>
+      <div class="tc-note">${written?'You can change this until you leave the chapter.':'No right answer. It stays private.'}</div>
+    </div>`;
+    const input=$('#trapInput');
+    $('#trapSave').addEventListener('click',()=>{
+      const v=input.value.trim();
+      if(!v){ toast('WRITE SOMETHING FIRST — <span class="gold">ANYTHING TRUE</span>'); return; }
+      const first=!state.trapStatement;
+      saveTrapStatement(v);
+      if(first){
+        toast('IT\'S ON THE BOARD — <span class="gold">IT STAYS THERE</span>');
+        queuePlayerEvent('trap_card_written',{ length:v.length });
+      }
+    });
+    return;
+  }
+
+  // 5 — Chapter 06, already answered.
+  if(view==='answered'){
+    slot.innerHTML=`<div class="trap-card">
+      <div class="tc-num">02</div>
+      <div class="tc-q">What was trapping you</div>
+      ${said}
+      <div class="tc-note">${state.trapAnswer==='freed'
+        ? 'You said it does not hold you any more.'
+        : 'You said it still holds you. That is worth knowing.'}</div>
+    </div>`;
+    return;
+  }
+
+  // 4 — Chapter 06, the question.
+  if(view==='ask'){
+    slot.innerHTML=`<div class="trap-card">
+      <div class="tc-num">02</div>
+      <div class="tc-q">You wrote this in Chapter 01</div>
+      ${said}
+      <div class="tc-q" style="margin-top:14px">Does this still hold you?</div>
+      <div class="tc-actions">
+        <button id="trapFreed">Not any more</button>
+        <button id="trapHolds" class="tc-link">It still does</button>
+      </div>
+      <div class="tc-note">Either answer is allowed. Neither is scored.</div>
+    </div>`;
+    $('#trapFreed').addEventListener('click',()=>answerTrapCard('freed'));
+    $('#trapHolds').addEventListener('click',()=>answerTrapCard('holds'));
+    return;
+  }
+
+  // 3 — Chapters 02-05: it is on the board and it is locked.
+  slot.innerHTML=`<div class="trap-card">
+    <div class="tc-num">02</div>
+    <div class="tc-q">What's trapping me</div>
+    ${said}
+    <div class="tc-note">In your words, Chapter 01.</div>
+  </div>`;
+}
+
 function renderMissions(){
   const lv=LV();
   $('#missionList').innerHTML=lv.missions.map((m,i)=>`
@@ -477,7 +605,6 @@ function renderMissions(){
 }
 function afterPurchase(){
   const n=state.owned.length;
-  if(n>=1) clearMission('own1');
   if(n>=2) clearMission('own2');
   if(n>=3) clearMission('own3');
   persistProgress();
@@ -963,7 +1090,10 @@ function evidenceBoard(x,y,z,ry){
   const b=new THREE.Mesh(new THREE.PlaneGeometry(2.6,1.62),
     new THREE.MeshStandardMaterial({map:boardTex,roughness:.9}));
   b.position.set(x,y,z); b.rotation.y=ry; G(b);
-  tagInteract(b,'THE DRAWING BOARD',()=>{ openPanel('boardPanel'); clearMission('board'); });
+  // "YOUR CASE FILE", not "THE DRAWING BOARD". The panel was retitled when the
+  // case file was flipped to be the player's own (Build_Progress 1.2); this
+  // hover tag was missed and kept saying the old thing in the world itself.
+  tagInteract(b,'YOUR CASE FILE',()=>{ openPanel('boardPanel'); renderTrapCard(); clearMission('board'); });
   const lamp=new THREE.PointLight(0xd8b98a,1.1,4,1.8);
   lamp.position.set(x+Math.sin(ry)*.7, y+.6, z+Math.cos(ry)*.7);
   G(lamp);
@@ -1516,7 +1646,7 @@ function loadLevel(i, showIntro=true){
   camera.position.set(cfg.spawn[0],groundY,cfg.spawn[1]);
   yaw=cfg.yaw; pitch=0;
   $('#levelLabel').textContent=`CHAPTER ${LV().num} — ${LV().name}`;
-  renderMissions(); progress();
+  renderMissions(); renderTrapCard(); progress();
   setTimeout(()=>{     // sync progress carried over from earlier levels
     if(state.walked>6) clearMission('walk');
     if(state.inspected) clearMission('inspect');
@@ -2288,13 +2418,25 @@ $('#buyBtn').addEventListener('click',async ()=>{
   btn.disabled=false;
   openShop(currentProduct);
 });
+// The top-up row stays hidden unless the server has the route open. It creates
+// coins from nothing with no payment processor behind it, so it is a
+// development affordance, and a public deploy should not show a button that
+// 404s under a price nobody can actually pay.
+(async()=>{
+  try{
+    const res=await fetch('/api/health');
+    const health=await res.json();
+    if(health?.deploy?.devTopup) $('#topupRow').hidden=false;
+  }catch(_e){ /* leave it hidden: the safe answer when we cannot ask */ }
+})();
+
 $('#topupLink').addEventListener('click',async ()=>{
   const res=await topUpWallet(playerId,1000);
   if(res.ok && typeof res.walletCoins==='number'){
     setCoins(res.walletCoins);
     toast('TOP-UP COMPLETE — <span class="gold">+1,000 TRAP COINS</span>');
   } else {
-    toast('TOP-UP FAILED — <span class="gold">TRY AGAIN</span>');
+    toast('TOP-UP UNAVAILABLE — <span class="gold">DEV ROUTE IS OFF</span>');
   }
   openShop(currentProduct);
 });

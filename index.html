@@ -154,6 +154,10 @@ You're viewing this in an email preview, which can't run the game.<br>
       <button class="xbtn" data-close="boardPanel">✕</button>
     </div>
     <div class="moral-line type" id="moralLine"></div>
+    <!-- The card the player writes themselves in Chapter 01, and which comes
+         back to them in Chapter 06. Rendered from JS because it has five
+         states; see renderTrapCard() in src/game.js. -->
+    <div class="trap-slot" id="trapSlot"></div>
     <div class="missions" id="missionList"></div>
     <div class="board-foot type">Clear the board. Find the archive. Get out.<span id="codesFoot"></span></div>
   </div>
@@ -220,7 +224,10 @@ You're viewing this in an email preview, which can't run the game.<br>
         <div class="price-row"><span class="p-coins" id="siPrice">1,250</span><span class="p-lbl">Trap Coins</span></div>
         <button class="buy-btn" id="buyBtn">Buy Now</button>
         <div class="owned-flag" id="ownedFlag">✓ In your closet</div>
-        <div class="topup">Short on coins? <a id="topupLink">Top up</a> — £10 = 1,000 Trap Coins. Every real purchase earns coins back.</div>
+        <!-- Hidden until the server says the top-up route is open (see
+             /api/health devTopup). There is no payment processor behind it, so
+             on a public deploy this must not offer a price we cannot take. -->
+        <div class="topup" id="topupRow" hidden>Short on coins? <a id="topupLink">Top up</a> — development top-up, no payment taken.</div>
       </div>
     </div>
   </div>

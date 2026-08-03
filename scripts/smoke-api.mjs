@@ -181,7 +181,11 @@ async function run() {
   if (!world.locations.some((l) => l.kind === "bank")) throw new Error("Expected a seeded bank location");
   if (!world.locations.some((l) => l.kind === "shop")) throw new Error("Expected seeded shop locations");
 
-  const orders = await req(`/api/commerce/orders?playerId=${encodeURIComponent(playerId)}`);
+  // The order book needs credentials now — it used to answer anybody with
+  // every order in the system. Staff are used here because the assertions below
+  // want the filter honoured; a player token would work too and would return
+  // exactly the same rows, being this player's own.
+  const orders = await req(`/api/commerce/orders?playerId=${encodeURIComponent(playerId)}`, { headers: auth });
   if (!orders.orders.length) throw new Error("Expected at least one order");
   const orderId = orders.orders[orders.orders.length - 1].id;
 
@@ -197,10 +201,15 @@ async function run() {
     body: JSON.stringify({ orderId, carrier: "mock", status: "shipped" }),
   });
 
+  // Real catalogue ids. The mission used to be `walk-${runId}` — a synthetic id
+  // that dodged the per-mission dedupe — which worked only because the server
+  // took the amount from the body and never checked the mission existed. It
+  // does now, so the test has to name a mission that is really there. Repeat
+  // runs are safe because the whole database is thrown away with the server.
   await req("/api/rewards/claim", {
     method: "POST",
     headers: playerAuth,
-    body: JSON.stringify({ levelId: "lvl-01", missionId: `walk-${runId}`, rewardCoins: 100 }),
+    body: JSON.stringify({ levelId: "lvl-01", missionId: "walk" }),
   });
 
   await req("/api/community/stories", {
