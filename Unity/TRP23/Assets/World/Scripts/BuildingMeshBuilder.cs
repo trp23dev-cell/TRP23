@@ -149,7 +149,56 @@ namespace TrapMadeIt.World
             return outIdx;
         }
 
-        public static void Extrude(BuildingData b, Buffers walls, Buffers roofs)
+        /// <summary>
+        /// One buffer per material, created as needed.
+        ///
+        /// Every building in a tile used to merge into a single walls mesh with
+        /// a single material, which meant a brick terrace and a limestone
+        /// cathedral had to be the same surface -- no facade could be given to
+        /// either without giving it to both. Splitting by material is what makes
+        /// the textures possible at all; the merge still happens, just once per
+        /// material rather than once per tile, so a tile costs a handful of draw
+        /// calls instead of one, and nowhere near one per building.
+        /// </summary>
+        public class Sink
+        {
+            readonly Dictionary<string, Buffers> byMaterial = new Dictionary<string, Buffers>();
+
+            public Buffers Get(string key)
+            {
+                if (!byMaterial.TryGetValue(key, out var buf))
+                {
+                    buf = new Buffers();
+                    byMaterial[key] = buf;
+                }
+                return buf;
+            }
+
+            public Dictionary<string, Buffers> All => byMaterial;
+        }
+
+        /// The material key for a building's upper storeys.
+        public static string WallKey(BuildingData b) => "wall:" + (b.st ?? "brick");
+
+        /// The material key for its ground floor, which is a different surface:
+        /// a shop is glass, a house is a door, a flank wall is neither.
+        public static string GroundKey(BuildingData b) =>
+            "ground:" + (b.g ?? "blank") + ":" + (b.st ?? "brick");
+
+        /// Slate or clay pantile. Lincoln is mostly pantile downhill and slate
+        /// on the grander uphill roofs, which follows the same split as the
+        /// walls: the limestone belt is where the money was.
+        public static string RoofKey(BuildingData b) =>
+            "roof:" + (b.st == "limestone" || b.st == "monument" ? "slate" : "pantile");
+
+        public static void Extrude(BuildingData b, Sink sink)
+        {
+            Extrude(b, sink.Get(WallKey(b)), sink.Get(RoofKey(b)),
+                    sink.Get(GroundKey(b)));
+        }
+
+        public static void Extrude(BuildingData b, Buffers walls, Buffers roofs,
+                                   Buffers ground = null)
         {
             var ring = b.p;
             if (ring == null || ring.Length < 6) return;
@@ -197,7 +246,20 @@ namespace TrapMadeIt.World
                 {
                     Quad(walls, ax, az, bx, bz, baseY, street, nx, nz, len, tint, 0.35f, 0.6f, baseY, vSpan);
                 }
-                Quad(walls, ax, az, bx, bz, street, top, nx, nz, len, tint, 0.62f, 1f, street, vSpan);
+                // Split the ground floor off, where there is room for one.
+                // It is the storey people actually stand in front of, and the
+                // one that carries the shopfront.
+                float groundTop = Mathf.Min(street + TrapGeo.Storey, top);
+                if (ground != null && b.st != "monument" && groundTop > street + 0.4f)
+                {
+                    Quad(ground, ax, az, bx, bz, street, groundTop, nx, nz, len, tint, 0.55f, 1f, street, vSpan);
+                    if (top > groundTop + 0.1f)
+                        Quad(walls, ax, az, bx, bz, groundTop, top, nx, nz, len, tint, 0.72f, 1f, street, vSpan);
+                }
+                else
+                {
+                    Quad(walls, ax, az, bx, bz, street, top, nx, nz, len, tint, 0.62f, 1f, street, vSpan);
+                }
             }
 
             // Roof. Lincoln has almost no flat domestic roofs, and a ridge

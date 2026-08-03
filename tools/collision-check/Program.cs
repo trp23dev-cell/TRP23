@@ -160,12 +160,14 @@ namespace TrapCollisionCheck
 
             for (int i = 0; i < buildings.Count; i++)
             {
-                var walls = new BuildingMeshBuilder.Buffers();
-                var roofs = new BuildingMeshBuilder.Buffers();
-                try { BuildingMeshBuilder.Extrude(buildings[i], walls, roofs); }
+                // Through the Sink, which is the path the game actually takes.
+                // Checking the two-buffer overload would be checking something
+                // nothing runs.
+                var sink = new BuildingMeshBuilder.Sink();
+                try { BuildingMeshBuilder.Extrude(buildings[i], sink); }
                 catch { continue; }   // degenerate footprint; not this check's problem
 
-                foreach (var buf in new[] { walls, roofs })
+                foreach (var buf in sink.All.Values)
                 {
                     long bad = 0, total = 0;
                     for (int t = 0; t + 2 < buf.triangles.Count; t += 3)

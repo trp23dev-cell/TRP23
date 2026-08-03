@@ -240,19 +240,26 @@ namespace TrapMadeIt.World
                 // cost more than everything else in the scene put together.
                 if (payload.b != null && payload.b.Length > 0)
                 {
-                    var walls = new BuildingMeshBuilder.Buffers();
-                    var roofs = new BuildingMeshBuilder.Buffers();
+                    // One buffer per material, merged. Brick, limestone,
+                    // shopfronts and roofs are different surfaces and cannot
+                    // share a texture; merging by material keeps a tile to a
+                    // handful of draw calls rather than one per building.
+                    var sink = new BuildingMeshBuilder.Sink();
                     foreach (var b in payload.b)
                     {
                         // Landmarks ride in the manifest and are built once,
                         // permanently. Drawing them here as well double-draws.
                         if (b.lm == 1) continue;
-                        BuildingMeshBuilder.Extrude(b, walls, roofs);
+                        BuildingMeshBuilder.Extrude(b, sink);
                     }
-                    // Both solid: walls so you cannot walk through a shop, roofs
-                    // so flying down onto one lands you on it.
-                    AddMesh(go, "walls", walls.ToMesh($"walls_{t.x}_{t.y}"), buildingMaterial, 0f, solid: true);
-                    AddMesh(go, "roofs", roofs.ToMesh($"roofs_{t.x}_{t.y}"), roofMaterial, 0f, solid: true);
+                    foreach (var kv in sink.All)
+                    {
+                        if (kv.Value.vertices.Count == 0) continue;
+                        // Solid: walls so you cannot walk through a shop, roofs
+                        // so flying down onto one lands you on it.
+                        AddMesh(go, kv.Key, kv.Value.ToMesh($"{kv.Key}_{t.x}_{t.y}"),
+                                Facade(kv.Key), 0f, solid: true);
+                    }
                 }
 
                 BuildSurfaces(go, payload, t);
@@ -329,6 +336,59 @@ namespace TrapMadeIt.World
         }
 
         Material Mat(string key) => palette.TryGetValue(key, out var m) ? m : buildingMaterial;
+
+        readonly Dictionary<string, Material> facades = new Dictionary<string, Material>();
+
+        /// <summary>
+        /// The material for a building surface, with its facade drawn the first
+        /// time it is asked for.
+        ///
+        /// Built on demand and kept: there are about twenty of these for the
+        /// whole city -- five styles of wall, three ground floors across those
+        /// styles, two roofs -- and generating one costs a few milliseconds. Not
+        /// caching them would redraw every texture on every tile load.
+        /// </summary>
+        Material Facade(string key)
+        {
+            if (facades.TryGetValue(key, out var cached)) return cached;
+
+            Shader shader = buildingMaterial != null ? buildingMaterial.shader : null;
+            if (shader == null) return buildingMaterial;
+
+            var parts = key.Split(':');
+            Texture2D tex;
+            float smooth = 0.06f;
+
+            if (parts[0] == "roof")
+            {
+                tex = CityTextures.Roof(parts[1]);
+            }
+            else if (parts[0] == "ground")
+            {
+                // parts: ground : kind : style
+                tex = CityTextures.Ground(parts[1], parts.Length > 2 ? parts[2] : "brick");
+                // Shop glass catches the sky, which is most of what says "glass".
+                if (parts[1] == "shopfront") smooth = 0.55f;
+            }
+            else
+            {
+                tex = CityTextures.Wall(parts.Length > 1 ? parts[1] : "brick");
+                if (parts.Length > 1 && parts[1] == "modern") smooth = 0.45f;
+                // A monument is one texture over the whole elevation, so a
+                // window row would repeat up it. It gets stonework only.
+                if (parts.Length > 1 && parts[1] == "monument")
+                    tex = CityTextures.Wall("monument", windows: false);
+            }
+
+            var mat = new Material(shader) { name = "Trap_" + key };
+            if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", Color.white);
+            if (mat.HasProperty("_Smoothness")) mat.SetFloat("_Smoothness", smooth);
+            if (mat.HasProperty("_Cull")) mat.SetFloat("_Cull", 0f);   // hollow shells
+            mat.mainTexture = tex;
+
+            facades[key] = mat;
+            return mat;
+        }
 
         static bool warnedNullMaterial;
 

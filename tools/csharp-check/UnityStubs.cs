@@ -80,7 +80,8 @@ namespace UnityEngine {
     public float r, g, b, a;
     public Color(float r,float g,float b){this.r=r;this.g=g;this.b=b;this.a=1f;}
     public Color(float r,float g,float b,float a){this.r=r;this.g=g;this.b=b;this.a=a;}
-    public static Color white => default;
+    public static Color white => new Color(1f,1f,1f);
+    public static Color black => new Color(0f,0f,0f);
     public static Color operator *(Color c, float f) => c;
   }
   // These used to be shaped like stubs -- Sqrt returning its argument, and
@@ -92,6 +93,7 @@ namespace UnityEngine {
     public static float Sqrt(float f) => (float)System.Math.Sqrt(f);
     public const float Deg2Rad = 0.0174533f, Rad2Deg = 57.2958f;
     public static int FloorToInt(float f) => (int)System.Math.Floor(f);
+    public static int RoundToInt(float f) => (int)System.Math.Round(f);
     public static float Abs(float f) => f < 0 ? -f : f;
     public static int Abs(int i) => i < 0 ? -i : i;
     public static float Clamp(float v,float a,float b) => v<a?a:(v>b?b:v);
@@ -99,6 +101,8 @@ namespace UnityEngine {
     public static float Clamp01(float v) => Clamp(v,0f,1f);
     public static float Max(float a,float b) => a>b?a:b;
     public static float Min(float a,float b) => a<b?a:b;
+    public static int Max(int a,int b) => a>b?a:b;
+    public static int Min(int a,int b) => a<b?a:b;
     public static float Sin(float f) => (float)System.Math.Sin(f);
     public static float Lerp(float a, float b, float t) => a + (b - a) * Clamp01(t);
     public static float Cos(float f) => (float)System.Math.Cos(f);
@@ -149,6 +153,7 @@ namespace UnityEngine {
     public bool HasProperty(string n) => false;
     public void SetColor(string n, Color c) {}
     public void SetFloat(string n, float f) {}
+    public Texture mainTexture { get; set; }
     public void EnableKeyword(string k) {}
     public static implicit operator bool(Material m) => false;
   }
@@ -173,7 +178,25 @@ namespace UnityEngine {
   // --- enough of the UI and camera surface for the map to be type-checked ---
   // Signatures copied from the real API. Where one is wrong the check is worse
   // than useless, so these stay mechanical: no logic, no invented overloads.
-  public class Texture : Object {}
+  public class Texture : Object {
+    public string name { get; set; }
+    public TextureWrapMode wrapMode { get; set; }
+    public FilterMode filterMode { get; set; }
+    public int anisoLevel { get; set; }
+  }
+  public enum TextureWrapMode { Repeat, Clamp, Mirror }
+  public enum TextureFormat { RGBA32, RGB24 }
+  public struct Color32 {
+    public byte r, g, b, a;
+    public Color32(byte r, byte g, byte b, byte a) { this.r=r; this.g=g; this.b=b; this.a=a; }
+    public static implicit operator Color32(Color c) =>
+      new Color32((byte)(c.r*255), (byte)(c.g*255), (byte)(c.b*255), (byte)(c.a*255));
+  }
+  public class Texture2D : Texture {
+    public Texture2D(int w, int h, TextureFormat f, bool mips) {}
+    public void SetPixels32(Color32[] px) {}
+    public void Apply(bool mips, bool noLongerReadable) {}
+  }
   public enum CameraClearFlags { Skybox, SolidColor, Depth, Nothing }
   public enum FilterMode { Point, Bilinear, Trilinear }
   public enum RenderMode { ScreenSpaceOverlay, ScreenSpaceCamera, WorldSpace }
