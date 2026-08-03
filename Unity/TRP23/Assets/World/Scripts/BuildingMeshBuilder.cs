@@ -157,9 +157,7 @@ namespace TrapMadeIt.World
             int n = ring.Length / 2;
             var order = NormalisedOrder(ring);
 
-            var tintEarly = b.c != null && b.c.Length >= 3
-                ? new Color(b.c[0] / 255f, b.c[1] / 255f, b.c[2] / 255f)
-                : new Color(0.9f, 0.86f, 0.8f);
+            var tintEarly = WallColour(b);
 
             // Some things are not a footprint with storeys on top. A city gate
             // is a hole in a wall you walk through; a cathedral is a nave with
@@ -175,9 +173,7 @@ namespace TrapMadeIt.World
             float baseY = b.y;           // the lowest, less a skirt
             float top = street + b.h;
 
-            var tint = b.c != null && b.c.Length >= 3
-                ? new Color(b.c[0] / 255f, b.c[1] / 255f, b.c[2] / 255f)
-                : new Color(0.9f, 0.86f, 0.8f);
+            var tint = WallColour(b);
 
             // Monuments map one texture over the whole elevation. Per storey
             // gave an 83m cathedral twenty-six rows of office windows.
@@ -220,6 +216,41 @@ namespace TrapMadeIt.World
             {
                 FlatRoof(roofs, ring, order, top, tint);
             }
+        }
+
+        /// <summary>
+        /// The colour a wall actually is.
+        ///
+        /// The tile's `c` is a TINT -- a multiplier the web client lays over a
+        /// procedural facade texture, which is where the real material colour
+        /// lives. Unity has no such texture yet, so multiplying it by a white
+        /// material gave a city of white boxes: every building "plain",
+        /// whatever its tags said.
+        ///
+        /// Until the facades are ported, the base colours from
+        /// src/world/cityTextures.js stand in for them, so brick reads as brick
+        /// and limestone as limestone. Deliberately dark and desaturated, same
+        /// as the web: the gold signage has to stay the brightest thing on the
+        /// street.
+        /// </summary>
+        static Color WallColour(BuildingData b)
+        {
+            var tint = b.c != null && b.c.Length >= 3
+                ? new Color(b.c[0] / 255f, b.c[1] / 255f, b.c[2] / 255f)
+                : Color.white;
+
+            Color material;
+            switch (b.st)
+            {
+                case "limestone": material = new Color(0.427f, 0.408f, 0.341f); break;  // #6d6857
+                case "brick":     material = new Color(0.216f, 0.173f, 0.145f); break;  // #372c25
+                case "modern":    material = new Color(0.290f, 0.290f, 0.298f); break;  // #4a4a4c
+                case "render":    material = new Color(0.376f, 0.353f, 0.318f); break;  // the render hues
+                case "monument":  material = new Color(0.455f, 0.435f, 0.365f); break;  // weathered ashlar
+                default:          material = new Color(0.400f, 0.380f, 0.340f); break;
+            }
+
+            return new Color(material.r * tint.r, material.g * tint.g, material.b * tint.b);
         }
 
         static void FlatRoof(Buffers b, float[] ring, int[] order, float top, Color tint)

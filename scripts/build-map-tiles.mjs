@@ -922,7 +922,11 @@ async function main() {
       rs: b.roofShape,
       ...(b.massing ? { m: b.massing } : {}),
       ...(isLandmark(b) ? { lm: 1 } : {}),
-      c: b.tint.map((v) => Math.round(v * 255)),
+      // Clamped. These are multipliers over a facade texture and legitimately
+      // run above 1.0 to brighten it -- limestone reaches 1.12, brick 1.20 --
+      // but they ship as 0-255 BYTES, so 1.20 became 306 and any client that
+      // reads them as a colour blew the whole city out to white.
+      c: b.tint.map((v) => Math.max(0, Math.min(255, Math.round(v * 255)))),
       ...(b.name ? { n: b.name } : {}),
     });
   }
@@ -1152,7 +1156,7 @@ async function main() {
         for (const p of b.ring) flat.push(round(p.x), round(p.z));
         return {
           i: b.id, p: flat, y: round(b.base), s: round(b.sill), h: round(b.height),
-          st: b.style, g: b.ground, rs: b.roofShape, c: b.tint.map((v) => Math.round(v * 255)),
+          st: b.style, g: b.ground, rs: b.roofShape, c: b.tint.map((v) => Math.max(0, Math.min(255, Math.round(v * 255)))),
           ...(b.massing ? { m: b.massing } : {}),
           ...(b.name ? { n: b.name } : {}),
         };
