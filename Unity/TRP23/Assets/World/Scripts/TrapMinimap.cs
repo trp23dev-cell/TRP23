@@ -219,6 +219,30 @@ namespace TrapMadeIt.World
         }
 
         /// <summary>
+        /// The full map stops the world.
+        ///
+        /// You read it to decide where to go, and standing in the street with
+        /// your view filled by a map while the city carries on around you is
+        /// how you get run over by something you cannot see. Time scale rather
+        /// than disabling the controller: it stops everything at once, and
+        /// nothing has to remember what it was doing.
+        ///
+        /// Input still works at zero time scale, so closing the map still works.
+        /// </summary>
+        void ApplyPause()
+        {
+            Time.timeScale = BigMap ? 0f : 1f;
+        }
+
+        void OnDisable()
+        {
+            // Never leave the game paused because a scene changed with the map
+            // open -- there would be nothing left to unpause it.
+            Time.timeScale = 1f;
+            PointerFocus.Release("map");
+        }
+
+        /// <summary>
         /// One owner for the mouse pointer.
         ///
         /// Looking around needs it captured -- otherwise it runs into the edge
@@ -250,27 +274,21 @@ namespace TrapMadeIt.World
             var k = Keyboard.current;
             if (k != null)
             {
-                if (k.mKey.wasPressedThisFrame) { BigMap = !BigMap; Apply(); }
-                if (k.leftBracketKey.wasPressedThisFrame) Zoom(-1);
-                if (k.rightBracketKey.wasPressedThisFrame) Zoom(1);
+                if (k.mKey.wasPressedThisFrame) { BigMap = !BigMap; Apply(); ApplyPause(); }
+                if (k.leftBracketKey.wasPressedThisFrame) StepDial(-1);
+                if (k.rightBracketKey.wasPressedThisFrame) StepDial(1);
                 if (k.escapeKey.wasPressedThisFrame) cursorReleased = true;
             }
 
             var mouse = Mouse.current;
             if (mouse != null)
             {
-                // Wheel zooms the map.
-                //
-                // While the mouse is captured for looking there is no pointer to
-                // be "over" anything -- its position is pinned to the middle of
-                // the screen -- so requiring a hover would mean the wheel never
-                // worked at all. Captured, the wheel is unambiguously the map's.
-                // Released, it only counts over the map, so it does not fight
-                // anything else that wants it.
+                // The wheel belongs to the map ONLY while the map is open.
+                // Out in the street it is the camera's, for pulling back off
+                // the character's shoulder -- see CameraBoom. Two things
+                // reading the same wheel is how one of them stops working.
                 float wheel = mouse.scroll.ReadValue().y;
-                bool captured = !BigMap && !cursorReleased;
-                if (Mathf.Abs(wheel) > 0.01f && (captured || OverMap(mouse.position.ReadValue())))
-                    Zoom(wheel > 0f ? -1 : 1);
+                if (BigMap && Mathf.Abs(wheel) > 0.01f) Zoom(wheel > 0f ? -1 : 1);
 
                 if (mouse.leftButton.wasPressedThisFrame && BigMap)
                     SetWaypointFromScreen(mouse.position.ReadValue());
@@ -285,7 +303,7 @@ namespace TrapMadeIt.World
 
         void Zoom(int by)
         {
-            if (BigMap)
+            if (!BigMap) return;
             {
                 // The full map zooms smoothly rather than in fixed steps: it is
                 // being read, not glanced at, and 900m is a starting point
@@ -293,10 +311,14 @@ namespace TrapMadeIt.World
                 // scrolled into either a single roof or the whole county.
                 bigMapMetres = Mathf.Clamp(bigMapMetres * (by > 0 ? 1.2f : 1f / 1.2f), 120f, 2400f);
             }
-            else
-            {
-                zoomIndex = Mathf.Clamp(zoomIndex + by, 0, zoomMetres.Length - 1);
-            }
+            Apply();
+        }
+
+        /// The corner dial's fixed zoom steps, on the bracket keys.
+        void StepDial(int by)
+        {
+            if (BigMap) return;
+            zoomIndex = Mathf.Clamp(zoomIndex + by, 0, zoomMetres.Length - 1);
             Apply();
         }
 

@@ -109,6 +109,13 @@ namespace TrapMadeIt.World.EditorTools
                     camGo.transform.SetParent(head, false);
                     camGo.transform.localPosition = Vector3.zero;
                     camGo.transform.localRotation = Quaternion.identity;
+
+                    // Scroll pulls the camera back off the shoulder and pushes
+                    // it into the head. The controller aims the head; the boom
+                    // only decides how far behind it to sit, so the two never
+                    // disagree about where the camera is pointing.
+                    var boom = camGo.AddComponent<CameraBoom>();
+                    boom.playerLayer = "Player";
                 }
                 else
                 {

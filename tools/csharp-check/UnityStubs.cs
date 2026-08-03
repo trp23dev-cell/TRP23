@@ -58,6 +58,7 @@ namespace UnityEngine {
     public static Vector3 operator +(Vector3 a, Vector3 b) => new Vector3(a.x+b.x,a.y+b.y,a.z+b.z);
     public static Vector3 operator -(Vector3 a, Vector3 b) => new Vector3(a.x-b.x,a.y-b.y,a.z-b.z);
     public static Vector3 operator *(Vector3 a, float f) => new Vector3(a.x*f,a.y*f,a.z*f);
+    public static Vector3 operator -(Vector3 a) => new Vector3(-a.x,-a.y,-a.z);
     // Real, because a check that derives a triangle's facing from its vertex
     // order is worthless if the cross product returns zero. Same trap as Sqrt.
     public static Vector3 Cross(Vector3 a, Vector3 b) =>
@@ -91,6 +92,8 @@ namespace UnityEngine {
   // now, so logic compiled against them can also be executed against them.
   public static class Mathf {
     public static float Sqrt(float f) => (float)System.Math.Sqrt(f);
+    public static float Exp(float f) => (float)System.Math.Exp(f);
+    public static float Sign(float f) => f < 0f ? -1f : 1f;
     public const float Deg2Rad = 0.0174533f, Rad2Deg = 57.2958f;
     public static int FloorToInt(float f) => (int)System.Math.Floor(f);
     public static int RoundToInt(float f) => (int)System.Math.Round(f);
@@ -131,6 +134,8 @@ namespace UnityEngine {
     public Transform GetChild(int i) => null;
     public void SetParent(Transform p, bool w) {}
     public Vector3 TransformDirection(Vector3 v) => v;
+    public Transform parent => null;
+    public Vector3 forward => default;
   }
   public class Camera : Component {
     public static Camera main => null; public Transform transform => null;
@@ -165,7 +170,7 @@ namespace UnityEngine {
     public static float GetAxisRaw(string n) => 0f;
   }
   public enum KeyCode { E, Q, LeftShift }
-  public static class Time { public static float deltaTime => 0f; public static float time => 0f; }
+  public static class Time { public static float deltaTime => 0f; public static float time => 0f; public static float timeScale { get; set; } public static float unscaledDeltaTime => 0f; }
   public class CharacterController : Component {
     public bool enabled { get; set; } public float height { get; set; }
     public Vector3 center { get; set; }
@@ -217,7 +222,19 @@ namespace UnityEngine {
     public static CursorLockMode lockState { get; set; }
     public static bool visible { get; set; }
   }
-  public static class LayerMask { public static int NameToLayer(string n) => -1; }
+  public struct LayerMask {
+    public static int NameToLayer(string n) => -1;
+    public static implicit operator int(LayerMask m) => 0;
+    public static implicit operator LayerMask(int v) => default;
+  }
+  public struct RaycastHit { public Vector3 normal; public float distance; public Vector3 point; }
+  public enum QueryTriggerInteraction { UseGlobal, Ignore, Collide }
+  public static class Physics {
+    public static bool Raycast(Vector3 o, Vector3 d, out RaycastHit hit, float max, int mask, QueryTriggerInteraction q)
+      { hit = default; return false; }
+    public static bool SphereCast(Vector3 o, float r, Vector3 d, out RaycastHit hit, float max, int mask, QueryTriggerInteraction q)
+      { hit = default; return false; }
+  }
   public struct Rect {
     public float width, height;
     public bool Contains(Vector2 p) => false;
