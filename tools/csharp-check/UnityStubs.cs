@@ -5,7 +5,7 @@ using System;
 using System.Collections;
 namespace UnityEngine {
   public class Object {}
-  public class MonoBehaviour : Component { public Transform transform => null; public bool enabled { get; set; } public static T FindAnyObjectByType<T>() where T : Component, new() => new T(); public Coroutine StartCoroutine(IEnumerator r) => null; public static void DontDestroyOnLoad(Object o) {} public static void Destroy(Object o) {} }
+  public class MonoBehaviour : Component { public Transform transform => null; public bool enabled { get; set; } public static T FindAnyObjectByType<T>() where T : Component, new() => new T(); public static T[] FindObjectsByType<T>(FindObjectsSortMode m) where T : Component => new T[0]; public Coroutine StartCoroutine(IEnumerator r) => null; public static void DontDestroyOnLoad(Object o) {} public static void Destroy(Object o) {} }
   public class Coroutine {}
   public class WaitForSeconds { public WaitForSeconds(float s) {} }
   public static class PlayerPrefs {
@@ -82,6 +82,8 @@ namespace UnityEngine {
     public Color(float r,float g,float b){this.r=r;this.g=g;this.b=b;this.a=1f;}
     public Color(float r,float g,float b,float a){this.r=r;this.g=g;this.b=b;this.a=a;}
     public static Color white => new Color(1f,1f,1f);
+    public static Color Lerp(Color a, Color b, float t) => a;
+    public static Color operator *(Color a, Color b) => a;
     public static Color black => new Color(0f,0f,0f);
     public static Color operator *(Color c, float f) => c;
   }
@@ -123,7 +125,7 @@ namespace UnityEngine {
     public void SetColors(System.Collections.Generic.List<Color> v) {}
     public void SetTriangles(System.Collections.Generic.List<int> t, int sub) {}
   }
-  namespace Rendering { public enum IndexFormat { UInt16, UInt32 } }
+  namespace Rendering { public enum IndexFormat { UInt16, UInt32 } public enum AmbientMode { Skybox, Trilight, Flat, Custom } }
   public class Transform : Component {
     public T GetComponent<T>() where T : Component, new() => new T();
     public Vector3 position { get; set; } public Quaternion rotation { get; set; }
@@ -145,8 +147,27 @@ namespace UnityEngine {
     public float depth { get; set; } public int cullingMask { get; set; }
     public RenderTexture targetTexture { get; set; }
   }
-  public enum LightType { Directional }
-  public class Light : Component { public LightType type { get; set; } public float intensity { get; set; } public Transform transform => null; }
+  public enum LightType { Directional, Point, Spot }
+  public enum LightShadows { None, Hard, Soft }
+  public enum FogMode { Linear, Exponential, ExponentialSquared }
+  public enum FindObjectsSortMode { None, InstanceID }
+  public static class RenderSettings {
+    public static bool fog { get; set; }
+    public static FogMode fogMode { get; set; }
+    public static Color fogColor { get; set; }
+    public static float fogDensity { get; set; }
+    public static Rendering.AmbientMode ambientMode { get; set; }
+    public static Color ambientSkyColor { get; set; }
+    public static Color ambientEquatorColor { get; set; }
+    public static Color ambientGroundColor { get; set; }
+    public static Material skybox { get; set; }
+  }
+  public class RangeAttribute : Attribute { public RangeAttribute(float a, float b) {} }
+  public class Light : Component {
+    public LightType type { get; set; } public float intensity { get; set; }
+    public Color color { get; set; } public LightShadows shadows { get; set; }
+    public Transform transform => null;
+  }
   public class MeshFilter : Component { public Mesh sharedMesh { get; set; } }
   public class MeshRenderer : Component { public Material sharedMaterial { get; set; } }
   public class MeshCollider : Component { public bool convex { get; set; } public Mesh sharedMesh { get; set; } }

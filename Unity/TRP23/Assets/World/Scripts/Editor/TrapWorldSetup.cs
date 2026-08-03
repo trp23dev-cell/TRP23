@@ -49,21 +49,24 @@ namespace TrapMadeIt.World.EditorTools
             // was clipped out of existence and read as missing terrain.
             cam.farClipPlane = 2600f;
             cam.nearClipPlane = 0.1f;
+            // Fog reaches the far plane long before geometry does, so the edge
+            // of the loaded tiles is never a visible line.
+            cam.clearFlags = CameraClearFlags.SolidColor;
             // FlyCamera is added below, and only when there is no character to
             // control -- two components writing the camera transform is the
             // jitter bug that takes an afternoon to find.
 
             var sun = new GameObject("Sun").AddComponent<Light>();
             sun.type = LightType.Directional;
-            sun.intensity = 1.4f;
-            sun.transform.rotation = Quaternion.Euler(45f, -30f, 0f);
+            sun.shadows = LightShadows.Soft;
 
-            // An empty scene has no ambient light at all, which leaves anything
-            // facing away from the sun completely black.
-            RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Trilight;
-            RenderSettings.ambientSkyColor = new Color(0.45f, 0.50f, 0.60f);
-            RenderSettings.ambientEquatorColor = new Color(0.30f, 0.32f, 0.34f);
-            RenderSettings.ambientGroundColor = new Color(0.16f, 0.15f, 0.13f);
+            // Sky, fog, sun angle and ambient all come from WorldAtmosphere,
+            // which carries the web client's mood arc: dusk on the first night,
+            // lifting toward daylight as chapters clear. Setting any of it here
+            // as well would mean two places deciding the weather.
+            var air = new GameObject("Atmosphere").AddComponent<WorldAtmosphere>();
+            air.sun = sun;
+            air.view = cam;
 
             // Drop the Starter Assets player in, if it has been imported. The
             // free camera stays the fallback: it is what you want for looking
@@ -151,6 +154,8 @@ namespace TrapMadeIt.World.EditorTools
             // both now, and it is saved where the menu's Play button looks.
             TrapUiSetup.AddHud();
 
+            TuneRenderPipeline();
+
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene, TrapUiSetup.GameScenePath);
             Debug.Log($"[TRAP] saved the game scene to {TrapUiSetup.GameScenePath} — " +
@@ -170,6 +175,45 @@ namespace TrapMadeIt.World.EditorTools
                   "  double-tap space  fly / walk\n" +
                   "  Q / E       down / up (flying only)\n" +
                   "  shift       hurry");
+        }
+
+        /// <summary>
+        /// Shadows far enough out to matter, and soft enough to look like
+        /// weather rather than a stencil.
+        ///
+        /// URP keeps these on the pipeline asset rather than the light, and the
+        /// default 50m shadow distance means the building across the street
+        /// casts nothing. In a city that reads as everything floating.
+        /// </summary>
+        static void TuneRenderPipeline()
+        {
+            var rp = UnityEngine.Rendering.GraphicsSettings.currentRenderPipeline
+                     as UnityEngine.Rendering.Universal.UniversalRenderPipelineAsset;
+            if (rp == null)
+            {
+                Debug.LogWarning("[TRAP] no URP asset found — shadow distance left at its default, " +
+                                 "so distant buildings will not cast shadows.");
+                return;
+            }
+
+            var so = new SerializedObject(rp);
+            // By name, because these are not all public properties and the set
+            // that is has changed between URP versions.
+            Set(so, "m_ShadowDistance", 220f);
+            Set(so, "m_Cascade2Split", 0.25f);
+            Set(so, "m_SoftShadowsSupported", true);
+            Set(so, "m_ShadowCascadeCount", 3);
+            so.ApplyModifiedProperties();
+            EditorUtility.SetDirty(rp);
+        }
+
+        static void Set(SerializedObject so, string path, object value)
+        {
+            var prop = so.FindProperty(path);
+            if (prop == null) return;
+            if (value is float f) prop.floatValue = f;
+            else if (value is int i) prop.intValue = i;
+            else if (value is bool b) prop.boolValue = b;
         }
 
         /// <summary>
