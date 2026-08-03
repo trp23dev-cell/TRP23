@@ -110,7 +110,20 @@ namespace TrapMadeIt.World
             {
                 // Water is smooth so it reflects; everything else is matte.
                 float smooth = kv.Key == "water" ? 0.85f : 0.05f;
-                palette[kv.Key] = Make(known, kv.Value, smooth, "Trap_" + kv.Key);
+                var mat = Make(known, kv.Value, smooth, "Trap_" + kv.Key);
+
+                // Drawn ground, at real size: 600mm flags, 100mm setts. The
+                // colour stays as the fallback for anything with no texture --
+                // water, which is meant to be flat, and anything added later.
+                var tex = CityTextures.Surface(kv.Key);
+                if (tex != null && mat != null)
+                {
+                    mat.mainTexture = tex;
+                    // White, or the texture is multiplied by its own colour
+                    // again and the ground comes out twice as dark.
+                    if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", Color.white);
+                }
+                palette[kv.Key] = mat;
             }
 
             Debug.Log($"[world] walls: {(buildingMaterial != null ? buildingMaterial.name : "NONE")}, " +

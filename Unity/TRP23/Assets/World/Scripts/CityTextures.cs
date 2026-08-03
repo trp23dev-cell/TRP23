@@ -86,6 +86,122 @@ namespace TrapMadeIt.World
             return Finish(px, $"ground_{kind}_{style}");
         }
 
+        /// <summary>
+        /// What you are walking on.
+        ///
+        /// The ground tiles at the same 6 metres as the walls, so these are
+        /// drawn at real size: a paving flag is 600mm because a paving flag is
+        /// 600mm, and setts are 100mm across because that is what the setts on
+        /// Steep Hill are. Get that wrong and the street reads as the right
+        /// pattern at the wrong scale, which is worse than no pattern -- it
+        /// makes the whole city feel like a different size.
+        /// </summary>
+        public static Texture2D Surface(string kind)
+        {
+            var px = new Color32[Size * Size];
+            var rng = new Rng(kind == null ? 5 : kind.Length * 17 + kind[0]);
+
+            switch (kind)
+            {
+                case "paving":
+                    // 600mm flags: ten across a six-metre tile.
+                    Fill(px, new Color(0.42f, 0.41f, 0.38f));
+                    Grid(px, ref rng, 10, new Color(0f, 0f, 0f, 0.35f), 0.045f);
+                    break;
+
+                case "cobble":
+                    // Setts, not cobbles, and about 100mm. Staggered, because
+                    // they are laid in courses rather than a grid.
+                    Fill(px, new Color(0.26f, 0.24f, 0.22f));
+                    Setts(px, ref rng, 60);
+                    break;
+
+                case "kerb":
+                    // Long kerbstones with a joint every 900mm.
+                    Fill(px, new Color(0.46f, 0.45f, 0.42f));
+                    for (int i = 0; i < 7; i++)
+                        VLineSegment(px, i * Size / 7, 0, Size, new Color(0f, 0f, 0f, 0.4f));
+                    Grain(px, ref rng, 0.04f);
+                    break;
+
+                case "asphalt":
+                    Fill(px, new Color(0.18f, 0.17f, 0.16f));
+                    Grain(px, ref rng, 0.055f);
+                    Chips(px, ref rng, 900, new Color(0.42f, 0.41f, 0.39f, 0.5f));
+                    break;
+
+                case "concrete":
+                    Fill(px, new Color(0.34f, 0.34f, 0.33f));
+                    Grid(px, ref rng, 3, new Color(0f, 0f, 0f, 0.28f), 0.02f);
+                    Grain(px, ref rng, 0.03f);
+                    break;
+
+                case "gravel":
+                    Fill(px, new Color(0.30f, 0.27f, 0.22f));
+                    Chips(px, ref rng, 2600, new Color(0.52f, 0.47f, 0.38f, 0.55f));
+                    Grain(px, ref rng, 0.07f);
+                    break;
+
+                case "grass":
+                    Fill(px, new Color(0.24f, 0.34f, 0.16f));
+                    Chips(px, ref rng, 3200, new Color(0.33f, 0.44f, 0.20f, 0.5f));
+                    Chips(px, ref rng, 1400, new Color(0.16f, 0.24f, 0.11f, 0.5f));
+                    break;
+
+                case "wood":
+                    Fill(px, new Color(0.16f, 0.24f, 0.11f));
+                    Chips(px, ref rng, 2200, new Color(0.10f, 0.17f, 0.08f, 0.6f));
+                    break;
+
+                default:
+                    return null;   // water and anything else stays plain
+            }
+            return Finish(px, $"surface_{kind}");
+        }
+
+        /// A square grid of joints, for flags and concrete bays.
+        static void Grid(Color32[] px, ref Rng rng, int cells, Color joint, float variation)
+        {
+            int step = Size / cells;
+            for (int i = 0; i < cells; i++)
+            {
+                HLine(px, i * step, joint);
+                VLineSegment(px, i * step, 0, Size, joint);
+                for (int j = 0; j < cells; j++)
+                    Shade(px, i * step, j * step, step, step, rng.Range(-variation, variation));
+            }
+        }
+
+        /// Setts: small, staggered, and each its own shade.
+        static void Setts(Color32[] px, ref Rng rng, int across)
+        {
+            int w = Mathf.Max(2, Size / across);
+            for (int r = 0; r * w < Size; r++)
+            {
+                int y = r * w;
+                HLine(px, y, new Color(0f, 0f, 0f, 0.45f));
+                int offset = (r % 2) * (w / 2);
+                for (int x = -offset; x < Size; x += w)
+                {
+                    VLineSegment(px, Wrap(x), y, y + w, new Color(0f, 0f, 0f, 0.4f));
+                    Shade(px, Wrap(x), y, w, w, rng.Range(-0.09f, 0.09f));
+                }
+            }
+        }
+
+        /// Scattered specks: aggregate in asphalt, stones in gravel, blades in grass.
+        static void Chips(Color32[] px, ref Rng rng, int count, Color c)
+        {
+            for (int i = 0; i < count; i++)
+            {
+                int x = (int)(rng.Next() * Size);
+                int y = (int)(rng.Next() * Size);
+                Blend(px, x, y, c);
+                if (rng.Next() < 0.4f) Blend(px, x + 1, y, c);
+                if (rng.Next() < 0.3f) Blend(px, x, y + 1, c);
+            }
+        }
+
         /// <summary>Roof covering. Slate courses or clay pantiles.</summary>
         public static Texture2D Roof(string kind)
         {
