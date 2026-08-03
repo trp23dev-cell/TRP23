@@ -4,7 +4,14 @@ export const defaultContent = {
   // this on boot (see ensureStorage in server/mockApiServer.js), and the client
   // storage key in contentStore.js is bumped alongside it.
   // v2: chapter renames + stash -> archive + Ch02 moral line.
-  version: 2,
+  // v3: removed `own1`, which was cleared by BUYING something. Vol 11 is
+  //     explicit that rewards come from participation, not spend, and a
+  //     mission you complete by paying contradicts it directly.
+  //     `own2` and `own3` are the same contradiction and are still here on
+  //     purpose: deleting them outright would leave chapters 03 and 05 with a
+  //     single mission each. They get REPLACED in the chapter rebuild — see
+  //     docs/MISSION-DESIGN-BIBLE.md §10.
+  version: 3,
   brand: {
     name: "TRAP MADE IT",
     chapterTitle: "The Come Up",
@@ -42,7 +49,6 @@ export const defaultContent = {
       dropId: "drop-star-midnight",
       missions: [
         { id: "inspect", type: "viewer_spin", title: "Inspect the drop", rewardCoins: 150, limit: 1, antiAbuseRule: "single-clear" },
-        { id: "own1", type: "purchase_count", title: "First move", rewardCoins: 250, requirement: 1, limit: 1, antiAbuseRule: "order-linked" },
         { id: "stash", type: "stash", title: "Find the archive", rewardCoins: 500, limit: 1, antiAbuseRule: "single-clear" }
       ]
     },

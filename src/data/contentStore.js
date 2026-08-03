@@ -4,7 +4,10 @@ import { validateContentShape } from "./contracts";
 // v2: chapter renames (THE COOK UP -> THE KITCHEN, THE FRONT -> THE SHOP FLOOR),
 // stash -> archive copy, and the Ch02 moral line. Bumping the key retires stale
 // cached content so returning players get the new names instead of the old ones.
-const STORAGE_KEY = "trapmadeit.content.v2";
+// Bumped alongside defaultContent.version. A stale cache here serves the old
+// chapter copy for ever and the change silently never reaches players — which
+// is exactly what happened once already (Build_Progress.md 6.2).
+const STORAGE_KEY = "trapmadeit.content.v3";
 const API_BASE = `${import.meta.env.VITE_API_ORIGIN || ""}/api`;
 
 function clone(value) {
