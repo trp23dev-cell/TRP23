@@ -50,6 +50,11 @@ namespace TrapMadeIt.World
         public bool BigMap { get; private set; }
         public Vector3? Waypoint { get; private set; }
 
+        // Escape lets go of the mouse; clicking in the window takes it back.
+        // Without this the editor traps you, and in a build there is no way out
+        // of the window at all.
+        bool cursorReleased;
+
         Camera mapCamera;
         RenderTexture target;
         RawImage image;
@@ -210,6 +215,30 @@ namespace TrapMadeIt.World
 
             UpdatePins();
             UpdateGuide();
+            ApplyCursor();
+        }
+
+        /// <summary>
+        /// One owner for the mouse pointer.
+        ///
+        /// Looking around needs it captured -- otherwise it runs into the edge
+        /// of the screen and the camera stops turning, which is exactly what a
+        /// free cursor feels like. The full map needs it back, because setting a
+        /// waypoint means clicking on a place.
+        ///
+        /// Starter Assets also sets cursor state, but only when the window
+        /// gains or loses focus, so it cannot be relied on to hold a decision
+        /// made mid-game. Deciding here every frame -- and only writing when it
+        /// actually differs -- means one thing is in charge and it is the thing
+        /// that knows whether the map is open.
+        /// </summary>
+        void ApplyCursor()
+        {
+            bool wantFree = BigMap || cursorReleased;
+            var wantLock = wantFree ? CursorLockMode.None : CursorLockMode.Locked;
+
+            if (Cursor.lockState != wantLock) Cursor.lockState = wantLock;
+            if (Cursor.visible != wantFree) Cursor.visible = wantFree;
         }
 
         void ReadInput()
@@ -221,19 +250,30 @@ namespace TrapMadeIt.World
                 if (k.mKey.wasPressedThisFrame) { BigMap = !BigMap; Apply(); }
                 if (k.leftBracketKey.wasPressedThisFrame) Zoom(-1);
                 if (k.rightBracketKey.wasPressedThisFrame) Zoom(1);
+                if (k.escapeKey.wasPressedThisFrame) cursorReleased = true;
             }
 
             var mouse = Mouse.current;
             if (mouse != null)
             {
-                // Zooming with the wheel, but only over the map -- otherwise it
-                // fights anything else that wants the wheel.
+                // Wheel zooms the map.
+                //
+                // While the mouse is captured for looking there is no pointer to
+                // be "over" anything -- its position is pinned to the middle of
+                // the screen -- so requiring a hover would mean the wheel never
+                // worked at all. Captured, the wheel is unambiguously the map's.
+                // Released, it only counts over the map, so it does not fight
+                // anything else that wants it.
                 float wheel = mouse.scroll.ReadValue().y;
-                if (Mathf.Abs(wheel) > 0.01f && OverMap(mouse.position.ReadValue()))
+                bool captured = !BigMap && !cursorReleased;
+                if (Mathf.Abs(wheel) > 0.01f && (captured || OverMap(mouse.position.ReadValue())))
                     Zoom(wheel > 0f ? -1 : 1);
 
                 if (mouse.leftButton.wasPressedThisFrame && BigMap)
                     SetWaypointFromScreen(mouse.position.ReadValue());
+                // Click back into the window to take the mouse again.
+                else if (mouse.leftButton.wasPressedThisFrame && cursorReleased)
+                    cursorReleased = false;
                 if (mouse.rightButton.wasPressedThisFrame && BigMap)
                     ClearWaypoint();
             }
@@ -242,8 +282,18 @@ namespace TrapMadeIt.World
 
         void Zoom(int by)
         {
-            if (BigMap) return;      // the full map has one fixed scale
-            zoomIndex = Mathf.Clamp(zoomIndex + by, 0, zoomMetres.Length - 1);
+            if (BigMap)
+            {
+                // The full map zooms smoothly rather than in fixed steps: it is
+                // being read, not glanced at, and 900m is a starting point
+                // rather than the only useful scale. Bounded so it cannot be
+                // scrolled into either a single roof or the whole county.
+                bigMapMetres = Mathf.Clamp(bigMapMetres * (by > 0 ? 1.2f : 1f / 1.2f), 120f, 2400f);
+            }
+            else
+            {
+                zoomIndex = Mathf.Clamp(zoomIndex + by, 0, zoomMetres.Length - 1);
+            }
             Apply();
         }
 
@@ -270,8 +320,10 @@ namespace TrapMadeIt.World
             }
 
             readout.text = BigMap
-                ? "M close map    click set waypoint    right-click clear\n© OpenStreetMap contributors"
-                : $"M map    [ ] zoom ({mapCamera.orthographicSize:F0}m)\n© OpenStreetMap contributors";
+                ? $"M close map    click set waypoint    right-click clear    scroll zoom ({mapCamera.orthographicSize:F0}m)\n" +
+                  "© OpenStreetMap contributors"
+                : $"M map    scroll or [ ] zoom ({mapCamera.orthographicSize:F0}m)    esc free mouse\n" +
+                  "© OpenStreetMap contributors";
         }
 
         bool OverMap(Vector2 screen)

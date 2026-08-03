@@ -189,6 +189,11 @@ namespace UnityEngine {
   public class Font : Object {}
   public static class Resources { public static T GetBuiltinResource<T>(string path) where T : Object, new() => new T(); }
   public static class Screen { public static int width => 0; public static int height => 0; }
+  public enum CursorLockMode { None, Locked, Confined }
+  public static class Cursor {
+    public static CursorLockMode lockState { get; set; }
+    public static bool visible { get; set; }
+  }
   public static class LayerMask { public static int NameToLayer(string n) => -1; }
   public struct Rect {
     public float width, height;
@@ -258,6 +263,7 @@ namespace UnityEngine.InputSystem {
     public ButtonControl mKey => null;
     public ButtonControl leftBracketKey => null;
     public ButtonControl rightBracketKey => null;
+    public ButtonControl escapeKey => null;
   }
 }
 namespace UnityEngine.SceneManagement {
