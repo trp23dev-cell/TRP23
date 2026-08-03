@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("trapcard-check")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+51b1bf0672ec6ab26474d6898e6d72c539b23657")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+4529cb0e2707a1f2bbb0292fb4a2432a3ab21175")]
 [assembly: System.Reflection.AssemblyProductAttribute("trapcard-check")]
 [assembly: System.Reflection.AssemblyTitleAttribute("trapcard-check")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
