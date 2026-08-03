@@ -1,0 +1,111 @@
+# Quality gates.
+#
+# The README described this file for two weeks before it existed. Nothing was
+# checked on push, everyone believed it was, and that is exactly the window in
+# which /api/rewards/claim was paying out whatever number the caller asked for
+# on a live deploy. Documented-but-absent infrastructure is worse than none,
+# because it stops people looking.
+#
+# Two jobs on purpose. The Node gates finish in about a minute; the .NET ones
+# need an SDK and take longer. A developer who has to wait on a dotnet restore
+# to learn their CSS is broken is a developer who stops running CI.
+name: Quality gates
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main]
+
+# A new push supersedes the run it interrupted. No point burning minutes on a
+# commit nobody is waiting for any more.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: Web, API and economy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      # better-sqlite3 builds a native module, so this is not a pure download.
+      - run: npm ci
+
+      - name: Repository hygiene
+        run: npm run check:repo
+
+      - name: Room asset registry
+        run: npm run validate:rooms
+
+      - name: Build
+        run: npm run build
+
+      # Must come after the build: the deep-link check needs a dist/ to fall
+      # back to, and skips itself silently if there is not one.
+      - name: API liveness
+        run: npm run test:api
+
+      - name: Security and economy
+        run: npm run check:api
+
+      - name: Shared logic parity (JS side)
+        run: npm run check:trap -- --js
+
+      # The debug hook lets the smoke test move the player. It grants nothing a
+      # player could not do by walking, but it has no business in a production
+      # bundle, and a grep is cheaper than remembering.
+      - name: No debug hooks in the production bundle
+        run: |
+          if grep -rq "__trapDebug" dist/assets/*.js; then
+            echo "::error::__trapDebug is in the production bundle"
+            exit 1
+          fi
+          echo "clean"
+
+  unity-scripts:
+    name: Unity C# and world geometry
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Cache NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('tools/**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      # Compiles the Unity scripts against hand-written stubs. Proves the code
+      # is valid before it reaches an editor, which beats finding out from a red
+      # console after a project import.
+      - name: C# compiles
+        run: npm run check:csharp
+
+      - name: World collision and geometry
+        run: npm run check:world
+
+      # Runs the shared trap-card table against the C# implementation, so the
+      # two clients cannot quietly disagree about it. This has already caught
+      # one real divergence.
+      - name: Shared logic parity (C# side)
+        run: npm run check:trap

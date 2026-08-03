@@ -245,8 +245,11 @@ function allowedOrigin(origin, host) {
   if (CAPACITOR_ORIGINS.includes(clean)) return clean;
   if (EXTRA_ORIGINS.includes(clean)) return clean;
   // Any localhost port, for `vite --host` and for a phone on the same wifi
-  // pointed at a dev machine.
-  if (/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+)(:\d+)?$/.test(clean)) {
+  // pointed at a dev machine. A development affordance, so it is off in
+  // production — where nobody is legitimately calling us from 192.168.x.x and
+  // leaving it on is a standing allowance nobody chose.
+  if (process.env.NODE_ENV !== "production"
+    && /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+)(:\d+)?$/.test(clean)) {
     return clean;
   }
   // Say so once. A silently dropped CORS header is the kind of thing that looks

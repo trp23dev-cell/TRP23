@@ -1800,7 +1800,11 @@ function tryEnterNearest(){
 // Test seam for the headless smoke test: moves the player around the block so the
 // walk-in/walk-out flow can be driven without a human. Grants nothing a player
 // could not do by walking - locked chapters are still refused by tryEnterNearest().
-window.__trapDebug={
+// Development only. It grants nothing a player could not do by walking, but a
+// production bundle should not carry a teleport hook, and CI greps for it.
+// `import.meta.env.DEV` is compile-time, so the whole block is dropped from a
+// production build rather than merely being unreachable.
+if(import.meta.env.DEV) window.__trapDebug={
   warpTo(x,z){ camera.position.set(x,1.7,z); updateWorldHud(); },
   get mode(){ return mode; },
   get pos(){ return { x:+camera.position.x.toFixed(2), y:+camera.position.y.toFixed(2), z:+camera.position.z.toFixed(2), yaw:+yaw.toFixed(2) }; },
