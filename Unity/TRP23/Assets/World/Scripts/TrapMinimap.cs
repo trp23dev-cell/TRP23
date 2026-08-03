@@ -234,7 +234,10 @@ namespace TrapMadeIt.World
         /// </summary>
         void ApplyCursor()
         {
-            bool wantFree = BigMap || cursorReleased;
+            // The map is not the only thing that can want the pointer -- the
+            // HUD panels need it to be clickable at all -- so the answer comes
+            // from PointerFocus rather than from what this script knows.
+            bool wantFree = BigMap || cursorReleased || PointerFocus.Wanted;
             var wantLock = wantFree ? CursorLockMode.None : CursorLockMode.Locked;
 
             if (Cursor.lockState != wantLock) Cursor.lockState = wantLock;

@@ -109,11 +109,29 @@ namespace TrapMadeIt.UI
 
         private void OnLogout() => _auth.Logout(() => SceneFlow.Ensure().LoadMenu());
 
+        private readonly HashSet<string> _openPanels = new HashSet<string>();
+
         private void ShowPanel(string name, bool show)
         {
             var p = _root.Q<VisualElement>(name);
             if (p == null) return;
             if (show) p.RemoveFromClassList("hidden"); else p.AddToClassList("hidden");
+
+            // A panel you cannot click is not a panel. While the world has the
+            // pointer captured for looking around there is no cursor to press a
+            // button with, so an open panel asks for it back. See PointerFocus:
+            // nothing sets the cursor itself, or they take turns and fight.
+            if (show) _openPanels.Add(name); else _openPanels.Remove(name);
+            if (_openPanels.Count > 0) TrapMadeIt.PointerFocus.Request("hud");
+            else TrapMadeIt.PointerFocus.Release("hud");
+        }
+
+        private void OnDisable()
+        {
+            // Leaving the scene with a panel open would otherwise hold the
+            // pointer for ever, in a scene where nothing is left to release it.
+            _openPanels.Clear();
+            TrapMadeIt.PointerFocus.Release("hud");
         }
 
         private void Msg(string name, string text, string kind)
