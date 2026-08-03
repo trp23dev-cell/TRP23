@@ -10,9 +10,13 @@ namespace TrapMadeIt.UI
         private VisualElement _root;
         private IAuthService _auth;
 
-        // Self-contained mock economy (the real ledger lives on the web backend).
-        private int _cash = 1600;
-        private int _bank = 0;
+        // Balances as last reported BY THE SERVER. Never adjusted locally:
+        // these are a display of the ledger, not a copy of it that could drift
+        // away from it. Every change comes back from a request.
+        private int _cash;
+        private int _bank;
+        private bool _haveBalances;
+        private WalletService _wallet;
         private readonly HashSet<string> _owned = new HashSet<string>();
 
         private struct Drop { public string id, name; public int price; public Drop(string i, string n, int p) { id = i; name = n; price = p; } }
@@ -25,10 +29,18 @@ namespace TrapMadeIt.UI
         private void OnEnable()
         {
             _root = GetComponent<UIDocument>().rootVisualElement;
-            _auth = SceneFlow.Ensure().Auth;
+            var flow = SceneFlow.Ensure();
+            _auth = flow.Auth;
+
+            // Lives on the persistent SceneFlow object: it runs coroutines, and
+            // one that dies with the scene would cancel a transfer mid-flight.
+            _wallet = flow.GetComponent<WalletService>();
+            if (_wallet == null) _wallet = flow.gameObject.AddComponent<WalletService>();
 
             _root.Q<Button>("open-store").clicked += () => ShowPanel("panel-store", true);
-            _root.Q<Button>("open-bank").clicked += () => { RefreshBank(); ShowPanel("panel-bank", true); };
+            // Open first, then reload: the panel should appear at once and fill
+            // in, rather than hanging on the network before it shows at all.
+            _root.Q<Button>("open-bank").clicked += () => { ShowPanel("panel-bank", true); Reload(null); };
             _root.Q<Button>("open-account").clicked += () => { RefreshAccount(); ShowPanel("panel-account", true); };
 
             _root.Q<Button>("store-close").clicked += () => ShowPanel("panel-store", false);
@@ -42,9 +54,35 @@ namespace TrapMadeIt.UI
             BuildStore();
             RefreshCoins();
             RefreshChip();
+            Reload(null);
         }
 
-        private void RefreshCoins() => _root.Q<Label>("coin-amt").text = _cash.ToString("N0");
+        /// Ask the server what the player actually has.
+        private void Reload(System.Action after)
+        {
+            _wallet.Fetch(r =>
+            {
+                if (r.ok && r.balances != null)
+                {
+                    _cash = r.balances.cash;
+                    _bank = r.balances.bank;
+                    _haveBalances = true;
+                }
+                else
+                {
+                    // Say why rather than showing a confident zero. A guest with
+                    // no account has no wallet, and that is worth stating.
+                    _haveBalances = false;
+                    Msg("bank-msg", r.error ?? "could not reach the bank", "err");
+                }
+                RefreshCoins();
+                RefreshBankLabels();
+                after?.Invoke();
+            });
+        }
+
+        private void RefreshCoins() =>
+            _root.Q<Label>("coin-amt").text = _haveBalances ? _cash.ToString("N0") : "—";
 
         private void RefreshChip()
         {
@@ -72,29 +110,79 @@ namespace TrapMadeIt.UI
             }
         }
 
+        /// <summary>
+        /// Not wired up, and now says so.
+        ///
+        /// This used to subtract from a local coin counter, which was harmless
+        /// while that counter was made up. It is not harmless now the balance
+        /// comes from the server's ledger: the number would drop here, the
+        /// ledger would not agree, and the next refresh would silently put it
+        /// back. Better to do nothing and say why than to look like it worked.
+        ///
+        /// The server has /api/commerce/checkout, but it takes real drop ids
+        /// and prices from the catalogue, and this list is three hardcoded
+        /// strings that match nothing. Connecting it is the same job the bank
+        /// just had.
+        /// </summary>
         private void Buy(Drop d, Button buy)
         {
-            if (_owned.Contains(d.id) || _cash < d.price) return;
-            _cash -= d.price; _owned.Add(d.id);
-            buy.text = "✓ IN CLOSET"; buy.SetEnabled(false);
-            RefreshCoins();
+            Msg("store-msg", "The store is not connected to the ledger yet — " +
+                             "the bank is, if you want to move money.", "err");
         }
 
-        private void RefreshBank()
+        private void RefreshBankLabels()
         {
-            _root.Q<Label>("bank-cash").text = _cash.ToString("N0");
-            _root.Q<Label>("bank-saved").text = _bank.ToString("N0");
-            Msg("bank-msg", "", null);
+            var cash = _root.Q<Label>("bank-cash");
+            var saved = _root.Q<Label>("bank-saved");
+            if (cash != null) cash.text = _haveBalances ? _cash.ToString("N0") : "—";
+            if (saved != null) saved.text = _haveBalances ? _bank.ToString("N0") : "—";
         }
 
+        /// <summary>
+        /// Move money, and let the SERVER decide whether it is allowed.
+        ///
+        /// The amount is still checked here, but only to save a pointless round
+        /// trip on an obvious mistake. The refusal that matters comes from the
+        /// ledger: this client's idea of the balance can be stale -- another
+        /// device, the web client, a mission payout -- and acting on it would
+        /// let a deposit "succeed" here and not there.
+        /// </summary>
         private void Move(bool deposit)
         {
             int amt;
             if (!int.TryParse(_root.Q<TextField>("bank-amount").value.Trim(), out amt) || amt <= 0)
             { Msg("bank-msg", "Enter a valid amount.", "err"); return; }
-            if (deposit) { if (amt > _cash) { Msg("bank-msg", "Not enough cash.", "err"); return; } _cash -= amt; _bank += amt; Msg("bank-msg", "Deposited " + amt.ToString("N0") + ".", "ok"); }
-            else { if (amt > _bank) { Msg("bank-msg", "Not enough in the bank.", "err"); return; } _bank -= amt; _cash += amt; Msg("bank-msg", "Withdrew " + amt.ToString("N0") + ".", "ok"); }
-            RefreshBank(); RefreshCoins();
+
+            SetBankButtons(false);
+            Msg("bank-msg", deposit ? "Depositing…" : "Withdrawing…", null);
+
+            System.Action<WalletResult> handle = r =>
+            {
+                SetBankButtons(true);
+                if (!r.ok)
+                {
+                    Msg("bank-msg", r.error ?? "that did not go through", "err");
+                    return;
+                }
+                _cash = r.balances.cash;
+                _bank = r.balances.bank;
+                _haveBalances = true;
+                RefreshBankLabels();
+                RefreshCoins();
+                _root.Q<TextField>("bank-amount").value = "";
+                Msg("bank-msg", (deposit ? "Deposited " : "Withdrew ") + amt.ToString("N0") + ".", "ok");
+            };
+
+            if (deposit) _wallet.Deposit(amt, handle);
+            else _wallet.Withdraw(amt, handle);
+        }
+
+        /// Locked while a transfer is in flight, so an impatient double-click
+        /// cannot send the same deposit twice.
+        private void SetBankButtons(bool on)
+        {
+            _root.Q<Button>("bank-deposit")?.SetEnabled(on);
+            _root.Q<Button>("bank-withdraw")?.SetEnabled(on);
         }
 
         private void RefreshAccount()

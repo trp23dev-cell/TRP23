@@ -278,6 +278,8 @@ namespace UnityEngine.Networking {
   public class UnityWebRequest : IDisposable {
     public enum Result { Success, ConnectionError, ProtocolError, DataProcessingError }
     public const string kHttpVerbPOST = "POST";
+    public const string kHttpVerbGET = "GET";
+    public static string EscapeURL(string s) => s;
     public UnityWebRequest(string url, string verb) {}
     public static UnityWebRequest Get(string url) => new UnityWebRequest(url, "GET");
     public string error => null;

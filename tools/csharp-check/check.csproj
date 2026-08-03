@@ -10,10 +10,9 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="UnityStubs.cs" />
-    <Compile Include="../../Unity/TRP23/Assets/UI/Scripts/Auth/AuthModels.cs" />
-    <Compile Include="../../Unity/TRP23/Assets/UI/Scripts/Auth/IAuthService.cs" />
-    <Compile Include="../../Unity/TRP23/Assets/UI/Scripts/Auth/HttpAuthService.cs" />
-    <Compile Include="../../Unity/TRP23/Assets/UI/Scripts/Auth/MockAuthService.cs" />
+    <!-- Globbed for the same reason as World/Scripts: a new file here was
+         silently unchecked until somebody noticed. -->
+    <Compile Include="../../Unity/TRP23/Assets/UI/Scripts/Auth/*.cs" />
     <Compile Include="../../Unity/TRP23/Assets/UI/Scripts/SceneFlow.cs" />
     <!-- Globbed, not listed. A new script under World/Scripts is checked the
          moment it exists; an explicit list silently skips it, which is the one
