@@ -70,10 +70,11 @@ Unity/**/[Rr]ecordings/
 
 # OS
 Thumbs.db
-tools/csharp-check/obj/
-tools/csharp-check/bin/
-tools/collision-check/obj/
-tools/collision-check/bin/
+# .NET build output. Listed per-tool originally, which meant the third tool
+# (trapcard-check) silently committed its compiled binaries — so this is a
+# pattern now, and the fourth one cannot repeat it.
+tools/*/obj/
+tools/*/bin/
 
 # Unity Starter Assets (Asset Store, Unity Companion License).
 #
