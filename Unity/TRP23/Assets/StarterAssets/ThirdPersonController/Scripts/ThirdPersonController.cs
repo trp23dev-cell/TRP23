@@ -195,6 +195,17 @@ namespace StarterAssets
 
         private void Update()
         {
+            // TRP23: nothing to do while the CharacterController is switched off.
+            //
+            // PlayerRig disables it deliberately at spawn and holds the player
+            // there until the tile underneath has streamed in — otherwise they
+            // spend the first second accelerating downwards through a city that
+            // has not arrived yet. This kept calling Move() on it regardless,
+            // which Unity logs as an error, once per frame, on every single
+            // launch. Six red lines in the console that mean nothing are worse
+            // than none, because they are where a real one goes to hide.
+            if (_controller == null || !_controller.enabled) return;
+
             _hasAnimator = TryGetComponent(out _animator);
 
             JumpAndGravity();
