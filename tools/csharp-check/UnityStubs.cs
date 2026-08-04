@@ -5,7 +5,7 @@ using System;
 using System.Collections;
 namespace UnityEngine {
   public class Object {}
-  public class MonoBehaviour : Component { public Transform transform => null; public bool enabled { get; set; } public static T FindAnyObjectByType<T>() where T : Component, new() => new T(); public static T[] FindObjectsByType<T>(FindObjectsSortMode m) where T : Component => new T[0]; public Coroutine StartCoroutine(IEnumerator r) => null; public static void DontDestroyOnLoad(Object o) {} public static void Destroy(Object o) {} }
+  public class MonoBehaviour : Component { public Transform transform => null; public bool enabled { get; set; } public static T FindAnyObjectByType<T>() where T : Component, new() => new T(); public static T[] FindObjectsByType<T>(FindObjectsSortMode m) where T : Component => new T[0]; public Coroutine StartCoroutine(IEnumerator r) => null; public void Invoke(string m, float t) {} public void CancelInvoke() {} public void CancelInvoke(string m) {} public static void DontDestroyOnLoad(Object o) {} public static void Destroy(Object o) {} }
   public class Coroutine {}
   public class WaitForSeconds { public WaitForSeconds(float s) {} }
   public static class PlayerPrefs {
@@ -325,6 +325,29 @@ namespace UnityEngine.InputSystem {
     public ButtonControl leftBracketKey => null;
     public ButtonControl rightBracketKey => null;
     public ButtonControl escapeKey => null;
+    public ButtonControl tabKey => null;
+    public ButtonControl enterKey => null;
+    // The rest of the alphabet, so adding a shortcut does not also mean
+    // editing this file and discovering why CI went red.
+    public ButtonControl bKey => null;
+    public ButtonControl cKey => null;
+    public ButtonControl fKey => null;
+    public ButtonControl gKey => null;
+    public ButtonControl hKey => null;
+    public ButtonControl iKey => null;
+    public ButtonControl jKey => null;
+    public ButtonControl kKey => null;
+    public ButtonControl lKey => null;
+    public ButtonControl nKey => null;
+    public ButtonControl oKey => null;
+    public ButtonControl pKey => null;
+    public ButtonControl rKey => null;
+    public ButtonControl tKey => null;
+    public ButtonControl uKey => null;
+    public ButtonControl vKey => null;
+    public ButtonControl xKey => null;
+    public ButtonControl yKey => null;
+    public ButtonControl zKey => null;
   }
 }
 namespace UnityEngine.SceneManagement {

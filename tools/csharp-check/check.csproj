@@ -10,13 +10,17 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="UnityStubs.cs" />
+    <Compile Include="UIElementsStubs.cs" />
     <!-- Globbed for the same reason as World/Scripts: a new file here was
          silently unchecked until somebody noticed. -->
     <Compile Include="../../Unity/TRP23/Assets/UI/Scripts/Auth/*.cs" />
     <!-- Pure logic, no engine surface — so it is checked here rather than left
          to the editor. CaseFileService above depends on it. -->
     <Compile Include="../../Unity/TRP23/Assets/UI/Scripts/CaseFile/*.cs" />
-    <Compile Include="../../Unity/TRP23/Assets/UI/Scripts/SceneFlow.cs" />
+    <!-- The UI scripts. These were the ONLY runtime code not covered, because
+         UIElements was not stubbed - so the first thing to compile them was
+         somebody's editor. See UIElementsStubs.cs. -->
+    <Compile Include="../../Unity/TRP23/Assets/UI/Scripts/*.cs" />
     <!-- Globbed, not listed. A new script under World/Scripts is checked the
          moment it exists; an explicit list silently skips it, which is the one
          thing this project has been bitten by often enough to design out.

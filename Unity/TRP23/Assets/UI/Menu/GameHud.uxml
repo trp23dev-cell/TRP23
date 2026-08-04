@@ -47,7 +47,7 @@
         </ui:VisualElement>
 
         <!-- CONTROLS HINT -->
-        <ui:Label text="WASD — MOVE     MOUSE — LOOK     ESC — RELEASE CURSOR" class="controls-hint" />
+        <ui:Label text="WASD — MOVE     MOUSE — LOOK     C — CASE FILE     M — MAP     ESC — CURSOR" class="controls-hint" />
 
         <!-- STORE PANEL -->
         <ui:VisualElement name="panel-store" class="overlay hidden">

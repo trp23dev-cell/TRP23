@@ -1,6 +1,9 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
+#if ENABLE_INPUT_SYSTEM
+using UnityEngine.InputSystem;
+#endif
 
 namespace TrapMadeIt.UI
 {
@@ -228,14 +231,66 @@ namespace TrapMadeIt.UI
             if (show) _openPanels.Add(name); else _openPanels.Remove(name);
             if (_openPanels.Count > 0) TrapMadeIt.PointerFocus.Request("hud");
             else TrapMadeIt.PointerFocus.Release("hud");
+
+            // And hold the world still while a panel is up. Reading your own
+            // case file in the middle of the street, while Lincoln carries on
+            // around you, is how you get run over by something you cannot see —
+            // the same reasoning the full map already uses. GameFreeze rather
+            // than writing Time.timeScale here, so closing the map does not
+            // un-pause a panel that is still open.
+            if (_openPanels.Count > 0) TrapMadeIt.GameFreeze.Request("hud");
+            else TrapMadeIt.GameFreeze.Release("hud");
+        }
+
+        /// <summary>
+        /// Keyboard shortcuts for the panels.
+        ///
+        /// Opening your own case file should not require finding a small button
+        /// with a cursor you had to release first. **C** toggles it, and the
+        /// same key closes it — so it works the way a phone's tap will, and the
+        /// way a gamepad button will when the console requirement arrives.
+        ///
+        /// Escape closes whatever is open before it does anything else, which
+        /// is what everyone expects it to do.
+        /// </summary>
+        private void Update()
+        {
+#if ENABLE_INPUT_SYSTEM
+            var k = Keyboard.current;
+            if (k == null) return;
+
+            if (k.cKey.wasPressedThisFrame) TogglePanel("panel-casefile");
+
+            // Only when something is actually open — otherwise this would eat
+            // the Escape that TrapMinimap uses to free the cursor.
+            if (k.escapeKey.wasPressedThisFrame && _openPanels.Count > 0) CloseAllPanels();
+#endif
+        }
+
+        /// <summary>Open it if shut, shut it if open.</summary>
+        private void TogglePanel(string name)
+        {
+            bool open = _openPanels.Contains(name);
+            if (!open) CloseAllPanels();   // never two panels stacked on each other
+            ShowPanel(name, !open);
+            if (!open && name == "panel-casefile") _caseFile.Show(_level, LastLevel);
+        }
+
+        private void CloseAllPanels()
+        {
+            // ToArray: ShowPanel mutates _openPanels as it goes.
+            foreach (var name in new List<string>(_openPanels)) ShowPanel(name, false);
         }
 
         private void OnDisable()
         {
             // Leaving the scene with a panel open would otherwise hold the
-            // pointer for ever, in a scene where nothing is left to release it.
+            // pointer for ever, in a scene where nothing is left to release it
+            // — and hold the game frozen, in a scene with nothing left to
+            // un-freeze it, which is worse.
             _openPanels.Clear();
             TrapMadeIt.PointerFocus.Release("hud");
+            TrapMadeIt.GameFreeze.Release("hud");
         }
 
         private void Msg(string name, string text, string kind)

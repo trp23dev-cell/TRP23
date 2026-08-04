@@ -216,6 +216,10 @@ namespace TrapMadeIt.World
             UpdatePins();
             UpdateGuide();
             ApplyCursor();
+            // Every frame, not only when M is pressed: a HUD panel can ask for
+            // the world to be held still at any moment, and it has no other way
+            // to be heard.
+            ApplyPause();
         }
 
         /// <summary>
@@ -231,7 +235,11 @@ namespace TrapMadeIt.World
         /// </summary>
         void ApplyPause()
         {
-            Time.timeScale = BigMap ? 0f : 1f;
+            // The map is not the only thing that wants the world held still —
+            // reading your own case file should not happen while Lincoln
+            // carries on around you. The answer comes from GameFreeze so that
+            // closing the map does not un-pause a HUD panel that is still open.
+            Time.timeScale = (BigMap || GameFreeze.Wanted) ? 0f : 1f;
         }
 
         void OnDisable()
@@ -277,7 +285,10 @@ namespace TrapMadeIt.World
                 if (k.mKey.wasPressedThisFrame) { BigMap = !BigMap; Apply(); ApplyPause(); }
                 if (k.leftBracketKey.wasPressedThisFrame) StepDial(-1);
                 if (k.rightBracketKey.wasPressedThisFrame) StepDial(1);
-                if (k.escapeKey.wasPressedThisFrame) cursorReleased = true;
+                // A toggle, not a one-way switch. It used to only ever set this
+                // true, and the way back was "click anywhere" — which is the
+                // bug below.
+                if (k.escapeKey.wasPressedThisFrame) cursorReleased = !cursorReleased;
             }
 
             var mouse = Mouse.current;
@@ -292,9 +303,15 @@ namespace TrapMadeIt.World
 
                 if (mouse.leftButton.wasPressedThisFrame && BigMap)
                     SetWaypointFromScreen(mouse.position.ReadValue());
-                // Click back into the window to take the mouse again.
-                else if (mouse.leftButton.wasPressedThisFrame && cursorReleased)
-                    cursorReleased = false;
+
+                // There used to be a "click anywhere to take the mouse back"
+                // here, and it made the HUD nearly unclickable: the same click
+                // that pressed CASE FILE also re-captured the cursor, so
+                // whether the button registered was a race between the two. It
+                // took three attempts to open a panel.
+                //
+                // Escape toggles now, so there is a deliberate way back and
+                // nothing has to guess what a click meant.
                 if (mouse.rightButton.wasPressedThisFrame && BigMap)
                     ClearWaypoint();
             }
