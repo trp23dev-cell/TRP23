@@ -89,8 +89,12 @@ namespace TrapMadeIt.World
             var mouse = Mouse.current;
             if (mouse == null) return;
 
-            // The map takes the wheel while it is open. It is showing you the
-            // city; zooming the camera behind it would be invisible anyway.
+            // Anything holding the pointer takes the wheel with it — the map
+            // while it is open, and any HUD panel. They are showing you
+            // something; zooming the camera behind them is invisible at best
+            // and is the view moving under you at worst.
+            if (PointerFocus.Wanted) return;
+
             var map = FindAnyObjectByType<TrapMinimap>();
             if (map != null && map.BigMap) return;
 

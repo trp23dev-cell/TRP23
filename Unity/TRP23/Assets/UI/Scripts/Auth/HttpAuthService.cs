@@ -114,7 +114,21 @@ namespace TrapMadeIt.UI
         void Adopt(AuthResult res)
         {
             if (!string.IsNullOrEmpty(res.token)) Token = res.token;
-            if (res.account != null) current = res.account;
+            if (res.account != null) { current = res.account; return; }
+
+            // A guest has no account, by definition. /api/players/session
+            // answers with a playerId and a token and nothing else, so the
+            // check above never fired and `current` stayed null — which left
+            // the session perfectly valid and every service unable to name the
+            // player it belonged to. The case file said "sign in to write on
+            // your case file" to somebody who had, and the bank was just as
+            // broken for the same reason.
+            //
+            // The top-level playerId is the account, for a guest.
+            if (!string.IsNullOrEmpty(res.playerId))
+            {
+                current = new Account { playerId = res.playerId, isGuest = true };
+            }
         }
 
         IEnumerator Post(string route, string json, Action<AuthResult> done)

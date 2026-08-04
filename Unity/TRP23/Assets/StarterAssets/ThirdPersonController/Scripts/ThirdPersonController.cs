@@ -215,6 +215,20 @@ namespace StarterAssets
 
         private void LateUpdate()
         {
+            // TRP23: a free cursor means the player is using the interface, not
+            // looking around, so the camera stays where they left it.
+            //
+            // Freezing time does not cover this. Mouse look is deliberately NOT
+            // multiplied by Time.deltaTime a few lines down — see the comment
+            // there — so at timeScale 0 the world stops and the camera carries
+            // on turning, which is worse than not pausing at all: you read your
+            // case file and look up somewhere else.
+            //
+            // Cursor state rather than PointerFocus because it is the same
+            // answer without reaching across into game code, and because it is
+            // right for every reason the cursor is free, not just a panel.
+            if (Cursor.lockState != CursorLockMode.Locked) return;
+
             CameraRotation();
         }
 
