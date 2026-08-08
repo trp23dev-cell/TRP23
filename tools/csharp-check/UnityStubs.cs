@@ -43,12 +43,17 @@ namespace UnityEngine {
     public static Vector2 zero => default;
     public float magnitude => (float)System.Math.Sqrt(x*x+y*y);
     public Vector2 normalized { get { var m = magnitude; return m < 1e-9f ? this : new Vector2(x/m, y/m); } }
+    public float sqrMagnitude => x*x+y*y;
     public static Vector2 operator *(Vector2 a, float f) => new Vector2(a.x*f, a.y*f);
     public static Vector2 operator -(Vector2 a, Vector2 b) => new Vector2(a.x-b.x, a.y-b.y);
   }
   public struct Vector3 {
     public static Vector3 zero => default;
     public static Vector3 up => default;
+    public static Vector3 down => new Vector3(0f,-1f,0f);
+    public static Vector3 forward => new Vector3(0f,0f,1f);
+    public static Vector3 right => new Vector3(1f,0f,0f);
+    public void Normalize() { var m = magnitude; if (m > 1e-9f) { x/=m; y/=m; z/=m; } }
     public float magnitude => (float)System.Math.Sqrt(x*x+y*y+z*z);
     public static Vector3 Lerp(Vector3 a, Vector3 b, float t) => a + (b - a) * Mathf.Clamp01(t);
     public float x, y, z; public Vector3(float x,float y,float z){this.x=x;this.y=y;this.z=z;}
@@ -76,12 +81,18 @@ namespace UnityEngine {
     public static Quaternion Euler(float x,float y,float z) => default;
     public static Quaternion identity => default;
     public Vector3 eulerAngles => default;
+    // Rotating a vector. Returns the vector unchanged, which is wrong as maths
+    // and right as a stub: nothing here is executed, only type-checked.
+    public static Vector3 operator *(Quaternion q, Vector3 v) => v;
+    public static Quaternion operator *(Quaternion a, Quaternion b) => a;
   }
   public struct Color {
     public float r, g, b, a;
     public Color(float r,float g,float b){this.r=r;this.g=g;this.b=b;this.a=1f;}
     public Color(float r,float g,float b,float a){this.r=r;this.g=g;this.b=b;this.a=a;}
     public static Color white => new Color(1f,1f,1f);
+    public static Color green => new Color(0f,1f,0f);
+    public static Color red => new Color(1f,0f,0f);
     public static Color Lerp(Color a, Color b, float t) => a;
     public static Color operator *(Color a, Color b) => a;
     public static Color black => new Color(0f,0f,0f);
@@ -195,7 +206,16 @@ namespace UnityEngine {
   public class CharacterController : Component {
     public bool enabled { get; set; } public float height { get; set; }
     public Vector3 center { get; set; }
+    public float radius { get; set; }
+    public float slopeLimit { get; set; }
+    public float stepOffset { get; set; }
+    public float skinWidth { get; set; }
+    public float minMoveDistance { get; set; }
+    public Vector3 velocity => default;
+    public bool isGrounded => false;
+    public CollisionFlags Move(Vector3 motion) => CollisionFlags.None;
   }
+  public enum CollisionFlags { None = 0, Sides = 1, Above = 2, Below = 4 }
   public class Rigidbody : Component {
     public bool isKinematic { get; set; } public Vector3 linearVelocity { get; set; }
   }
@@ -255,6 +275,16 @@ namespace UnityEngine {
       { hit = default; return false; }
     public static bool SphereCast(Vector3 o, float r, Vector3 d, out RaycastHit hit, float max, int mask, QueryTriggerInteraction q)
       { hit = default; return false; }
+    public static bool CheckSphere(Vector3 p, float r, int mask, QueryTriggerInteraction q) => false;
+  }
+
+  // Editor-only drawing. Present so OnDrawGizmosSelected type-checks; a stub
+  // that drew anything would be pretending to be an editor.
+  public static class Gizmos {
+    public static Color color { get; set; }
+    public static void DrawWireSphere(Vector3 centre, float radius) {}
+    public static void DrawRay(Vector3 from, Vector3 direction) {}
+    public static void DrawLine(Vector3 a, Vector3 b) {}
   }
   public struct Rect {
     public float width, height;
@@ -302,8 +332,34 @@ namespace UnityEngine.UI {
 // one that runs.
 namespace UnityEngine.InputSystem {
   public class ButtonControl { public bool isPressed => false; public bool wasPressedThisFrame => false; }
+
+  // Actions, for the owned player controller. The controller resolves these by
+  // name from the project-wide asset, so the stub only has to prove the calls
+  // are well typed -- it never returns an action and nothing ever fires.
+  public class InputDevice {}
+  public class InputControl { public InputDevice device => null; }
+  public class InputAction {
+    public T ReadValue<T>() => default(T);
+    public bool IsPressed() => false;
+    public bool WasPressedThisFrame() => false;
+    public bool WasReleasedThisFrame() => false;
+    public InputControl activeControl => null;
+    public void Enable() {}
+    public void Disable() {}
+  }
+  public class InputActionMap {
+    public InputAction FindAction(string name, bool throwIfNotFound = false) => null;
+    public void Enable() {}
+    public void Disable() {}
+  }
+  public class InputActionAsset : UnityEngine.Object {
+    public InputActionMap FindActionMap(string name, bool throwIfNotFound = false) => null;
+    public InputAction FindAction(string name, bool throwIfNotFound = false) => null;
+    public void Enable() {}
+  }
+  public static class InputSystem { public static InputActionAsset actions => null; }
   public class Vector2Control { public Vector2 ReadValue() => default; }
-  public class Mouse {
+  public class Mouse : InputDevice {
     public static Mouse current => null;
     public ButtonControl rightButton => null;
     public ButtonControl leftButton => null;
@@ -311,7 +367,7 @@ namespace UnityEngine.InputSystem {
     public Vector2Control position => null;
     public Vector2Control scroll => null;
   }
-  public class Keyboard {
+  public class Keyboard : InputDevice {
     public static Keyboard current => null;
     public ButtonControl wKey => null;
     public ButtonControl aKey => null;

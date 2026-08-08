@@ -13,6 +13,7 @@
     <!-- The REAL collision code, not a copy of it. A copy would drift, and a
          test of a copy proves nothing about what Unity runs. -->
     <Compile Include="../csharp-check/UnityStubs.cs" />
+    <Compile Include="../../Unity/TRP23/Assets/Core/SlopeCost.cs" />
     <Compile Include="../../Unity/TRP23/Assets/World/Scripts/TrapGeo.cs" />
     <Compile Include="../../Unity/TRP23/Assets/World/Scripts/TileModels.cs" />
     <Compile Include="../../Unity/TRP23/Assets/World/Scripts/WorldCollision.cs" />

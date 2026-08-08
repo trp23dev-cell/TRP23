@@ -165,3 +165,21 @@ Five things only the editor can confirm:
 
 **Worked if:** no console errors, three assemblies listed, TRAP menu intact, the game plays as it did this morning.
 **Tell me if:** any assembly fails to resolve `UnityEngine.UI` or `Unity.InputSystem`, or a scene reference broke.
+
+### H-13 · Walk the owned player
+**Who:** Richard · **Time:** 15 min · **Blocks:** WP-U03 · **Needs:** Unity 6000.3.8f1
+
+WP-U02 replaced the Starter Assets player with `TrapPlayerController`. Everything compiles in CI, but **CI cannot run Unity and cannot compile `TrapWorldSetup.cs`** (UnityEditor is not stubbed), so the setup tool is unverified by machine.
+
+1. Open `Unity/TRP23`. **Console clean?** Any red error, paste it and stop.
+2. Open `Assets/Scenes/TrapGame.unity` → **TRAP → Build World Test Scene**. It should rebuild the scene with a **Player** capsule, not a fly camera.
+3. Press **Play**. You should stand on Lincoln, not fall through it.
+4. **WASD** walks · **mouse** looks · **Shift** sprints · **Space** jumps.
+5. Walk up **Steep Hill** — you should visibly slow. Walk down — slightly quicker.
+6. Press **M** for the big map, then **C** for the case file: **the player must not move or turn** while either is open.
+7. Close them — control returns.
+8. Plug in a **gamepad** if you have one: left stick moves, right stick looks, no code change needed.
+9. Walk 300m and confirm **tiles keep streaming** and the **minimap follows**.
+
+**Worked if:** you walk Lincoln, the hill costs you, panels freeze you, and the console is clean.
+**Tell me if:** you fall through the ground (ground layer), the camera fights you (two things writing the transform), or look feels wrong on mouse vs stick — mouse and stick are scaled differently on purpose and the constants may need taste.

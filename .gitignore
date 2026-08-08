@@ -83,14 +83,22 @@ tools/*/bin/
 # is the one decision here that cannot be undone by a later commit. Reimport it
 # from the Asset Store and run TRAP > Build World Test Scene again.
 #
-# Nothing breaks without it: the setup script checks for the prefab and falls
-# back to the free camera, saying so in the console. If you would rather a
-# fresh checkout just worked, delete these two lines and commit it -- that
-# direction is easy, the other one is not.
+# Nothing breaks without it any more: since WP-U02 the player is
+# TrapPlayerController, built by TRAP > Build World Test Scene from tracked
+# code. A clone gets a walking character with no Asset Store import at all.
+# What remains on a developer's disk is example content and the mobile
+# joystick samples, none of which the game requires.
 Unity/**/Assets/StarterAssets/
 Unity/**/Assets/StarterAssets.meta
 
-# ...except the one script we edited. It carries the first-person mode, and an
-# ignored folder is a very quiet place for a change to disappear.
-!Unity/**/Assets/StarterAssets/ThirdPersonController/Scripts/ThirdPersonController.cs
+# No exceptions any more. There used to be a negation here re-including the one
+# controller script we had patched -- but git cannot re-include a file whose
+# parent directory is excluded, so it only ever appeared to work because the
+# file predated the rule. That is exactly how a fresh clone ended up with no
+# player at all.
+#
+# WP-U02 replaced it with TrapPlayerController, which is ours and tracked, so
+# nothing under StarterAssets is required to run the game. license.txt stays
+# tracked because the folder may still exist on a developer's disk and the
+# licence should travel with the repository that references it.
 !Unity/**/Assets/StarterAssets/license.txt

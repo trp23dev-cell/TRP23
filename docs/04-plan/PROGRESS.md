@@ -57,7 +57,7 @@ Full work packages are written **as each is picked up**, one horizon ahead — n
 | WP | Title | Owner | Effort | Status | Depends on |
 |---|---|---|---|---|---|
 | [U01](work-packages/WP-U01-assembly-definitions.md) | Assembly definitions | AI | M | ✅ | log S9. 3 assemblies; **all 3 boundaries proven by deliberate violation**; CI enforces the graph. **Unity editor unverified — H-12** |
-| U02 | **Own the character controller** (fresh clone cannot build) | AI | M | ⬜ **ready** | U01 |
+| [U02](work-packages/WP-U02-owned-player-controller.md) | **Own the character controller** | AI | M | ✅ | log S10. `TrapPlayerController`; StarterAssets no longer required; fresh-clone audit clean; slope curve tested. **Unity runtime unverified — H-13** |
 | U03 | Bootstrap scene + composition root | AI | M | ⬜ | U01 |
 | U04 | Platform abstraction + IL2CPP | AI + **HUMAN** | M | ⬜ | U01, U03 |
 | U05 | Typed API client, generated geo constants | AI | M | ⬜ | U01, U03 |
@@ -93,7 +93,7 @@ Known, accepted for now, tracked so it is never *forgotten* rather than *decided
 | D16 | Single-instance assumptions | H3 |
 | — | `own2`/`own3` still purchase-gated | WP-010 |
 | — | Unity HUD says "LEVEL", content says "CHAPTER" | WP-011 |
-| — | `ThirdPersonController.cs` not compile-checkable (rest of StarterAssets untracked) | accepted — keep our patches there small |
+| — | `TrapWorldSetup.cs` not compile-checked (UnityEditor unstubbed) | pre-existing; would need UnityEditor stubs |
 
 ---
 

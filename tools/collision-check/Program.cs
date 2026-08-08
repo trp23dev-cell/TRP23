@@ -74,6 +74,7 @@ namespace TrapCollisionCheck
 
             Index(rings);
             Console.WriteLine($"loaded {collision.FootprintCount} footprints, {Grid.Count} check cells");
+            int slopeFailures = CheckSlope();
             if (collision.FootprintCount < 1000)
             {
                 Console.Error.WriteLine("FAIL  too few footprints loaded — the export or the parse is wrong");
@@ -134,8 +135,68 @@ namespace TrapCollisionCheck
                 Console.Error.WriteLine($"FAIL  only {approaches} approaches tested — the sample is not meaningful");
                 return 1;
             }
-            return ok && windingFailures == 0 ? 0 : 1;
+            return ok && windingFailures == 0 && slopeFailures == 0 ? 0 : 1;
         }
+
+
+        /// <summary>
+        /// What a hill costs, checked against the rule walkers actually use.
+        ///
+        /// Naismith's rule is the reason 3.5 is the default penalty, so the
+        /// curve is worth pinning: if somebody "tunes" it later and Steep Hill
+        /// stops being steep, this says so rather than the city quietly
+        /// flattening out.
+        /// </summary>
+        static int CheckSlope()
+        {
+            int bad = 0;
+            void Expect(string what, float actual, float want, float tol)
+            {
+                bool ok = System.Math.Abs(actual - want) <= tol;
+                Console.WriteLine($"{(ok ? "ok  " : "FAIL")}  {what} — {actual:F3} (wanted {want:F3} ±{tol})");
+                if (!ok) bad++;
+            }
+            void Assert(string what, bool ok, string detail)
+            {
+                Console.WriteLine($"{(ok ? "ok  " : "FAIL")}  {what}{(detail.Length > 0 ? " — " + detail : "")}");
+                if (!ok) bad++;
+            }
+
+            const float P = 3.5f;
+
+            Expect("flat ground costs nothing", TrapMadeIt.SlopeCost.For(0f, P), 1f, 0.001f);
+
+            // Naismith: a 1-in-6 climb costs about a third of your pace.
+            Expect("a 1-in-6 climb costs about a third", TrapMadeIt.SlopeCost.For(1f / 6f, P), 0.63f, 0.03f);
+
+            Assert("a steeper climb is always slower than a shallower one",
+                TrapMadeIt.SlopeCost.For(0.30f, P) < TrapMadeIt.SlopeCost.For(0.15f, P), "");
+
+            Assert("uphill never stops you completely",
+                TrapMadeIt.SlopeCost.For(10f, P) >= TrapMadeIt.SlopeCost.SlowestUphill - 0.001f,
+                $"a cliff still leaves {TrapMadeIt.SlopeCost.For(10f, P):F2}");
+
+            Assert("a gentle descent is quicker than the flat",
+                TrapMadeIt.SlopeCost.For(-0.15f, P) > 1f, "");
+
+            Assert("but a plunge is not",
+                TrapMadeIt.SlopeCost.For(-1.0f, P) < 1f,
+                $"1-in-1 down gives {TrapMadeIt.SlopeCost.For(-1.0f, P):F2}");
+
+            Assert("descent benefit is capped",
+                TrapMadeIt.SlopeCost.For(-0.24f, P) <= TrapMadeIt.SlopeCost.FastestDownhill + 0.001f, "");
+
+            // The curve must not jump at the point it changes shape, or a
+            // player crossing that gradient feels a lurch.
+            float justUnder = TrapMadeIt.SlopeCost.For(-0.249f, P);
+            float justOver = TrapMadeIt.SlopeCost.For(-0.251f, P);
+            Assert("no discontinuity where the descent curve turns",
+                System.Math.Abs(justUnder - justOver) < 0.01f,
+                $"{justUnder:F3} vs {justOver:F3}");
+
+            return bad;
+        }
+
 
         static float Get(JsonElement e, string k) =>
             e.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetSingle() : 0f;

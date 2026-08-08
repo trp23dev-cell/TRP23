@@ -87,6 +87,32 @@ if (drift.length) {
   process.exit(1);
 }
 
+// ---------------------------------------------------------------------------
+// THE PLAYER MUST BE OURS
+//
+// A fresh clone once could not build a playable character: the player was a
+// Starter Assets prefab whose 270 companion files were untracked, and the one
+// script we had patched survived only because it predated the ignore rule.
+// CI could never build a player and a new machine got a fly camera.
+//
+// WP-U02 replaced it with TrapPlayerController. This makes the regression
+// loud: no tracked Unity script may reference Starter Assets, because anything
+// that does is depending on files a clone will not have.
+// ---------------------------------------------------------------------------
+const unityScripts = tracked.filter((f) => f.startsWith("Unity/") && f.endsWith(".cs")
+  && !f.includes("/StarterAssets/"));
+const starterRefs = [];
+for (const file of unityScripts) {
+  const body = readFileSync(file, "utf8");
+  if (/\bStarterAssets\b/.test(body)) starterRefs.push(file);
+}
+if (starterRefs.length) {
+  process.stderr.write("tracked Unity scripts reference Starter Assets, which is not tracked:\n");
+  for (const f of starterRefs) process.stderr.write(`  ${f}\n`);
+  process.stderr.write("\nA fresh clone will not have those files. The player is TrapPlayerController now.\n");
+  process.exit(1);
+}
+
 // The map is the one thing in server/storage that SHOULD ship.
 const hasMap = tracked.includes("server/storage/map-export.json.gz");
 process.stdout.write(
