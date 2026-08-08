@@ -121,7 +121,7 @@ Effort bands, not dates: **S** ≈ days · **M** ≈ 1–3 weeks · **L** ≈ 1�
 | 015 | Premises system + one authored interior | AI + art | M |
 | 016 | The bank, and Standing | AI | M |
 | 017 | **The barber booking** (Stripe test mode) | AI + **HUMAN** | M |
-| 018 | Case file in Unity | AI | ✅ mostly |
+| 018 | Case file in Unity | AI | ✅ |
 | 019 | Versioned save/load | AI | S |
 | 020 | Performance budgets + automated scene validation | AI | M |
 | 021 | Mobile builds — first real iOS/Android device runs | **HUMAN** + AI | M |
@@ -242,5 +242,5 @@ Live status: **[PROGRESS.md](PROGRESS.md)**.
 | Horizon | Packages | Done |
 |---|---|---|
 | 0 — Stabilise | 9 | 5 |
-| 1 — Vertical slice | 17 | 0 (1 partial) |
+| 1 — Vertical slice | 17 | 1 |
 | 2–5 | titles only, by design | — |

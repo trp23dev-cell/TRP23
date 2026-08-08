@@ -42,7 +42,7 @@ Full work packages are written **as each is picked up**, one horizon ahead — n
 | 015 | Premises system + one interior | AI + art | M | ⬜ | 010, D-05 |
 | 016 | The bank, and Standing | AI | M | ⬜ | 013, 015 |
 | 017 | **The barber booking** | AI + **HUMAN** | M | 🚧 | D-01, D-02, D-03 |
-| 018 | Case file in Unity | AI | S | 🔨 | — · built + compile-checked; **UI unverified by eye** |
+| 018 | Case file in Unity | AI | S | ✅ | log S8. Verified in the editor by the founder: writes, saves, survives close/reopen |
 | 019 | Versioned save/load | AI | S | ⬜ | 010 |
 | 020 | Performance budgets + scene validation | AI | M | ⬜ | 010 |
 | 021 | Mobile builds on real devices | **HUMAN** + AI | M | ⬜ | 010 |
@@ -78,7 +78,7 @@ Known, accepted for now, tracked so it is never *forgotten* rather than *decided
 | D16 | Single-instance assumptions | H3 |
 | — | `own2`/`own3` still purchase-gated | WP-010 |
 | — | Unity HUD says "LEVEL", content says "CHAPTER" | WP-011 |
-| — | Unity UI files not compile-checked (UIElements unstubbed) | WP-008 |
+| — | `ThirdPersonController.cs` not compile-checkable (rest of StarterAssets untracked) | accepted — keep our patches there small |
 
 ---
 

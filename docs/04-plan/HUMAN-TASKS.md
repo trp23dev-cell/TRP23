@@ -16,10 +16,10 @@ Each task says who, how long, what you need first, and how to know it worked.
 
 ## 🔴 Do these first
 
-### H-01 · Look at the trap card
+### H-01 · Look at the trap card ✅ *superseded*
 **Who:** Richard · **Time:** 10 min · **Blocks:** WP-018 · **Needs:** nothing
 
-The card was built and its logic is tested, but **nobody has seen it**. I have no browser automation and no Unity licence.
+**Superseded 4 Aug.** The card was verified in Unity instead, which is the client that matters — the web build is frozen. Do this only if you want to compare them side by side.
 
 1. `npm run dev:full`, open **http://localhost:5173**
 2. Enter → continue as guest
@@ -33,10 +33,10 @@ The card was built and its logic is tested, but **nobody has seen it**. I have n
 
 ---
 
-### H-02 · The same card in Unity
+### H-02 · The same card in Unity ✅ *done 4 Aug*
 **Who:** Richard · **Time:** 15 min · **Blocks:** WP-018 · **Needs:** Unity 6000.3.8f1
 
-`TrapCardController.cs` and `TrapHudController.cs` **are not compile-checked** — UIElements is not stubbed, so the editor is the first thing to see them.
+**Done 4 August.** Verified in the editor: 0 errors on import, panel opens, text saves and survives a close/reopen. Four real bugs were found and fixed in the process — see log S8. UIElements is stubbed now, so these files are compile-checked in CI.
 
 1. Open `Unity/TRP23` and let it import
 2. **Check the console first.** Any red error, paste it to me and stop

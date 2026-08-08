@@ -494,3 +494,75 @@ Two work packages from the founder's mid-session request that Unity reach parity
 ### Next recommended action
 
 **WP-007 (backups)** before **WP-005 (ledger)** — the ledger migration touches live balances, and doing that without a proven restore is gambling with the only copy. WP-007 needs Richard for the Railway steps.
+
+---
+
+## Session 8 — 4 August 2026
+
+### Objective
+
+Push (CI had never run), then verify the Unity case file with the founder at the editor. Turned into a bug-fixing session, which is what verification is for.
+
+### CI ran for the first time
+
+Ten commits had been sitting unpushed, so `quality-gates.yml` existed and had **never executed**. That made it precisely the thing `check:repo`'s drift rule was written to catch, one layer up.
+
+Pushed. **Green on the first run**, both jobs, ~1m25s, and green on all four pushes since.
+
+### WP-018 verified ✅
+
+Founder opened Unity: **0 errors, 0 warnings on import.** `TrapCardController.cs`, `TrapHudController.cs` and `CaseFileService.cs` had never been compiled by anything and were all valid. The card writes, saves, and survives a close and reopen.
+
+### Four bugs, found by looking
+
+None would have been caught by any test we had. All were found by one person using the thing for ten minutes.
+
+**1 · Six red console errors on every launch.** `PlayerRig` disables the CharacterController at spawn on purpose — holding the player until the tile underneath streams in, or they fall through a city that has not arrived. `ThirdPersonController` kept calling `Move()` on it anyway, once per frame, which Unity logs as an error. Working as designed and indistinguishable from a fault. *Console noise that means nothing is where a real error goes to hide, and the founder had to read past it.*
+
+**2 · It took three clicks to open a panel.** One line in `TrapMinimap`:
+```cs
+else if (mouse.leftButton.wasPressedThisFrame && cursorReleased)
+    cursorReleased = false;
+```
+Any left click re-captured the mouse — including the click on the button. Escape freed the cursor; the click both pressed CASE FILE and re-locked the pointer in the same frame, and whether it registered was a race. Escape is a toggle now, and the recapture-on-click is gone.
+
+**3 · The camera kept turning while a panel was open.** Freezing time does not stop mouse look: Starter Assets deliberately does not multiply it by `Time.deltaTime`, with a comment saying so. At `timeScale 0` the city stood still and the camera carried on — *worse* than not pausing, because you read your case file and look up somewhere else. Gated on cursor lock state.
+
+**4 · A guest had a session and nothing could tell whose it was.**
+```cs
+if (res.account != null) current = res.account;
+```
+A guest has no account, by definition. `/api/players/session` returns a playerId and a token and nothing else — confirmed against the live server — so `current` stayed null and every service asking *"who is the player?"* got nothing. **The case file told somebody who had signed in as a guest to sign in. The bank was broken identically**, and nobody had noticed because nobody had opened it as a guest.
+
+### Added while here
+
+- **`C` toggles the case file**, founder's suggestion and the better fix — opening your own case file should not require finding a small button with a cursor you had to release first. It is also the shape a phone tap and a gamepad button need, so the console requirement gets it free.
+- **`GameFreeze`** — panels hold the world still, the way the map already does. Same register pattern as `PointerFocus`, because two scripts writing `Time.timeScale` means closing the map un-pauses a panel that is still open. That exact fight had already happened once, with the cursor.
+- **UIElements stubbed.** `TrapHudController`, `TrapCardController` and `TrapMenuController` were the only runtime code not compile-checked, so the first thing to compile them was somebody's editor — backwards, for the files most likely to be edited. Adding them found five gaps immediately (`SetEnabled`, `Invoke`, `cKey`).
+- **Build artefacts untracked.** `tools/trapcard-check` had committed 28 compiled files because `.gitignore` named the other two dotnet tools individually. Now a pattern, and `check:repo` fails on binaries.
+
+### The correction that mattered most
+
+The founder pushed back on streaming the map to phones. **He was right.** The whole 4 km² city is **5.8 MB gzipped** — 294 tiles, 6,947 buildings — which is a rounding error against a 100–500 MB app. Streaming was a *browser* constraint carried into a platform that does not have one. **WP-026** ships it in the build; the network path survives only so a rebuilt map can reach installs without a store release.
+
+It also narrowed **WP-025**: the map was never the weight in WebGL either. That is the Unity runtime and iOS Safari's memory ceiling.
+
+### Commands run
+
+All eight gates after every change. Green throughout. Guest session shape and the case-file write verified against the **live** Railway deploy, not a local server.
+
+### Not verified
+
+- `ThirdPersonController.cs` **cannot** be compile-checked: it is tracked, but the rest of StarterAssets is not, so a fresh checkout has nothing to compile it against. The editor is its only check — an argument for keeping our patches there small. Currently two, both a few lines.
+- The card's *appearance*. It looked small in the screenshot; not yet resized.
+
+### Unresolved
+
+- 🔴 **H-11** — no email provider. Reset links are generated and thrown away on the live deploy.
+- 🔴 **D-01** — how Kimani takes bookings today. Still blocks WP-017.
+- 🔴 **H-04** — backups still unproven.
+- Horizon 0 blocked on WP-005, 006, 007, 008.
+
+### Next recommended action
+
+Unchanged: **WP-007 (backups)** before **WP-005 (ledger)**.
