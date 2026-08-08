@@ -240,23 +240,38 @@ Audit **D9** in the master audit. Current instances:
 | Case file statement | **Server** | display + write via narrow route | ✅ |
 | Standing / reputation | **Server** | display | Not built |
 | Player transform | **Unity** | authoritative in session | Persist coarsely — district, not centimetres |
-| Character appearance | **Server** | renders | 🔶 **Decision needed.** Cosmetics may become purchasable → server |
-| World time / day-night | **🔶 UNDECIDED** | — | Single-player: Unity. Shared/events: server. **Decide before missions depend on it** |
-| Weather | **🔶 UNDECIDED** | — | Same. Cheap now, expensive after content depends on it |
+| Character appearance | **Server** | renders, may cache | ✅ D-119 |
+| World time / day-night | **Server** | renders | ✅ D-117. Shared truth — missions depend on it |
+| Weather | **Server directs** | renders | ✅ D-118. Server owns kind/intensity/transition/wind/seed; Unity owns particles, wet surfaces, fog, puddles, audio |
 | NPC state | **Unity** initially | full authority | Server later if NPCs remember across sessions |
 | Property / tenancy | **Server** | display | Not built. Real rent → server, absolutely |
-| Vehicles | **🔶 UNDECIDED** | — | Not built. Ownership → server; physics → client |
+| Vehicles | **🔶 UNDECIDED** | — | Not built. Ownership → server; physics → client. Decide when they exist |
 | Owned businesses | **Server** | display | Not built |
 | Achievements | **Server**, mirrored to platform | reports | Consoles require platform mirroring |
 | Local settings | **Unity** | full authority | Graphics, audio, controls. Never server |
 | Save data | **split** | see [PLATFORM-ARCHITECTURE §7](../03-technical/PLATFORM-ARCHITECTURE.md) | **A local save must never be authoritative for value** |
 
-### Decisions genuinely required
+### Resolved 4 August
 
-1. **World time and weather — client or server?** Blocks any mission that says "come back tomorrow evening".
-2. **Character appearance — server or local?** If cosmetics are ever sold, it must be server. *Recommend server now.*
-3. **`progress` blob or typed columns?** It is wholesale-replaced, which already forced a narrow route for the case file. Every future field repeats that. *Recommend typed columns.*
-4. **Player transform granularity.** *Recommend district + interior, not exact coordinates.*
+All four gating questions answered — see [DECISION-REGISTER](../04-plan/DECISION-REGISTER.md) D-116 to D-122.
+
+**One recommendation was overruled, correctly.** This audit proposed client-owned weather. The owner made it **server-directed, client-rendered** (D-118), on the grounds that two players standing beside each other in different weather is incoherent, and anything tied to weather — missions, events, a market that only appears when it is dry — becomes unreliable. That is right, and it is far cheaper now than after content depends on it.
+
+**The shape that follows.** The server owns a compact, cheap-to-transmit state:
+
+```
+{ kind: "Clear|Overcast|Rain|HeavyRain|Fog",
+  intensity: 0..1, wind: { dir, speed },
+  transitionStart: <iso>, transitionSeconds: <n>, seed: <n> }
+```
+
+`seed` is what stops this needing a poll every frame: the client derives the *detail* — gust timing, droplet scatter, cloud drift — deterministically, so two clients on the same seed agree without talking. They only re-sync when the state changes. Weather becomes a few bytes an hour, not a stream.
+
+Unity owns everything visible: particles, wet surfaces, puddles, fog rendering, audio, and how a transition looks.
+
+**Progression (D-120) is incremental**, not a big-bang column explosion: extract stable concepts as they are defined, keep a migration path from the blob. That changes WP-U06's shape — see the roadmap.
+
+**Player transform granularity** remains at the AI's discretion: district and interior, not exact coordinates.
 
 ---
 

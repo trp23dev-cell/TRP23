@@ -43,6 +43,13 @@ Every decision that shapes the product: what was decided, by whom, when, and why
 | D-113 | Trap card is private | Shown only to its author. Never leaderboard, never community, never staff. Public would make it dishonest and would need moderation | 3 Aug | AI |
 | D-114 | Shared logic parity | Where logic must exist in both JS and C#, both are held to one shared table. Found a real bug within minutes | 3 Aug | AI |
 | D-115 | Console constraint on rent | Tenancy billing stays **web-only, outside the game client** — in-client digital subscriptions are what certification scrutinises | 3 Aug | AI |
+| D-116 | **Own the character controller** | Build a small controller against the already-tracked `InputSystem_Actions` rather than dragging 86 MB of Starter Assets. Solves reproducible builds, gamepad/touch adoption and future platform work in one move | 4 Aug | Kimani |
+| D-117 | **World time** | **Server-authoritative.** Shared truth — missions and events depend on it | 4 Aug | Kimani |
+| D-118 | **Weather** | **Server-directed, client-rendered.** Server owns a compact state — kind (Clear/Overcast/Rain/HeavyRain/Fog), intensity, transition start, wind, seed. Unity owns particles, wet surfaces, fog, puddles, audio. *Revised from the AI recommendation of client-owned weather:* otherwise two players stand side by side in different weather and anything tied to it becomes unreliable | 4 Aug | Kimani |
+| D-119 | **Character appearance** | **Server-authoritative**, client may cache. Cosmetics, clothing and ownership will matter | 4 Aug | Kimani |
+| D-120 | **Typed progression** | Yes, **but migrate incrementally.** Extract stable authoritative concepts as they are defined; do not explode every conceivable future field into columns now. Preserve a migration path from the blob | 4 Aug | Kimani |
+| D-121 | **Addressables** | **Not now.** Establish boundaries; adopt when the first real consumer appears. Do not add infrastructure for a someday | 4 Aug | Kimani |
+| D-122 | **Vertical slice area** | **The High Street**, Stonebow to the foot of Steep Hill. Real geography, Kimani's shop, commerce, pedestrians, interiors and the phygital layer in one small zone | 4 Aug | Kimani |
 
 ---
 

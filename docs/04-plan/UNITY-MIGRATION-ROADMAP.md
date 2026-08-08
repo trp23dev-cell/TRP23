@@ -6,7 +6,7 @@
 **Evidence:** [UNITY-MIGRATION-AUDIT](../01-audit/UNITY-MIGRATION-AUDIT.md) · **Design:** [UNITY-TECHNICAL-ARCHITECTURE](../03-technical/UNITY-TECHNICAL-ARCHITECTURE.md) · [PLATFORM-ARCHITECTURE](../03-technical/PLATFORM-ARCHITECTURE.md)
 **Fits into:** [MASTER-PLAN](MASTER-PLAN.md) Horizon 1. Ledger: [PROGRESS](PROGRESS.md).
 
-> Each package is sized so one coding agent can do it alone and the evidence can be reviewed before the next begins. **Do not start WP-U01 until the owner has answered §5.**
+> Each package is sized so one coding agent can do it alone and the evidence can be reviewed before the next begins. **All owner decisions are answered (§5). WP-U01 and WP-U02 are unblocked.**
 
 ---
 
@@ -160,16 +160,28 @@ It contains, in reality, everything the slice needs to prove: **Kimani's shop**,
 
 ---
 
-## 5. Owner decisions required before WP-U01
+## 5. Owner decisions — all answered 4 August
 
-| # | Question | Blocks | Recommendation |
-|---|---|---|---|
-| **Q1** | Own the character controller, or commit 86 MB of Starter Assets? | U02, CI builds, consoles | **Own it.** Two patches already carried, uncheckable by CI, and ~300 lines is cheaper than that dependency in a submission |
-| **Q2** | World time and weather — client or server? | U06, every timed mission | **Time server, weather client.** Time is shared truth; weather is presentation |
-| **Q3** | Character appearance — server or local? | WP-012 | **Server.** Cosmetics will be sold; local means editable |
-| **Q4** | `progress` blob → typed columns? | U06 and every future field | **Yes.** It is wholesale-replaced, which already forced a narrow route for the case file |
-| **Q5** | Addressables now? | asset pipeline | **No.** No consumer. Revisit when interiors or DLC exist |
-| **Q6** | Is the High Street the right slice? | all of Phase C | **Yes** — it is where the barber is |
+Recorded as **D-116 to D-122** in [DECISION-REGISTER](DECISION-REGISTER.md). **WP-U01 and WP-U02 are unblocked.**
+
+| # | Answer |
+|---|---|
+| Q1 | ✅ **Own the controller.** Do not drag 86 MB around to retain a patched dependency |
+| Q2 | ✅ **Time server-authoritative. Weather server-directed, client-rendered** — *revised from this roadmap's recommendation, correctly* |
+| Q3 | ✅ **Appearance server-authoritative**, client may cache |
+| Q4 | ✅ **Typed progression, migrated incrementally** — extract stable concepts as defined, keep a path from the blob |
+| Q5 | ✅ **No Addressables yet.** Boundaries now, adopt at the first real consumer |
+| Q6 | ✅ **High Street slice confirmed** |
+
+### What Q2 changes
+
+A **new server-owned world-state endpoint** that did not previously exist, and a corresponding `IWorldClock` / `IWeatherState` in `Core`. Small, and it belongs in **WP-U05/U06** rather than being deferred — retrofitting shared weather after missions depend on local weather is the expensive version.
+
+The design is a compact state plus a **seed**, so clients derive gust timing and droplet scatter deterministically and only re-sync on change. Weather costs a few bytes an hour, not a stream.
+
+### What Q4 changes
+
+**WP-U06 gets smaller and safer.** Rather than designing the full progression schema now, it extracts only what is already stable and authoritative — current chapter, chapters cleared, the trap card (already a narrow route) — and leaves the rest in the blob behind a typed accessor. Each later field migrates when its meaning is settled, not when it is imagined.
 
 ---
 
