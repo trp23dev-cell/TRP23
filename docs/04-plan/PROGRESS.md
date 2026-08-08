@@ -56,7 +56,7 @@ Full work packages are written **as each is picked up**, one horizon ahead — n
 
 | WP | Title | Owner | Effort | Status | Depends on |
 |---|---|---|---|---|---|
-| U01 | Assembly definitions | AI | M | ⬜ **ready** | — |
+| [U01](work-packages/WP-U01-assembly-definitions.md) | Assembly definitions | AI | M | ✅ | log S9. 3 assemblies; **all 3 boundaries proven by deliberate violation**; CI enforces the graph. **Unity editor unverified — H-12** |
 | U02 | **Own the character controller** (fresh clone cannot build) | AI | M | ⬜ **ready** | U01 |
 | U03 | Bootstrap scene + composition root | AI | M | ⬜ | U01 |
 | U04 | Platform abstraction + IL2CPP | AI + **HUMAN** | M | ⬜ | U01, U03 |

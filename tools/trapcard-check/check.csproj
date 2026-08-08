@@ -13,7 +13,7 @@
     <!-- The REAL state machine Unity runs, not a copy. A copy would drift, and
          a test of a copy proves nothing about what ships. Same reasoning as
          tools/collision-check. -->
-    <Compile Include="../../Unity/TRP23/Assets/UI/Scripts/CaseFile/TrapCardState.cs" />
+    <Compile Include="../../Unity/TRP23/Assets/Core/TrapCardState.cs" />
     <Compile Include="Program.cs" />
   </ItemGroup>
 </Project>

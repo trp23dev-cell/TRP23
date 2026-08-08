@@ -149,3 +149,19 @@ An iPhone, a mid-range Android and a PC. **The mid-range Android is the one that
 **Always confirm before:** deploying to production · taking a real payment · emailing players · rewriting git history · deleting a system.
 
 **The AI must never:** make a purchase · connect a live payment account · deploy automatically · accept a contract · make an irreversible moderation, financial or safeguarding decision. If it offers, say no — and tell me, because it means these instructions are being ignored.
+
+### H-12 · Confirm the assembly definitions in Unity
+**Who:** Richard · **Time:** 10 min · **Blocks:** WP-U02 · **Needs:** Unity 6000.3.8f1
+
+WP-U01 added three `.asmdef` files and moved five files. Every boundary is proven by CI — including three deliberate violations that correctly failed to compile — but **the editor has not opened the project since**, and there is no Unity licence in the AI's environment.
+
+Five things only the editor can confirm:
+
+1. Open `Unity/TRP23`. **Console clean?** Any red error, paste it and stop.
+2. `Window → Analysis → Assembly Definitions` (or check the Project panel) — **TRP23.Core, TRP23.World and TRP23.UI** all present.
+3. **TRAP menu** still has *Build World Test Scene* and *Build UI* — this proves the moved editor scripts still compile and still see StarterAssets.
+4. `Assets/Scenes/TrapMenu.unity` → **Play** → ENTER → continue as guest → Lincoln loads → **C** opens the case file. This proves no scene GUID broke.
+5. Note whether **script compilation feels faster** after the first import — the point of the exercise.
+
+**Worked if:** no console errors, three assemblies listed, TRAP menu intact, the game plays as it did this morning.
+**Tell me if:** any assembly fails to resolve `UnityEngine.UI` or `Unity.InputSystem`, or a scene reference broke.

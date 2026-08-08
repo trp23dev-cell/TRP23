@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- TRP23.UI. Compiles UI + Core + stubs and NOTHING from World, so a
+       UI -> World dependency fails to compile here as it would in Unity.
+       UI must reach the world through Core interfaces and events. -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <Nullable>disable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <NoWarn>CS0649;CS0169</NoWarn>
+    <DefineConstants>ENABLE_INPUT_SYSTEM</DefineConstants>
+    <AssemblyName>TRP23.UI</AssemblyName>
+    <BaseIntermediateOutputPath>obj/UI/</BaseIntermediateOutputPath>
+    <OutputPath>bin/UI/</OutputPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="UnityStubs.cs" />
+    <Compile Include="UIElementsStubs.cs" />
+    <Compile Include="../../Unity/TRP23/Assets/Core/*.cs" />
+    <Compile Include="../../Unity/TRP23/Assets/UI/Scripts/*.cs" />
+    <Compile Include="../../Unity/TRP23/Assets/UI/Scripts/Auth/*.cs" />
+  </ItemGroup>
+</Project>

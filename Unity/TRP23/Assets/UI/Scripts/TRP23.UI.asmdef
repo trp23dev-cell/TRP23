@@ -1,0 +1,17 @@
+{
+    "name": "TRP23.UI",
+    "rootNamespace": "TrapMadeIt.UI",
+    "references": [
+        "TRP23.Core",
+        "Unity.InputSystem"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- TRP23.World. Compiles World + Core + stubs and NOTHING from UI, so a
+       World -> UI dependency fails to compile here exactly as it would in
+       Unity. That is the boundary this package exists to create. -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <Nullable>disable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <NoWarn>CS0649;CS0169</NoWarn>
+    <DefineConstants>ENABLE_INPUT_SYSTEM</DefineConstants>
+    <AssemblyName>TRP23.World</AssemblyName>
+    <BaseIntermediateOutputPath>obj/World/</BaseIntermediateOutputPath>
+    <OutputPath>bin/World/</OutputPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="UnityStubs.cs" />
+    <Compile Include="../../Unity/TRP23/Assets/Core/*.cs" />
+    <Compile Include="../../Unity/TRP23/Assets/World/Scripts/*.cs" />
+  </ItemGroup>
+</Project>

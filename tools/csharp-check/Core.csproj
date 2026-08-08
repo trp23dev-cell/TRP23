@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- TRP23.Core — and the point of this project is what it does NOT include.
+       No Unity stubs at all, mirroring `noEngineReferences: true` on the
+       asmdef. So `using UnityEngine` in Core fails here, in CI, rather than
+       being noticed in review. Core staying engine-free is what lets it be
+       tested without a Unity licence, which is how the trap card is checked
+       on every push today. -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <Nullable>disable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <AssemblyName>TRP23.Core</AssemblyName>
+    <BaseIntermediateOutputPath>obj/Core/</BaseIntermediateOutputPath>
+    <OutputPath>bin/Core/</OutputPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../Unity/TRP23/Assets/Core/*.cs" />
+  </ItemGroup>
+</Project>
