@@ -52,6 +52,21 @@ Full work packages are written **as each is picked up**, one horizon ahead — n
 | [025](work-packages/WP-025-unity-on-the-website.md) | Unity on the website — WebGL feasibility spike | AI + **HUMAN** | S | ⬜ | 024 |
 | [026](work-packages/WP-026-offline-map.md) | **Ship the map with the app** (5.8 MB — stop streaming on mobile) | AI + **HUMAN** | M | ⬜ | 008 |
 
+**Unity migration queue** — full detail in [UNITY-MIGRATION-ROADMAP](UNITY-MIGRATION-ROADMAP.md). Blocked on owner decisions Q1–Q6.
+
+| WP | Title | Owner | Effort | Status | Depends on |
+|---|---|---|---|---|---|
+| U01 | Assembly definitions | AI | M | 🚧 | owner Q1 |
+| U02 | **Own the character controller** (fresh clone cannot build) | AI | M | 🚧 | U01, owner Q1 |
+| U03 | Bootstrap scene + composition root | AI | M | ⬜ | U01 |
+| U04 | Platform abstraction + IL2CPP | AI + **HUMAN** | M | ⬜ | U01, U03 |
+| U05 | Typed API client, generated geo constants | AI | M | ⬜ | U01, U03 |
+| U06 | Game state + versioned save | AI | L | ⬜ | U05, owner Q2/Q4 |
+| U07 | Interaction framework | AI | M | ⬜ | U06 |
+| U08 | Premises + Kimani's interior | AI + art | L | ⬜ | U07, D-01 |
+| U09 | Server-driven content in Unity | AI | S | ⬜ | U05 |
+| U10–U12 | High Street slice: dressing, pedestrians, budgets | AI | L | ⬜ | Phase B |
+
 ---
 
 ## Horizons 2–5
