@@ -2,7 +2,12 @@
 
 **A read-only audit of what TRP23 has already promised itself.**
 
-**Date:** 9 August 2026 · **Status:** 🟡 **review document — NOT a source of truth.** Nothing implemented, nothing modified.
+**Date:** 9 August 2026 · **Status:** ✅ **reviewed by the owner 9 August.** Superseded on the points below by **D-W01–D-W10** ([DECISION-REGISTER](../04-plan/DECISION-REGISTER.md)) and by [WORLD-AND-GAMEPLAY-SPECIFICATION](../02-design/WORLD-AND-GAMEPLAY-SPECIFICATION.md). Retained as the evidence trail.
+
+> **Corrections after review.** Two things in this document are now wrong and are left visible rather than edited away:
+>
+> - **Part 8 and Contradiction 5 proposed a Kimani NPC and asked whether he consented to his likeness.** **D-W04 settles it: there is no Kimani character.** No likeness, no voice, no dialogue, no digital representation. The premises use fictional staff. The consent question does not arise, and my recommendation to "open it in the slice" meant the *shop*, which stands — the *character* does not.
+> - **Contradiction 6 recommended collapsing Collection into StoryChapter.** **D-W02 rejects that**, correctly: Vol 9's *"collections are chapters"* is creative doctrine about narrative coherence, not an instruction to make them one entity. Collections outlive the six chapters; a shared entity would have capped the brand at six ranges.
 **Scope:** the Bible, every design and audit document, the web client, the backend, and the Unity project.
 
 > This exists to tell the owner what already exists before the High Street slice is designed. It **does not** rewrite the Bible, resolve contradictions silently, or propose new features as established requirements. Where I could not find evidence, it says so.
