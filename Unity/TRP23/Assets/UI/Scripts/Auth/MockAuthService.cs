@@ -7,8 +7,14 @@ namespace TrapMadeIt.UI
     // In-memory stand-in for the real backend. Enforces the same signup rules as
     // the web/backend so the flow behaves identically. Holds nothing on disk, so
     // guests are fresh each run — matching the web's ephemeral guest.
-    public class MockAuthService : IAuthService
+    public class MockAuthService : IAuthService, TrapMadeIt.ISession
     {
+        // The mock is a session too, so the offline path composes exactly like
+        // the real one and GameContext needs no branch beyond which to build.
+        string TrapMadeIt.ISession.PlayerId => Current != null ? Current.playerId : null;
+        string TrapMadeIt.ISession.Token => Current != null ? "mock-token" : null;
+        bool TrapMadeIt.ISession.IsSignedIn => Current != null;
+
         private class Stored { public Account acct; public string password; public bool has2fa; }
 
         private readonly Dictionary<string, Stored> _byUser = new Dictionary<string, Stored>();

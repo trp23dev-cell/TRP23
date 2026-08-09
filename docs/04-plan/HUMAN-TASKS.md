@@ -199,7 +199,7 @@ The map never told `PointerFocus` it was open, so the player kept looking around
 
 **Worked if:** step 2 shows no rotation whatsoever, and step 7 stays frozen.
 
-### H-13b · Re-test the freeze — second repair
+### H-13b · Re-test the freeze — second repair ✅ *verified 9 Aug*
 **Who:** Richard · **Time:** 4 min · **Blocks:** WP-U02 acceptance
 
 **Before anything else: `git pull`.** The first repair landed at the very end of the previous session, so it is worth ruling out that the screencast was of the pre-repair build. Then in Unity let it recompile, and **re-run `TRAP → Build World Test Scene`** so the scene picks up the current player.
@@ -223,3 +223,19 @@ Debug.Log($"blocked={TrapMadeIt.GameplayInput.Blocked} " +
 ```
 
 and say whether the camera's parent is `PlayerCameraRoot`. Those two facts distinguish "the gate is not firing" from "something else is writing the transform", and I could not tell them apart from here.
+
+### H-14 · Verify the composition root
+**Who:** Richard · **Time:** 10 min · **Blocks:** WP-U03 acceptance · **Needs:** Unity 6000.3.8f1
+
+WP-U03 replaced `SceneFlow` with `GameContext`. Everything compiles and all eight gates pass, but **no Unity licence exists in the AI's environment** — nothing was run.
+
+1. `git pull`, open `Unity/TRP23`, let it recompile. **Console clean?** Any red error, paste it and stop.
+2. **`Window → General → Test Runner` → EditMode.** `TRP23.Core.Tests` should list five tests. **Run them — all five should pass.** *(First test assembly in the project.)*
+3. Open `Assets/Scenes/TrapMenu.unity`. The `TrapGameContext` object should have a **GameContext** component — **not a missing script** — with `apiBase` still set to the Railway URL and `useMockAuth` off.
+4. **Play from TrapMenu** → ENTER → continue as guest → Lincoln loads → **C** opens the case file and saves. *(This is the path that was broken on 4 August.)*
+5. **Play from TrapGame directly.** Press **C**. **The case file must still work** — this is the whole point of the package: the graph no longer depends on which scene you entered.
+6. Open the **🏦 BANK** panel in both cases. Balance should load, not error.
+7. Optional: **`TRAP → Build Bootstrap Scene`**, then add `Assets/Scenes/Bootstrap.unity` as the **first** scene in Build Settings and play from it. It should compose and drop you at the menu.
+
+**Worked if:** five tests pass, no missing scripts, and **step 5 behaves identically to step 4**.
+**Tell me if:** the case file or bank fails from one entry point but not the other — that would mean composition is still order-dependent and I have not actually fixed it.

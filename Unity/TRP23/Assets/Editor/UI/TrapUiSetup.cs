@@ -125,8 +125,8 @@ namespace TrapMadeIt.UI.EditorTools
             NewCamera("Main Camera", new Color(0.02f, 0.02f, 0.02f));
             NewEventSystem();
 
-            var flow = new GameObject("TrapSceneFlow");
-            flow.AddComponent<SceneFlow>();
+            var context = new GameObject("TrapGameContext");
+            context.AddComponent<GameContext>();
 
             var ui = new GameObject("TrapMenuUI");
             var doc = ui.AddComponent<UIDocument>();

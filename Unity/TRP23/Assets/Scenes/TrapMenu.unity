@@ -292,7 +292,7 @@ GameObject:
   - component: {fileID: 1861133339}
   - component: {fileID: 1861133338}
   m_Layer: 0
-  m_Name: TrapSceneFlow
+  m_Name: TrapGameContext
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -307,9 +307,9 @@ MonoBehaviour:
   m_GameObject: {fileID: 1861133337}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 7d9b87d4f68df9223a69991c830cce4c, type: 3}
+  m_Script: {fileID: 11500000, guid: 2f1d36ac697253034a3268c43daa9010, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::TrapMadeIt.UI.SceneFlow
+  m_EditorClassIdentifier: TRP23.UI::TrapMadeIt.UI.GameContext
   menuScene: TrapMenu
   gameScene: TrapGame
   useMockAuth: 0

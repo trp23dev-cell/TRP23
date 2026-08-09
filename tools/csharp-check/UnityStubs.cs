@@ -22,6 +22,9 @@ namespace UnityEngine {
   public class HeaderAttribute : Attribute { public HeaderAttribute(string h) {} }
   public class TooltipAttribute : Attribute { public TooltipAttribute(string t) {} }
   public class HideInInspector : Attribute {}
+  public class DisallowMultipleComponentAttribute : Attribute {}
+  public class ExecuteAlwaysAttribute : Attribute {}
+  public class DefaultExecutionOrderAttribute : Attribute { public DefaultExecutionOrderAttribute(int order) {} }
   public class SerializeFieldAttribute : Attribute {}
   public class GameObject : Object {
     public GameObject() {}

@@ -40,19 +40,17 @@ namespace TrapMadeIt.UI
         private void OnEnable()
         {
             _root = GetComponent<UIDocument>().rootVisualElement;
-            var flow = SceneFlow.Ensure();
-            _auth = flow.Auth;
+            var context = GameContext.Current;
+            _auth = context.Auth;
 
-            // Lives on the persistent SceneFlow object: it runs coroutines, and
-            // one that dies with the scene would cancel a transfer mid-flight.
-            _wallet = flow.GetComponent<WalletService>();
-            if (_wallet == null) _wallet = flow.gameObject.AddComponent<WalletService>();
-
-            // Same reasoning as the wallet: it runs coroutines, and one that
-            // dies with the scene would cancel a save mid-flight.
-            var caseFileService = flow.GetComponent<CaseFileService>();
-            if (caseFileService == null) caseFileService = flow.gameObject.AddComponent<CaseFileService>();
-            _caseFile = new TrapCardController(_root, caseFileService);
+            // Taken from the context, not built here. The HUD used to
+            // GetComponent-or-AddComponent both of these onto the persistent
+            // object, which meant a screen was deciding what services exist and
+            // wiring them itself — so whether they were configured depended on
+            // which screen opened first. GameContext composes them once, before
+            // any screen runs.
+            _wallet = context.Wallet;
+            _caseFile = new TrapCardController(_root, context.CaseFile);
 
             _root.Q<Button>("open-store").clicked += () => ShowPanel("panel-store", true);
             // Open first, then reload: the panel should appear at once and fill
@@ -214,7 +212,7 @@ namespace TrapMadeIt.UI
             _root.Q<Label>("ap-2fa").text = (a != null && a.twofaEnabled) ? "On" : "Off";
         }
 
-        private void OnLogout() => _auth.Logout(() => SceneFlow.Ensure().LoadMenu());
+        private void OnLogout() => _auth.Logout(() => GameContext.Current.LoadMenu());
 
         private readonly HashSet<string> _openPanels = new HashSet<string>();
 

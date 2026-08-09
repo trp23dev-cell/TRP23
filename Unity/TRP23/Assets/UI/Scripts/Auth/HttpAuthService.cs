@@ -17,11 +17,25 @@ namespace TrapMadeIt.UI
     /// response shape ever looks wrong here, check server/mockApiServer.js
     /// rather than guessing — that file is the source of truth for both.
     /// </summary>
-    public class HttpAuthService : MonoBehaviour, IAuthService
+    public class HttpAuthService : MonoBehaviour, IAuthService, TrapMadeIt.ISession
     {
-        [Header("Where the API lives")]
-        [Tooltip("No trailing slash. The production deployment, or http://localhost:8787 for local work.")]
-        public string apiBase = "https://trp23-production.up.railway.app";
+        // Handed in by GameContext at composition. Not a public field any more:
+        // a settable address is a second source of truth, and the one thing a
+        // service must not be able to do is decide which server it talks to.
+        TrapMadeIt.IApiEndpoint endpoint;
+
+        /// <summary>Called once, by the composition root, before anything uses this.</summary>
+        public void Bind(TrapMadeIt.IApiEndpoint apiEndpoint) => endpoint = apiEndpoint;
+
+        string apiBase => endpoint != null ? endpoint.BaseUrl : "";
+
+        // --- ISession. This service holds the token, so it IS the session that
+        // --- everything downstream authenticates with. Nothing else needs to
+        // --- know that the auth service is where a token comes from.
+        string TrapMadeIt.ISession.PlayerId => current != null ? current.playerId : null;
+        string TrapMadeIt.ISession.Token => Token;
+        bool TrapMadeIt.ISession.IsSignedIn =>
+            current != null && !string.IsNullOrEmpty(current.playerId) && !string.IsNullOrEmpty(Token);
 
         // Session token from the server. Kept in PlayerPrefs so a returning
         // player is not asked to sign in again.

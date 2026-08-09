@@ -60,7 +60,7 @@ Full work packages are written **as each is picked up**, one horizon ahead — n
 |---|---|---|---|---|---|
 | [U01](work-packages/WP-U01-assembly-definitions.md) | Assembly definitions | AI | M | ✅ | log S9. 3 assemblies; **all 3 boundaries proven by deliberate violation**; CI enforces the graph. **Unity editor unverified — H-12** |
 | [U02](work-packages/WP-U02-owned-player-controller.md) | **Own the character controller** | AI | M | ✅ | log S10 + repair S11. `TrapPlayerController`; StarterAssets no longer required; fresh-clone audit clean; slope curve and freeze contract tested. **Unity runtime unverified — H-13** |
-| U03 | Bootstrap scene + composition root | AI | M | ⬜ | U01 |
+| U03 | Bootstrap + GameContext composition root | AI | M | ✅ | log S12. `SceneFlow` retired; **Auth↔SceneFlow cycle broken**; cycle guard in `check:repo`; first test assembly. **Unity unverified — H-14** |
 | U04 | Platform abstraction + IL2CPP | AI + **HUMAN** | M | ⬜ | U01, U03 |
 | U05 | Typed API client, generated geo constants | AI | M | ⬜ | U01, U03 |
 | U06 | Game state + versioned save (incremental typing, D-120) | AI | L | ⬜ | U05 |

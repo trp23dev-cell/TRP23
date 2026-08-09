@@ -14,7 +14,7 @@ namespace TrapMadeIt.UI
         private void OnEnable()
         {
             _root = GetComponent<UIDocument>().rootVisualElement;
-            _auth = SceneFlow.Ensure().Auth;
+            _auth = GameContext.Current.Auth;
 
             _home = _root.Q<VisualElement>("screen-home");
             _authScreen = _root.Q<VisualElement>("screen-auth");
@@ -115,7 +115,7 @@ namespace TrapMadeIt.UI
             _loading.RemoveFromClassList("hidden");
             Invoke(nameof(GoToGame), 0.9f);
         }
-        private void GoToGame() => SceneFlow.Ensure().LoadGame();
+        private void GoToGame() => GameContext.Current.LoadGame();
 
         private void Show(VisualElement screen)
         {

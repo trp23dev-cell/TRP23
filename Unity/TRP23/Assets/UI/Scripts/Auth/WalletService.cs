@@ -46,21 +46,24 @@ namespace TrapMadeIt.UI
     /// </summary>
     public class WalletService : MonoBehaviour
     {
-        [Tooltip("No trailing slash. Left empty, it follows the auth service, " +
-                 "so there is one address to change rather than two that can disagree.")]
-        public string apiBase = "";
+        // Handed in by GameContext at composition, never fetched. The service
+        // used to call SceneFlow.Ensure() for both of these, which made the
+        // network layer depend on the composition root while the composition
+        // root built the network layer — the cycle that kept TRP23.Network
+        // inside TRP23.UI (WP-U01 §2).
+        TrapMadeIt.IApiEndpoint endpoint;
+        TrapMadeIt.ISession session;
 
-        const string TokenKey = "trp23.session.token";
-
-        string Base
+        /// <summary>Called once, by the composition root, before anything uses this.</summary>
+        public void Bind(TrapMadeIt.IApiEndpoint apiEndpoint, TrapMadeIt.ISession playerSession)
         {
-            get
-            {
-                if (!string.IsNullOrEmpty(apiBase)) return apiBase.TrimEnd('/');
-                var auth = SceneFlow.Ensure().Auth as HttpAuthService;
-                return auth != null ? auth.apiBase.TrimEnd('/') : "";
-            }
+            endpoint = apiEndpoint;
+            session = playerSession;
         }
+
+
+
+        string Base => endpoint != null ? endpoint.BaseUrl : "";
 
         /// <summary>Current balances. Also the way to find out you are signed out.</summary>
         public void Fetch(Action<WalletResult> done)
@@ -120,11 +123,7 @@ namespace TrapMadeIt.UI
             }, done));
         }
 
-        static string PlayerId()
-        {
-            var account = SceneFlow.Ensure().Auth?.Current;
-            return account != null ? account.playerId : null;
-        }
+        string PlayerId() => session != null ? session.PlayerId : null;
 
         IEnumerator Send(string route, string json, Func<string, WalletResult> parse,
                          Action<WalletResult> done)
@@ -141,7 +140,7 @@ namespace TrapMadeIt.UI
                 }
                 req.downloadHandler = new DownloadHandlerBuffer();
 
-                var token = PlayerPrefs.GetString(TokenKey, null);
+                var token = session != null ? session.Token : null;
                 if (!string.IsNullOrEmpty(token)) req.SetRequestHeader("Authorization", "Bearer " + token);
 
                 yield return req.SendWebRequest();

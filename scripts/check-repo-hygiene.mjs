@@ -58,7 +58,12 @@ if (found.length) {
 // admits it has none, so claiming it is now a test.
 // ---------------------------------------------------------------------------
 import { existsSync } from "node:fs";
-import { readFileSync } from "node:fs";
+import { readFileSync as readFileRaw } from "node:fs";
+
+/** Tracked-but-deleted is a normal state mid-change. Crashing with a stack
+ *  trace over it turns a useful check into a puzzle, so missing reads are an
+ *  empty string and the file simply matches no rule. */
+const readFileSync = (f, enc) => (existsSync(f) ? readFileRaw(f, enc) : "");
 
 const readme = readFileSync("README.md", "utf8");
 const drift = [];
@@ -142,6 +147,37 @@ if (ungated.length) {
   for (const f of ungated) process.stderr.write(`  ${f}\n`);
   process.stderr.write("\nCheck TrapMadeIt.GameplayInput.Allowed before acting on input,\n"
     + "or the next open panel will freeze the world and leave the camera turning.\n");
+  process.exit(1);
+}
+
+// ---------------------------------------------------------------------------
+// THE COMPOSITION CYCLE MUST NOT COME BACK
+//
+// Before WP-U03 the network services called SceneFlow.Ensure() to find the
+// server address and the acting player. That made the network layer depend on
+// the composition root while the composition root constructed the network
+// layer -- a cycle, and the reason TRP23.Network could not be split out of
+// TRP23.UI.
+//
+// GameContext now hands each service what it needs. A service that reaches
+// back up re-creates the cycle, and it would compile perfectly.
+// ---------------------------------------------------------------------------
+const serviceFiles = tracked.filter((f) =>
+  f.startsWith("Unity/TRP23/Assets/UI/Scripts/Auth/") && f.endsWith(".cs"));
+const reachingUp = [];
+for (const file of serviceFiles) {
+  const body = readFileSync(file, "utf8")
+    .split("\n")
+    .filter((l) => !l.trim().startsWith("//") && !l.trim().startsWith("///"))
+    .join("\n");
+  if (/\bGameContext\b/.test(body)) reachingUp.push(file);
+}
+if (reachingUp.length) {
+  process.stderr.write("network services reach up to the composition root:\n");
+  for (const f of reachingUp) process.stderr.write(`  ${f}\n`);
+  process.stderr.write("\nGameContext hands services their dependencies via Bind(). A service that\n"
+    + "fetches GameContext re-creates the cycle WP-U03 removed, and blocks the\n"
+    + "TRP23.Network extraction again.\n");
   process.exit(1);
 }
 
