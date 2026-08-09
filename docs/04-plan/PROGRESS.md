@@ -34,17 +34,17 @@ Full work packages are written **as each is picked up**, one horizon ahead — n
 
 | WP | Title | Owner | Effort | Status | Depends on |
 |---|---|---|---|---|---|
-| 010 | Unity chapter/scene flow + game state | AI | M | ⬜ | 008 |
-| 011 | Server-driven content in Unity | AI | S | ⬜ | 010 |
+| ~~010~~ | ~~Unity chapter/scene flow + game state~~ | — | — | 🗑️ | **superseded by U06** |
+| ~~011~~ | ~~Server-driven content in Unity~~ | — | — | 🗑️ | **superseded by U09/U18** |
 | 012 | Character creation — fixed archetypes | AI + art | L | ⬜ | D-06 |
 | 013 | The commitment engine | AI | M | ⬜ | 005 |
-| 014 | Ambient life — Tier 1 NPCs | AI | M | ⬜ | 010 |
-| 015 | Premises system + one interior | AI + art | M | ⬜ | 010, D-05 |
+| ~~014~~ | ~~Ambient life — Tier 1 NPCs~~ | — | — | 🗑️ | **superseded by U11** |
+| ~~015~~ | ~~Premises system + one interior~~ | — | — | 🗑️ | **superseded by U08** |
 | 016 | The bank, and Standing | AI | M | ⬜ | 013, 015 |
 | 017 | **The barber booking** | AI + **HUMAN** | M | 🚧 | D-01, D-02, D-03 |
 | 018 | Case file in Unity | AI | S | ✅ | log S8. Verified in the editor by the founder: writes, saves, survives close/reopen |
-| 019 | Versioned save/load | AI | S | ⬜ | 010 |
-| 020 | Performance budgets + scene validation | AI | M | ⬜ | 010 |
+| ~~019~~ | ~~Versioned save/load~~ | — | — | 🗑️ | **superseded by U06** |
+| ~~020~~ | ~~Performance budgets + scene validation~~ | — | — | 🗑️ | **superseded by U12** |
 | 021 | Mobile builds on real devices | **HUMAN** + AI | M | ⬜ | 010 |
 | 022 | Accessibility baseline | AI | S | ⬜ | 010 |
 | 023 | Analytics with consent | AI | S | ⬜ | — |
@@ -52,7 +52,9 @@ Full work packages are written **as each is picked up**, one horizon ahead — n
 | [025](work-packages/WP-025-unity-on-the-website.md) | Unity on the website — WebGL feasibility spike | AI + **HUMAN** | S | ⬜ | 024 |
 | [026](work-packages/WP-026-offline-map.md) | **Ship the map with the app** (5.8 MB — stop streaming on mobile) | AI + **HUMAN** | M | ⬜ | 008 |
 
-**Unity migration queue** — full detail in [UNITY-MIGRATION-ROADMAP](UNITY-MIGRATION-ROADMAP.md). **All owner decisions answered 4 Aug (D-116 to D-122). U01 ready to start.**
+**Unity migration queue** — full detail in [UNITY-MIGRATION-ROADMAP](UNITY-MIGRATION-ROADMAP.md), sequenced in [IMPLEMENTATION-DEPENDENCY-MAP](IMPLEMENTATION-DEPENDENCY-MAP.md).
+
+> ⚠️ **Roadmap collision.** Entries `010`, `011`, `014`, `015`, `019` and `020` in the Horizon 1 table above **duplicate U06, U09, U11, U08, U06 and U12**. The **U-series supersedes them** — see the dependency map §1. They are struck through rather than deleted so nobody re-adds them.
 
 | WP | Title | Owner | Effort | Status | Depends on |
 |---|---|---|---|---|---|
@@ -66,6 +68,7 @@ Full work packages are written **as each is picked up**, one horizon ahead — n
 | U08 | Premises + Kimani's interior | AI + art | L | ⬜ | U07, D-01 |
 | U09 | Server-driven content in Unity | AI | S | ⬜ | U05 |
 | U10–U12 | High Street slice: dressing, pedestrians, budgets | AI | L | ⬜ | Phase B |
+| U14–U22 | **Standing · Phone · NPCs · character · drops · entitlements · opportunities · flagship · bank** | AI + art | — | ⬜ | See [dependency map](IMPLEMENTATION-DEPENDENCY-MAP.md) §2 |
 | [U13](work-packages/WP-U13-navigational-map.md) | Navigational map + route planning (road graph, not a straight line) | AI + design | L–XL | ⬜ **backlog** | U03, 026, U07 |
 
 ---

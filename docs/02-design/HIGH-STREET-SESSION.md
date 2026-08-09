@@ -1,11 +1,13 @@
 # A High Street Session
 
-**Twenty-eight minutes, written as a player experiences it. Revision 2.**
+**Twenty-eight minutes, written as a player experiences it. Revision 3.**
 
 **Date:** 9 August 2026 · **Status:** 🟡 **proposed, for owner review. Nothing implemented.**
-**Systems:** [WORLD-AND-GAMEPLAY-SPECIFICATION](WORLD-AND-GAMEPLAY-SPECIFICATION.md) · **Decisions:** D-W01–D-W17
+**Systems:** [WORLD-AND-GAMEPLAY-SPECIFICATION](WORLD-AND-GAMEPLAY-SPECIFICATION.md) · **Decisions:** D-W01–D-W23
 
-> **This is a product test, not a script.** Revision 1 exposed four gaps: no way to earn money, Standing dimensions that did nothing, invisible campaign scarcity, and a reward the player could not trace. This revision is built to answer all four, and §Validation says honestly where it still falls short.
+> **This is a product test, not a script.** Revision 1 exposed four gaps: no way to earn money, Standing dimensions that did nothing, invisible campaign scarcity, and a reward the player could not trace. Revision 2 answered all four.
+>
+> **Revision 3 is a minimal correction only.** D-W18 rules out employment, so the flagship activity is reframed from *a paid shift* to *a one-off favour somebody asked you for by name*. Naomi, the quality standard, the overpayment, the Trust consequence, the earning and the entitlement causality are all unchanged. §Validation says honestly where it still falls short.
 
 ---
 
@@ -39,9 +41,12 @@ Not yours yet.
 *(D-W08)*
 
 ```
-TRAP MADE IT     Prep shift today — flagship, 11am. Paid.
-                 First 100 who work a drop-week shift get a
-                 funded contribution toward THE ARCHIVE.
+NAOMI            "ade says you're about. drop lands friday and
+                 i'm two people short getting it out. worth
+                 your while if you fancy an hour"
+
+TRAP MADE IT     Anyone who helps get THE ARCHIVE ready this
+                 week gets a funded contribution toward it.
                  61 places left · closes Friday
 
 ADE              "thursday still on?"
@@ -75,9 +80,11 @@ The window is **THE ARCHIVE** — the collection, lit, three days out. Not a pos
 
 Inside is boxes. **Naomi**, who runs the floor, is trying to get a drop into a shop with two people. *(§24 fictional staff — D-W04)*
 
-> *"You're the one Ade sent. Right — steamer's out back. Everything on that rail needs doing before Friday and I'd rather it was done properly than done fast."*
+> *"You came. Right — steamer's out back. Everything on that rail wants doing before Friday, and I'd rather it was done properly than done fast."*
 
-### The work — this is the earn loop *(§ economy gap)*
+**You were asked, by name, because somebody vouched for you. You could have said no and the session would have gone somewhere else.** *(D-W18 — an opportunity, not a shift)*
+
+### The work — this is the earn loop *(§ economy · D-W18, D-W22)*
 
 You steam and hang the drop. It is a real activity with a real dial: **fast, or properly.**
 
@@ -88,7 +95,9 @@ You steam and hang the drop. It is a real activity with a real dial: **fast, or 
 
 You do it properly. You get through fewer than you might have. She runs a hand down a sleeve on her way past and says nothing, which from her is quite a lot.
 
-> **Why this is not a chore.** A chore has one correct execution and you either did it or you did not. This has a **standard**, and the standard is the brand's — Vol 9: *"every product must communicate purpose before appearance."* Doing it properly costs you throughput and buys you something you cannot see yet.
+> **Why this is not a chore, and not a job.** A chore has one correct execution — you did it or you did not. This has a **standard**, and the standard is the brand's (Vol 9: *"every product must communicate purpose before appearance"*). Doing it properly costs throughput and buys something you cannot see yet.
+>
+> **And it is a one-off.** There is no rota, no rate, no clocking in, and no way to come back tomorrow and do it again for more money. Naomi needed help this week because a drop lands Friday. **Next week she will not.** *(D-W18)*
 
 ### The thing you notice
 
@@ -104,15 +113,15 @@ You tell Naomi. She swears mildly, checks the back, finds them in a second box t
 
 `+180 TC`. She counts it out.
 
-> *"That's four hours at the rate. You did three and a half."*
-> *"...I did three and a half."*
-> *"You did four."*
+> *"Said an hour. You've been here two."*
+> *"...it was an hour and a half."*
+> *"Call it two."*
 
-**She has decided to pay you for four.** *(Trust, offered rather than tested)*
+**She has decided to round up.** *(Trust, offered rather than tested)*
 
 You can take it or you can say something. There is no `[HONEST]` / `[GREEDY]` prompt — just a woman holding notes and a pause that is slightly too long.
 
-*If you correct her:* she shrugs, pays you three and a half, and **remembers.** *If you don't:* nothing happens, today.
+*If you correct her:* she shrugs, pays you for the hour and a half, and **remembers.** *If you don't:* nothing happens, today.
 
 > **This is the honesty beat and it is deliberately small.** Vol 3 Stage 5 asks *"did I do what I promised myself?"* — a question you answer when nobody is checking. Forty coins is exactly the right size for it: enough to notice, not enough to be a moral crisis.
 
@@ -126,8 +135,8 @@ You can try it on — your character wears it, in your archetype's fit, in the m
 
 ```
 THE ARCHIVE · Friday
-Open to anyone who worked a drop-week shift.
-You have.
+Open to anyone who helped get it ready.
+You did.
 ```
 
 **You qualified an hour ago and you did not know that was what you were doing.** The work was the work. The unlock noticed it.
@@ -180,7 +189,7 @@ Home. Phone, once, without ceremony:
 ```
 DROP 01 · COMMUNITY REWARD
 
-You worked a drop-week shift at the flagship before Friday.
+You helped Naomi get THE ARCHIVE ready before Friday.
 That's what qualified you.
 
 £10 toward THE ARCHIVE hooded top — physical.
@@ -296,9 +305,9 @@ It earns its place because **payment is narratively obvious** (a shop is short-s
 
 | # | Weakness | Why it is not fixed here |
 |---|---|---|
-| **1** | **The earn loop works once.** A drop-week shift is not repeatable. What does an ordinary Tuesday pay? | Recurring employment vs episodic opportunity is a pace-of-play decision — **spec Q6** |
-| **2** | **No jeopardy.** Nothing can go badly wrong | Session-one slice. But the game needs stakes before Horizon 2 |
-| **3** | **One meaningful money sink.** Clothing, plus a 45 TC haircut | Needs food, transport, materials, rent — **spec Q7** |
+| **1** | **The earn loop works once — by design now.** D-W18 rules out employment, so this is correct rather than a gap. **The open question is what an ordinary Tuesday offers instead** — missions with narrative payment, discoveries, events, drop activity. Several such opportunities must exist or the economy has one door | **Reframed by D-W18.** No longer "add a job"; now "author enough opportunities" |
+| **2** | **No jeopardy.** Nothing can go badly wrong | Session-one slice. Per **D-W21** the answer is *not* inserted danger — the available stakes are the Thursday commitment, the finite 61 places, and the 900 TC you cannot afford. **Those exist and are simply not pressed hard enough yet** |
+| **3** | **One meaningful money sink.** Clothing, plus a 45 TC haircut | **D-W19** settles the direction — appearance services, food where it supports an activity, transport, home improvements, social activities. **None exist yet**, and "spending should create experience rather than change a number" is the bar |
 | **4** | **Silent consequences are invisible.** Not correcting the overpayment does something, and the player cannot tell | Deliberate — the game must not keep score out loud — but it needs to *surface* eventually, probably via the case file |
 | **5** | **Standing and Steadiness untested** in any session yet written | Both need multi-session content. A twenty-eight-minute test cannot exercise a dimension defined by weeks |
 | **6** | **Naomi is the only real character.** One relationship carrying the whole session | Acceptable for a slice; thin for a district |
