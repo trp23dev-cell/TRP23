@@ -2,7 +2,7 @@
 
 **WP-U17a preflight: UMA 3 evaluation, the seam, and the canonical scale.**
 
-**Date:** 9 August 2026 · **Status:** 🟡 **preflight complete. UMA NOT imported.** Seam built and guarded; character import awaits owner decision.
+**Date:** 9 August 2026 · **Status:** 🔴 **WP-U17b STOPPED at import. UMA vendoring route rejected on evidence — see §12.** The U17a seam stands and is unaffected.
 **Package:** WP-U17a · **Design baseline:** [WORLD-AND-GAMEPLAY-SPECIFICATION](../02-design/WORLD-AND-GAMEPLAY-SPECIFICATION.md) · [CHARACTER-AND-WARDROBE](../02-design/CHARACTER-AND-WARDROBE.md)
 
 > **Two things this package could not do, stated first.** There is no Unity licence in this environment, so UMA was **not imported**, no character was generated, nothing was rendered and no performance was measured. And importing a large third-party framework that cannot be compiled or run here would be the one genuinely hard-to-reverse act available — so it was not done. What follows is verified research, a reversible seam, and an exact handover.
@@ -204,3 +204,93 @@ What U17b must capture: skinned mesh renderer count · material count · bone co
 | **3** | **Animation source** | §5. Must permit commercial and console redistribution, checked before import |
 | **4** | **First or third person for the character proof?** | The baseline has not fixed the product camera. U17a deliberately did not invent an answer — the body is hidden in first person and the proof can be done in Scene view |
 | **5** | Confirm **1.80 m / 1.68 m** as canon | Everything downstream scales to it |
+
+
+---
+
+# 12 · WP-U17b — stopped at import, with evidence
+
+**Authorised:** vendor UMA v3.03 into `Assets/ThirdParty/UMA/`, framework only, excluding demo art.
+**Outcome:** **not done.** The brief said *"If a minimum viable import cannot be made safely without uncertain assets, STOP and report that before continuing."* It cannot. This is that report.
+
+## 12.1 · The archive could not even be retrieved
+
+| Attempt | Result |
+|---|---|
+| `git clone --depth 1 --branch v3.03` | **timed out** at 280 s |
+| `curl` tarball, 540 s window | **failed at 1.3 GB, still incomplete** |
+
+The v3.03 source tarball is **over 1.3 GB compressed** — the download never finished. Everything below is measured from the 7,522 entries that did arrive, so the real totals are **higher**, not lower.
+
+## 12.2 · The framework is 0.75% of the project
+
+| | Size | Files |
+|---|---|---|
+| **C# framework** | **12.18 MB** | 636 |
+| **Everything else** | **1,603.79 MB** | *(partial)* |
+
+By type: **945.7 MB of PNG** (851 files) · 141.0 MB TGA · 117.1 MB `.asset` · **90.4 MB `.umaShaderPack`** · 59.1 MB FBX · 43.4 MB PSD · 39.3 MB scenes · **26.0 MB MP3**.
+
+`UMAProject/Assets/UMA` alone is **1,108.9 MB**.
+
+Also present: a **SkyCar** demo vehicle with 8 MB textures, road and ground textures, and `space-atmospheric-background-124841.mp3`.
+
+> **A character framework should not ship a car and a music track.** That is not a criticism of UMA — it is a full Unity demo project, and it is entirely reasonable as one. It is simply not a thing that can be vendored into another repository.
+
+## 12.3 · The licensing question got sharper, not softer
+
+U17a found MIT at root and no attribution file. Two further findings:
+
+**The tree is not licence-uniform.** There is a second licence inside it — `UMA/SRP/ShaderPackages/ShaderPackager-main/LICENSE` — a bundled third-party tool with its own terms. That is direct evidence against assuming one licence covers everything.
+
+**Only two licence files exist in 7,522 entries.** Nearly 1.6 GB of PNG, TGA, PSD, FBX and audio, and nothing states its provenance.
+
+**And `space-atmospheric-background-124841.mp3` is a stock-library filename.** That numeric-suffix pattern is characteristic of stock audio sites. Its presence under a blanket MIT is a question, not an accusation — and it is exactly the kind of question that must be answered before art enters a commercial product headed for console certification.
+
+*I am not asserting UMA's licensing is invalid.* MIT plausibly is intended to cover everything. **But it is not verifiable from the repository, and there is positive evidence of non-uniformity.**
+
+## 12.4 · A framework-only import produces nothing
+
+The 12 MB of C# is inert on its own. Generating one humanoid additionally requires a race definition, base slot meshes, overlays and **90.4 MB of shader packs** — i.e. precisely the undocumented-provenance assets the authorisation excluded.
+
+**So the two instructions cannot both be satisfied: "exclude uncertain art" and "produce one humanoid".**
+
+## 12.5 · The decision that changes the recommendation
+
+> **D-111 already ruled out the thing UMA is for.**
+
+*"Fixed archetypes, not continuous sliders. The product is clothing; sliders make every drop an unbounded fitting problem."*
+
+UMA's central value is **runtime procedural avatar generation from DNA** — continuous, per-player bodies. TRP23 decided on **4–6 fixed archetypes** precisely so each garment is authored a known number of times.
+
+With fixed archetypes we need: a base mesh per archetype, one shared Humanoid skeleton, and garments fitted per archetype. **None of that requires UMA.** Adopting it would mean carrying 1.6 GB, an unresolved provenance question and an unmeasured mobile generation cost — to obtain a capability we have already decided not to use.
+
+That is not a defect in UMA. It is a mismatch between UMA and this project, and it only became visible when the import was examined rather than assumed.
+
+## 12.6 · Status
+
+> **REJECT the vendoring route. UMA-as-technology remains UNPROVEN rather than disproven — no runtime evidence was obtainable.**
+
+Not ACCEPT: no humanoid was rendered and nothing was measured.
+Not CONDITIONAL: that implies a desktop proof that pending mobile work would confirm, and there is no desktop proof.
+
+## 12.7 · Recommended route instead
+
+**Authored archetype bodies, owned by TRP23.**
+
+| | |
+|---|---|
+| **What** | 4–6 base bodies authored in Blender to `TrapCharacterScale` (1.80 m), one shared Unity Humanoid skeleton, garments fitted per archetype |
+| **Licensing** | Ours outright. No provenance question, console-safe |
+| **Size** | Megabytes, not gigabytes. Vendorable, diffable, reproducible from a clone |
+| **Mobile** | No runtime mesh generation, so the hitch risk that would have decided UMA does not arise |
+| **Fits** | **Exactly what D-111 already specified** |
+| **Cost** | Real art work, and we lose procedural variety — which matters for **crowds** (U16a) far more than for the player |
+
+**The honest trade:** ambient pedestrians are where procedural variation genuinely earns its keep, and hand-authoring a crowd is expensive. Options there — palette and material variation over a few base bodies, or a cheaper crowd-specific system — belong to U16a with its own evidence, not to a decision made now.
+
+**Alternatives if the owner still wants UMA:** import it manually per-machine *(rejected — this is exactly the Starter Assets failure WP-U02 removed)*, or a git submodule *(a 1.6 GB checkout for every clone and every CI run)*. Neither is better than authoring our own.
+
+## 12.8 · What U17b did not change
+
+**Nothing was imported. No files were added to `Assets/`.** The U17a seam, `CapsuleCharacterVisual`, `TrapCharacterScale`, the eleven tests and the UMA containment guard are all untouched and still passing — and the guard remains correct and useful whatever character technology is eventually chosen.

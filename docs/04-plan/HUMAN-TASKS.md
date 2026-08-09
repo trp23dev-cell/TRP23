@@ -240,7 +240,7 @@ WP-U03 replaced `SceneFlow` with `GameContext`. Everything compiles and all eigh
 **Worked if:** five tests pass, no missing scripts, and **step 5 behaves identically to step 4**.
 **Tell me if:** the case file or bank fails from one entry point but not the other — that would mean composition is still order-dependent and I have not actually fixed it.
 
-### H-15 · The character trial — decisions, then Unity
+### H-15 · The character trial — decisions, then Unity *(superseded by H-16)*
 **Who:** Richard (+ Kimani on the look) · **Time:** 20 min decisions, ~1 hr Unity · **Blocks:** WP-U17b
 
 WP-U17a is a **preflight, not an import.** UMA was researched and verified but **not added to the project** — there is no Unity licence in the AI's environment, so it could not be compiled, run or measured, and importing a large framework blind is the one act here that is hard to undo.
@@ -264,3 +264,25 @@ Full findings: [CHARACTER-VISUAL-PIPELINE](../03-technical/CHARACTER-VISUAL-PIPE
 **Worked if:** step 3 is indistinguishable from today, and step 5 puts a human-shaped person in Lincoln at believable scale against a doorway.
 
 **Stop and tell me if:** avatar generation causes a visible hitch on the Android. That is the number that decides whether UMA is viable for this project at all, and no amount of good looks compensates for it.
+
+### H-16 · Decide the character route
+**Who:** Richard + Kimani · **Time:** 20 min · **Blocks:** U17b, U16a, U12 (archetypes)
+
+**WP-U17b stopped at import and imported nothing.** Evidence in [CHARACTER-VISUAL-PIPELINE §12](../03-technical/CHARACTER-VISUAL-PIPELINE.md).
+
+The short version: UMA v3.03 is **over 1.3 GB and would not finish downloading**. The C# framework is **12 MB of ~1,616 MB — 0.75%**. The rest is 945 MB of PNG, a demo car, and a stock-library MP3. There are **two licence files in 7,522 entries**, one of them a nested third-party tool — so the tree is provably not under one licence, and nothing states where the art came from. A framework-only import produces no character; making one needs exactly the assets with undocumented provenance.
+
+**And the thing that actually decides it: D-111 already ruled out what UMA is for.** UMA exists for runtime procedural bodies from DNA. You chose fixed archetypes so each garment is authored a known number of times. **Adopting UMA means 1.6 GB and an unresolved licensing question to get a feature we decided not to use.**
+
+**The choice:**
+
+| | |
+|---|---|
+| **A · Author our own archetypes** *(recommended)* | 4–6 Blender bodies at 1.80 m, one Humanoid skeleton, garments per archetype. Ours outright, megabytes not gigabytes, console-safe, no runtime generation cost. **Costs real art time** |
+| **B · Manual UMA import per machine** | Fast to try. **Repeats exactly the Starter Assets failure WP-U02 removed** — not reproducible from a clone |
+| **C · UMA as a git submodule** | Pinnable. **1.6 GB checkout on every clone and every CI run** |
+| **D · Something else** | Worth a look if you know a licensed archetype pack. Must permit **console redistribution** |
+
+**If A:** the next question is who authors the bodies, and that is a commission, not a coding task.
+
+**One caveat I want on the record:** procedural variety genuinely matters for **crowds**, not for the player. Hand-authoring a convincing crowd is expensive. That trade belongs to U16a with its own evidence — do not let it decide the player character today.
