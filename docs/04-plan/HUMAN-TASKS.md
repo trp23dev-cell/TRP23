@@ -184,7 +184,7 @@ WP-U02 replaced the Starter Assets player with `TrapPlayerController`. Everythin
 **Worked if:** you walk Lincoln, the hill costs you, panels freeze you, and the console is clean.
 **Tell me if:** you fall through the ground (ground layer), the camera fights you (two things writing the transform), or look feels wrong on mouse vs stick — mouse and stick are scaled differently on purpose and the constants may need taste.
 
-### H-13a · Re-test the freeze after the repair
+### H-13a · Re-test the freeze after the repair *(superseded by H-13b)*
 **Who:** Richard · **Time:** 3 min · **Blocks:** WP-U02 acceptance
 
 The map never told `PointerFocus` it was open, so the player kept looking around while the world was paused. Repaired — re-test just the freeze:
@@ -198,3 +198,28 @@ The map never told `PointerFocus` it was open, so the player kept looking around
 7. Open **M**, then **C**, then close **C** — you should **still** be frozen, because the map is still open.
 
 **Worked if:** step 2 shows no rotation whatsoever, and step 7 stays frozen.
+
+### H-13b · Re-test the freeze — second repair
+**Who:** Richard · **Time:** 4 min · **Blocks:** WP-U02 acceptance
+
+**Before anything else: `git pull`.** The first repair landed at the very end of the previous session, so it is worth ruling out that the screencast was of the pre-repair build. Then in Unity let it recompile, and **re-run `TRAP → Build World Test Scene`** so the scene picks up the current player.
+
+1. Play. Look around normally.
+2. Press **M**. Move the mouse **hard**, in circles. **The view behind the map must not move at all.**
+3. **WASD**, **Space**, **Shift** — nothing.
+4. Click the map to set a waypoint — that **should** still work.
+5. Press **M**. The camera is exactly where you left it, no snap, and control returns.
+6. Repeat with **C**.
+7. **M**, then **C**, then close **C** — still frozen, because the map is still open.
+8. Reverse: **C**, then **M**, close **M** — still frozen, because the case file is still open.
+
+**Worked if:** step 2 shows zero movement and step 5 shows no camera jump.
+
+**If it still rotates,** the console will now tell us why — paste the output of this in the Console while the map is open:
+
+```
+Debug.Log($"blocked={TrapMadeIt.GameplayInput.Blocked} " +
+          $"holders={TrapMadeIt.PointerFocus.Wanted}");
+```
+
+and say whether the camera's parent is `PlayerCameraRoot`. Those two facts distinguish "the gate is not firing" from "something else is writing the transform", and I could not tell them apart from here.

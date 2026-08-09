@@ -5,7 +5,7 @@
 | **Horizon** | 1 (Unity migration, Phase A) |
 | **Owner** | AI |
 | **Effort** | M |
-| **Status** | ✅ done — 4 August 2026 |
+| **Status** | 🔨 **open** — repair 2 applied 9 August, awaiting H-13b |
 | **Authorised by** | Kimani, 4 Aug |
 
 ## Objective
@@ -72,7 +72,9 @@ Resolved once in `Awake` into four typed `InputAction` fields — no serialized 
 
 The seam is that an on-screen stick would feed `Move`/`Look` and the controller would never know it existed. **That is a seam, not a mobile control scheme** — building one is WP-024.
 
-**Freeze.** `CanAct` gates both `Update` and `LateUpdate` on `PointerFocus.Wanted` and on the CharacterController being enabled. No new pause system; it reads the register that already exists.
+**Freeze — gated at the source (repair 2, 9 August).** Per-consumer checks were correct but were a *convention*, and a convention holds only while every author remembers it. `FlyCamera` read `Mouse.current` and rotated the camera with no gate at all.
+
+So the **whole Player action map is disabled** while `GameplayInput.Blocked`. Every reader — present, future, careful or not — reads zero. `CanAct` remains as belt and braces. This also settles stale delta for free: re-enabling a map resets its state, so no accumulated movement is applied as a jump on resume.
 
 ## Files
 

@@ -126,7 +126,11 @@ namespace TrapMadeIt.World
 
 #if ENABLE_INPUT_SYSTEM
         InputAction _move, _look, _jump, _sprint;
+        InputActionMap _playerMap;
         bool _actionsReady;
+        // What the gate was last frame, so the map is only switched on the
+        // transition rather than every frame.
+        bool _inputBlocked;
 #endif
 
         // Resolved once, by name, in one place. Everywhere else uses the typed
@@ -183,6 +187,7 @@ namespace TrapMadeIt.World
                 return;
             }
 
+            _playerMap = map;
             _move = map.FindAction(MoveAction, false);
             _look = map.FindAction(LookAction, false);
             _jump = map.FindAction(JumpAction, false);
@@ -213,10 +218,42 @@ namespace TrapMadeIt.World
         /// pause already have one owner each and adding a third would be the
         /// exact fight those registers exist to prevent.
         /// </summary>
-        bool CanAct => _controller != null && _controller.enabled && !PointerFocus.Wanted;
+        bool CanAct => _controller != null && _controller.enabled && GameplayInput.Allowed;
+
+#if ENABLE_INPUT_SYSTEM
+        /// <summary>
+        /// Switch the whole Player action map off while a UI holds the pointer.
+        ///
+        /// This is the actual fix, and it is at the source rather than at each
+        /// reader. A disabled map returns zero from every action, so nothing
+        /// downstream can rotate the camera by forgetting to check a flag —
+        /// which is exactly how the map ended up freezing the world while the
+        /// view kept turning.
+        ///
+        /// It also settles the stale-delta question for free. Re-enabling an
+        /// action map resets its state, so the mouse movement made while the
+        /// map was open is not sitting in a buffer waiting to be applied as one
+        /// jump on the frame you close it. No timer, no skipped frame.
+        /// </summary>
+        void ApplyInputGate()
+        {
+            bool blocked = GameplayInput.Blocked;
+            if (blocked == _inputBlocked) return;
+            _inputBlocked = blocked;
+
+            if (_playerMap == null) return;
+            if (blocked) _playerMap.Disable();
+            else _playerMap.Enable();
+        }
+#endif
 
         void Update()
         {
+#if ENABLE_INPUT_SYSTEM
+            // Before the early return: the gate has to keep being applied while
+            // blocked, or the map is never switched back on.
+            ApplyInputGate();
+#endif
             if (!CanAct) return;
             GroundedCheck();
             JumpAndGravity();

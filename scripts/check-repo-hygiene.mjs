@@ -113,6 +113,38 @@ if (starterRefs.length) {
   process.exit(1);
 }
 
+// ---------------------------------------------------------------------------
+// GAMEPLAY INPUT MUST BE GATED
+//
+// The map froze the world and the camera kept turning, twice. The first cause
+// was the map never announcing itself; the second was that gating lived in
+// each consumer, so it only held while every author remembered it. FlyCamera
+// read Mouse.current and rotated the camera with no gate at all.
+//
+// A runtime script that reads input directly must also consult the neutral
+// gate. This does not prove the gate is USED correctly — only that the author
+// knew it exists, which is the failure mode we actually keep hitting.
+// ---------------------------------------------------------------------------
+const READS_INPUT = /Mouse\.current|Input\.GetAxis|GetMouseButton|Keyboard\.current/;
+const KNOWS_GATE = /GameplayInput|PointerFocus|GameFreeze/;
+
+const runtimeScripts = tracked.filter((f) =>
+  f.startsWith("Unity/TRP23/Assets/") && f.endsWith(".cs")
+  && !f.includes("/Editor/") && !f.includes("/StarterAssets/"));
+
+const ungated = [];
+for (const file of runtimeScripts) {
+  const body = readFileSync(file, "utf8");
+  if (READS_INPUT.test(body) && !KNOWS_GATE.test(body)) ungated.push(file);
+}
+if (ungated.length) {
+  process.stderr.write("runtime scripts read input without consulting the gameplay gate:\n");
+  for (const f of ungated) process.stderr.write(`  ${f}\n`);
+  process.stderr.write("\nCheck TrapMadeIt.GameplayInput.Allowed before acting on input,\n"
+    + "or the next open panel will freeze the world and leave the camera turning.\n");
+  process.exit(1);
+}
+
 // The map is the one thing in server/storage that SHOULD ship.
 const hasMap = tracked.includes("server/storage/map-export.json.gz");
 process.stdout.write(

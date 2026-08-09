@@ -51,6 +51,16 @@ namespace TrapMadeIt.World
 
         void Update()
         {
+            // A UI has the pointer, so this is not the player's input to read.
+            //
+            // This reads Mouse.current directly rather than going through the
+            // action map, so the source-level gate in TrapPlayerController does
+            // not cover it — which made this the one component that could still
+            // rotate the camera behind an open map. It is a development tool and
+            // should never be in a scene alongside the player, but "should never"
+            // is not a mechanism.
+            if (!TrapMadeIt.GameplayInput.Allowed) return;
+
             if (SpacePressedThisFrame())
             {
                 if (Time.time - lastSpaceTap < doubleTapWindow)
