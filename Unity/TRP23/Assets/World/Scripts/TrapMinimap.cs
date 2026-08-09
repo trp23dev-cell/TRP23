@@ -233,21 +233,51 @@ namespace TrapMadeIt.World
         ///
         /// Input still works at zero time scale, so closing the map still works.
         /// </summary>
+        /// <summary>
+        /// Open or close the full map.
+        ///
+        /// The map ANNOUNCES itself to the two registers rather than being a
+        /// special case in the code that reads them. It used to set BigMap and
+        /// nothing else, and every consumer carried a `BigMap ||` term — which
+        /// meant anything that asked "is gameplay input blocked?" got the wrong
+        /// answer, because the map had never said it was blocking anything.
+        ///
+        /// That is exactly how mouse look kept working with the map open: the
+        /// world stopped because timeScale was 0, not because the freeze was
+        /// being honoured, and mouse look does not use deltaTime.
+        /// </summary>
+        void SetBigMap(bool open)
+        {
+            BigMap = open;
+            if (open)
+            {
+                PointerFocus.Request("map");   // you need a cursor to set a waypoint
+                GameFreeze.Request("map");     // and the city should not move while you read
+            }
+            else
+            {
+                PointerFocus.Release("map");
+                GameFreeze.Release("map");
+            }
+            Apply();
+            ApplyPause();
+        }
+
         void ApplyPause()
         {
-            // The map is not the only thing that wants the world held still —
-            // reading your own case file should not happen while Lincoln
-            // carries on around you. The answer comes from GameFreeze so that
-            // closing the map does not un-pause a HUD panel that is still open.
-            Time.timeScale = (BigMap || GameFreeze.Wanted) ? 0f : 1f;
+            // One authority. The map is a holder of GameFreeze now, like any
+            // panel, so this no longer needs to know the map exists.
+            Time.timeScale = GameFreeze.Wanted ? 0f : 1f;
         }
 
         void OnDisable()
         {
-            // Never leave the game paused because a scene changed with the map
-            // open -- there would be nothing left to unpause it.
-            Time.timeScale = 1f;
+            // Never leave the game paused or the cursor captured because a
+            // scene changed with the map open -- there would be nothing left to
+            // release either of them.
             PointerFocus.Release("map");
+            GameFreeze.Release("map");
+            Time.timeScale = GameFreeze.Wanted ? 0f : 1f;
         }
 
         /// <summary>
@@ -269,7 +299,9 @@ namespace TrapMadeIt.World
             // The map is not the only thing that can want the pointer -- the
             // HUD panels need it to be clickable at all -- so the answer comes
             // from PointerFocus rather than from what this script knows.
-            bool wantFree = BigMap || cursorReleased || PointerFocus.Wanted;
+            // No BigMap term. The map holds PointerFocus while it is open, so it
+            // is already covered by the general answer.
+            bool wantFree = cursorReleased || PointerFocus.Wanted;
             var wantLock = wantFree ? CursorLockMode.None : CursorLockMode.Locked;
 
             if (Cursor.lockState != wantLock) Cursor.lockState = wantLock;
@@ -282,7 +314,7 @@ namespace TrapMadeIt.World
             var k = Keyboard.current;
             if (k != null)
             {
-                if (k.mKey.wasPressedThisFrame) { BigMap = !BigMap; Apply(); ApplyPause(); }
+                if (k.mKey.wasPressedThisFrame) SetBigMap(!BigMap);
                 if (k.leftBracketKey.wasPressedThisFrame) StepDial(-1);
                 if (k.rightBracketKey.wasPressedThisFrame) StepDial(1);
                 // A toggle, not a one-way switch. It used to only ever set this

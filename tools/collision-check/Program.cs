@@ -75,6 +75,7 @@ namespace TrapCollisionCheck
             Index(rings);
             Console.WriteLine($"loaded {collision.FootprintCount} footprints, {Grid.Count} check cells");
             int slopeFailures = CheckSlope();
+            int freezeFailures = CheckFreezeContract();
             if (collision.FootprintCount < 1000)
             {
                 Console.Error.WriteLine("FAIL  too few footprints loaded — the export or the parse is wrong");
@@ -135,9 +136,78 @@ namespace TrapCollisionCheck
                 Console.Error.WriteLine($"FAIL  only {approaches} approaches tested — the sample is not meaningful");
                 return 1;
             }
-            return ok && windingFailures == 0 && slopeFailures == 0 ? 0 : 1;
+            return ok && windingFailures == 0 && slopeFailures == 0 && freezeFailures == 0 ? 0 : 1;
         }
 
+
+        /// <summary>
+        /// The freeze contract.
+        ///
+        /// This is the bug WP-U02 shipped with: the map set its own BigMap flag
+        /// and never told PointerFocus, so everything that asked "is gameplay
+        /// input blocked?" was told no. Movement only LOOKED frozen, because
+        /// timeScale was 0 and Move() is scaled by deltaTime. Mouse look
+        /// deliberately is not, so it carried on.
+        ///
+        /// The registers are named-holder sets rather than counters precisely
+        /// so that double-request and double-release cannot corrupt them, and
+        /// that is worth pinning down.
+        /// </summary>
+        static int CheckFreezeContract()
+        {
+            int bad = 0;
+            void Assert(string what, bool ok, string detail = "")
+            {
+                Console.WriteLine($"{(ok ? "ok  " : "FAIL")}  {what}{(detail.Length > 0 ? " — " + detail : "")}");
+                if (!ok) bad++;
+            }
+
+            TrapMadeIt.PointerFocus.ReleaseAll();
+            TrapMadeIt.GameFreeze.ReleaseAll();
+
+            Assert("nothing held means gameplay input is allowed",
+                !TrapMadeIt.PointerFocus.Wanted && !TrapMadeIt.GameFreeze.Wanted);
+
+            TrapMadeIt.PointerFocus.Request("map");
+            TrapMadeIt.GameFreeze.Request("map");
+            Assert("opening the map blocks gameplay input",
+                TrapMadeIt.PointerFocus.Wanted && TrapMadeIt.GameFreeze.Wanted);
+
+            // Two panels open at once, then one closes. A counter would get
+            // this right; a counter also gets double-release wrong, which is
+            // why these are sets.
+            TrapMadeIt.PointerFocus.Request("hud");
+            TrapMadeIt.GameFreeze.Request("hud");
+            TrapMadeIt.PointerFocus.Release("map");
+            TrapMadeIt.GameFreeze.Release("map");
+            Assert("closing the map does not unfreeze a panel that is still open",
+                TrapMadeIt.PointerFocus.Wanted && TrapMadeIt.GameFreeze.Wanted);
+
+            TrapMadeIt.PointerFocus.Release("hud");
+            TrapMadeIt.GameFreeze.Release("hud");
+            Assert("closing the last holder restores control",
+                !TrapMadeIt.PointerFocus.Wanted && !TrapMadeIt.GameFreeze.Wanted);
+
+            TrapMadeIt.PointerFocus.Request("map");
+            TrapMadeIt.PointerFocus.Request("map");
+            TrapMadeIt.PointerFocus.Release("map");
+            Assert("requesting twice and releasing once still releases",
+                !TrapMadeIt.PointerFocus.Wanted, "a counter would still be held here");
+
+            TrapMadeIt.GameFreeze.Request("hud");
+            TrapMadeIt.GameFreeze.Release("hud");
+            TrapMadeIt.GameFreeze.Release("hud");
+            TrapMadeIt.GameFreeze.Request("map");
+            Assert("releasing twice does not go negative and break the next hold",
+                TrapMadeIt.GameFreeze.Wanted, "a counter would read -1 then 0 here");
+
+            TrapMadeIt.GameFreeze.ReleaseAll();
+            TrapMadeIt.PointerFocus.ReleaseAll();
+            Assert("a scene change lets go of everything",
+                !TrapMadeIt.PointerFocus.Wanted && !TrapMadeIt.GameFreeze.Wanted);
+
+            return bad;
+        }
 
         /// <summary>
         /// What a hill costs, checked against the rule walkers actually use.

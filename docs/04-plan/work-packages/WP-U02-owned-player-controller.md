@@ -39,7 +39,17 @@ Remove the runtime dependency on the untracked Starter Assets player, so a fresh
 
 > **What would justify splitting `TRP23.Character` later:** a second consumer of player state that is not the world — character appearance (server-authoritative, D-119), animation, or inventory-driven visuals. At that point Character depends on `Core` + `Platform` only, and `PlayerRig` stays in World because holding the player until a tile streams in is genuinely a world concern.
 
-**Input.** `InputSystem.actions` — the project-wide asset, which *is* the tracked `InputSystem_Actions.inputactions`. No second asset, no serialized reference to forget to wire, resolved once in `Awake` into four typed `InputAction` fields.
+**Input — one asset, two names for it.** These refer to the same thing and the distinction is worth stating once:
+
+| | |
+|---|---|
+| **The asset** (authoritative path) | `Unity/TRP23/Assets/InputSystem_Actions.inputactions` |
+| **The C# accessor** | `InputSystem.actions` — the Input System property returning the *project-wide* asset set in Project Settings |
+| **How they connect** | `EditorBuildSettings` binds the asset as project-wide (`com.unity.input.settings.actions`), so `InputSystem.actions` resolves to it |
+
+**There is exactly one gameplay input asset and this package created none.** `StarterAssets.inputactions` still exists on disk, untracked, and is now referenced by nothing.
+
+Resolved once in `Awake` into four typed `InputAction` fields — no serialized reference to forget to wire.
 
 | Action | Map | Used for |
 |---|---|---|
@@ -52,7 +62,15 @@ Remove the runtime dependency on the untracked Starter Assets player, so a fresh
 
 **Mouse and stick are scaled differently, on purpose.** A mouse reports a *distance already moved*, so multiplying it by frame time makes sensitivity depend on frame rate. A stick reports a *rate held*, so it must be. Same input, opposite treatment — getting this backwards is why ported controllers feel wrong on one device or the other.
 
-**Touch.** No joystick UI was built, per scope. The seam is that touch bindings already exist in the asset and the controller reads actions, not devices — an on-screen stick feeds `Move`/`Look` and the controller never knows.
+**Touch — status, precisely.**
+
+| | |
+|---|---|
+| Gamepad bindings | **Present in the asset**, consumed by the controller. **Owner hardware verification pending** (H-13 step 8) |
+| Touch architecture | **Compatible.** The asset carries a Touch scheme and the controller reads *actions*, never devices |
+| On-screen controls | ❌ **Not implemented.** No joystick, no buttons, no mobile HUD |
+
+The seam is that an on-screen stick would feed `Move`/`Look` and the controller would never know it existed. **That is a seam, not a mobile control scheme** — building one is WP-024.
 
 **Freeze.** `CanAct` gates both `Update` and `LateUpdate` on `PointerFocus.Wanted` and on the CharacterController being enabled. No new pause system; it reads the register that already exists.
 

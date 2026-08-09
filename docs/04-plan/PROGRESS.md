@@ -57,7 +57,7 @@ Full work packages are written **as each is picked up**, one horizon ahead — n
 | WP | Title | Owner | Effort | Status | Depends on |
 |---|---|---|---|---|---|
 | [U01](work-packages/WP-U01-assembly-definitions.md) | Assembly definitions | AI | M | ✅ | log S9. 3 assemblies; **all 3 boundaries proven by deliberate violation**; CI enforces the graph. **Unity editor unverified — H-12** |
-| [U02](work-packages/WP-U02-owned-player-controller.md) | **Own the character controller** | AI | M | ✅ | log S10. `TrapPlayerController`; StarterAssets no longer required; fresh-clone audit clean; slope curve tested. **Unity runtime unverified — H-13** |
+| [U02](work-packages/WP-U02-owned-player-controller.md) | **Own the character controller** | AI | M | ✅ | log S10 + repair S11. `TrapPlayerController`; StarterAssets no longer required; fresh-clone audit clean; slope curve and freeze contract tested. **Unity runtime unverified — H-13** |
 | U03 | Bootstrap scene + composition root | AI | M | ⬜ | U01 |
 | U04 | Platform abstraction + IL2CPP | AI + **HUMAN** | M | ⬜ | U01, U03 |
 | U05 | Typed API client, generated geo constants | AI | M | ⬜ | U01, U03 |
@@ -66,6 +66,7 @@ Full work packages are written **as each is picked up**, one horizon ahead — n
 | U08 | Premises + Kimani's interior | AI + art | L | ⬜ | U07, D-01 |
 | U09 | Server-driven content in Unity | AI | S | ⬜ | U05 |
 | U10–U12 | High Street slice: dressing, pedestrians, budgets | AI | L | ⬜ | Phase B |
+| [U13](work-packages/WP-U13-navigational-map.md) | Navigational map + route planning (road graph, not a straight line) | AI + design | L–XL | ⬜ **backlog** | U03, 026, U07 |
 
 ---
 

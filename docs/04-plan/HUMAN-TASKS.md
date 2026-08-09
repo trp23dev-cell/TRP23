@@ -183,3 +183,18 @@ WP-U02 replaced the Starter Assets player with `TrapPlayerController`. Everythin
 
 **Worked if:** you walk Lincoln, the hill costs you, panels freeze you, and the console is clean.
 **Tell me if:** you fall through the ground (ground layer), the camera fights you (two things writing the transform), or look feels wrong on mouse vs stick — mouse and stick are scaled differently on purpose and the constants may need taste.
+
+### H-13a · Re-test the freeze after the repair
+**Who:** Richard · **Time:** 3 min · **Blocks:** WP-U02 acceptance
+
+The map never told `PointerFocus` it was open, so the player kept looking around while the world was paused. Repaired — re-test just the freeze:
+
+1. Play, look around normally.
+2. Press **M**. Move the mouse **a lot**. **The camera must not rotate.**
+3. Try **WASD**, **Space**, **Shift** — nothing should respond.
+4. Click on the map to set a waypoint — that **should** still work.
+5. Press **M** again. The camera is where you left it, and control returns at once.
+6. Repeat with **C**. Same result.
+7. Open **M**, then **C**, then close **C** — you should **still** be frozen, because the map is still open.
+
+**Worked if:** step 2 shows no rotation whatsoever, and step 7 stays frozen.

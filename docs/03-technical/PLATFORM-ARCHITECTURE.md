@@ -41,7 +41,7 @@ Unimplemented capabilities return a **no-op that says so in the log**, never a s
 
 **The luckiest finding in the audit:** `Assets/InputSystem_Actions.inputactions` is tracked and already defines **Keyboard&Mouse, Gamepad, Touch, Joystick and XR** schemes, with full `Player` and `UI` maps. It is bound project-wide in `EditorBuildSettings`.
 
-**And nothing uses it.** `ThirdPersonController` uses `StarterAssets.inputactions`, which is untracked ([audit §4](../01-audit/UNITY-MIGRATION-AUDIT.md)).
+**Adopted by WP-U02.** `TrapPlayerController` consumes it through `InputSystem.actions` — the Input System property that returns whichever asset is set project-wide, which is this one. Asset path and accessor are two names for the same thing; there is no second gameplay input asset.
 
 So adopting it is not new work — it is *using what is already there*, and it delivers gamepad and touch nearly for free.
 
@@ -49,7 +49,7 @@ So adopting it is not new work — it is *using what is already there*, and it d
 |---|---|---|
 | PC | Keyboard&Mouse | Cursor lock for look; **Escape toggles** (fixed 4 Aug) |
 | PC / consoles | Gamepad | Every screen must be navigable without a pointer |
-| Android / iOS | Touch | Virtual stick, tap-to-interact, no hover |
+| Android / iOS | Touch | Scheme exists and the controller is compatible. **On-screen controls not built** — WP-024 |
 | Consoles | Gamepad | Same scheme. Certification checks it |
 
 ### Three rules that cost nothing now and a rebuild later

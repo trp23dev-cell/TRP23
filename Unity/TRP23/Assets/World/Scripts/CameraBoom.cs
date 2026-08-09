@@ -93,10 +93,11 @@ namespace TrapMadeIt.World
             // while it is open, and any HUD panel. They are showing you
             // something; zooming the camera behind them is invisible at best
             // and is the view moving under you at worst.
+            // PointerFocus covers the map now that it holds one while open, so
+            // the FindAnyObjectByType<TrapMinimap>() that used to sit here has
+            // gone — it was asking a second question with the same answer, once
+            // per frame, by searching the scene for it.
             if (PointerFocus.Wanted) return;
-
-            var map = FindAnyObjectByType<TrapMinimap>();
-            if (map != null && map.BigMap) return;
 
             float wheel = mouse.scroll.ReadValue().y;
             if (Mathf.Abs(wheel) < 0.01f) return;
