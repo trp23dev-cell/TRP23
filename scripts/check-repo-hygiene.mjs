@@ -181,6 +181,41 @@ if (reachingUp.length) {
   process.exit(1);
 }
 
+// ---------------------------------------------------------------------------
+// THE CHARACTER FRAMEWORK MUST STAY REPLACEABLE
+//
+// WP-U17a trials UMA as the humanoid visual layer. A trial you cannot walk back
+// from is not a trial: if UMA fails on mobile cost or its bundled art licensing
+// cannot be cleared, leaving must cost one adapter rather than every file that
+// ever touched a character.
+//
+// So UMA namespaces are confined to the adapter folder. Everything else talks
+// to ICharacterVisual. This is the mechanism, not the intention.
+// ---------------------------------------------------------------------------
+const ADAPTER_DIR = "Unity/TRP23/Assets/World/Scripts/CharacterVisual/";
+const UMA_NAMESPACE = /^\s*using\s+UMA\b|(?<![A-Za-z0-9_.])UMA\s*\./m;
+
+const gameplayFiles = tracked.filter((f) =>
+  f.startsWith("Unity/TRP23/Assets/") && f.endsWith(".cs")
+  && !f.startsWith(ADAPTER_DIR)
+  && !f.includes("/StarterAssets/"));
+
+const leaked = [];
+for (const file of gameplayFiles) {
+  const body = readFileSync(file, "utf8")
+    .split("\n")
+    .filter((l) => !l.trim().startsWith("//") && !l.trim().startsWith("///"))
+    .join("\n");
+  if (UMA_NAMESPACE.test(body)) leaked.push(file);
+}
+if (leaked.length) {
+  process.stderr.write("UMA types used outside the character adapter:\n");
+  for (const f of leaked) process.stderr.write(`  ${f}\n`);
+  process.stderr.write(`\nOnly ${ADAPTER_DIR} may reference UMA. Everything else uses\n`
+    + "ICharacterVisual, so that replacing the character framework costs one adapter.\n");
+  process.exit(1);
+}
+
 // The map is the one thing in server/storage that SHOULD ship.
 const hasMap = tracked.includes("server/storage/map-export.json.gz");
 process.stdout.write(

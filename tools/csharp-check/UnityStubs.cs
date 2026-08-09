@@ -36,7 +36,14 @@ namespace UnityEngine {
     public Transform transform => null;
     public T AddComponent<T>() where T : Component, new() => new T();
   }
-  public class Component : Object { public GameObject gameObject => null; public T GetComponent<T>() where T : Component, new() => new T(); }
+  public class Component : Object {
+    public GameObject gameObject => null;
+    public T GetComponent<T>() where T : Component, new() => new T();
+    // Interface lookups are the point of these two, so they cannot be
+    // constrained to Component the way GetComponent above is.
+    public T GetComponentInChildren<T>(bool includeInactive = false) => default(T);
+    public T[] GetComponentsInChildren<T>(bool includeInactive = false) => new T[0];
+  }
 }
 
 // --- world scripts ---
@@ -183,7 +190,20 @@ namespace UnityEngine {
     public Transform transform => null;
   }
   public class MeshFilter : Component { public Mesh sharedMesh { get; set; } }
-  public class MeshRenderer : Component { public Material sharedMaterial { get; set; } }
+  public class Renderer : Component { public bool enabled { get; set; } public Material sharedMaterial { get; set; } public Material material { get; set; } }
+  public class MeshRenderer : Renderer { }
+  public class SkinnedMeshRenderer : Renderer { public Transform rootBone { get; set; } public Mesh sharedMesh { get; set; } public int bones => 0; }
+  public class Avatar : Object { public bool isHuman => false; public bool isValid => false; }
+  public class Animator : Component {
+    public Avatar avatar { get; set; }
+    public bool isHuman => false;
+    public RuntimeAnimatorController runtimeAnimatorController { get; set; }
+    public void SetFloat(string name, float v) {}
+    public void SetBool(string name, bool v) {}
+    public void SetTrigger(string name) {}
+    public bool applyRootMotion { get; set; }
+  }
+  public class RuntimeAnimatorController : Object {}
   public class MeshCollider : Component { public bool convex { get; set; } public Mesh sharedMesh { get; set; } }
   public class Material : Object {
     public Material(Shader s) {}

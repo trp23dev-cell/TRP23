@@ -239,3 +239,28 @@ WP-U03 replaced `SceneFlow` with `GameContext`. Everything compiles and all eigh
 
 **Worked if:** five tests pass, no missing scripts, and **step 5 behaves identically to step 4**.
 **Tell me if:** the case file or bank fails from one entry point but not the other — that would mean composition is still order-dependent and I have not actually fixed it.
+
+### H-15 · The character trial — decisions, then Unity
+**Who:** Richard (+ Kimani on the look) · **Time:** 20 min decisions, ~1 hr Unity · **Blocks:** WP-U17b
+
+WP-U17a is a **preflight, not an import.** UMA was researched and verified but **not added to the project** — there is no Unity licence in the AI's environment, so it could not be compiled, run or measured, and importing a large framework blind is the one act here that is hard to undo.
+
+Full findings: [CHARACTER-VISUAL-PIPELINE](../03-technical/CHARACTER-VISUAL-PIPELINE.md).
+
+**First, five decisions** — §11 of that document. The two that matter most:
+
+- **Vendor UMA into `Assets/`** (recommended) rather than a `.unitypackage`. It is not a UPM package, so it cannot be pinned in the manifest, and vendoring is the only route where a fresh clone builds the same game. A `.unitypackage` repeats exactly the Starter Assets problem WP-U02 removed.
+- **Animation source.** Must permit **commercial and console redistribution** — checked *before* import. Mixamo is the obvious candidate and its terms have moved over the years.
+
+**Then, in Unity** (only after deciding):
+
+1. Open the project. **Console clean?**
+2. `Window → General → Test Runner` → EditMode → **11 tests** in `TRP23.Core.Tests` (5 gate + 6 scale). All should pass.
+3. **`TRAP → Build World Test Scene`**, press Play. The body is now a `CharacterVisual` component rather than a loose capsule — **movement, sprint, jump, slope, M and C must all behave exactly as before.** This package changed how the body is attached, not how the player moves.
+4. Import UMA per the chosen route, then add `UmaCharacterVisual.cs` to `World/Scripts/CharacterVisual/` **and nowhere else** — `npm run check:repo` fails if UMA appears outside that folder.
+5. Set `TrapPlayerController.characterVisual` to the UMA component and press Play.
+6. **Measure**: avatar generation time, triangles, bones, materials, draw calls — on a **mid-range Android**, not a desktop. §10 lists the set.
+
+**Worked if:** step 3 is indistinguishable from today, and step 5 puts a human-shaped person in Lincoln at believable scale against a doorway.
+
+**Stop and tell me if:** avatar generation causes a visible hitch on the Android. That is the number that decides whether UMA is viable for this project at all, and no amount of good looks compensates for it.

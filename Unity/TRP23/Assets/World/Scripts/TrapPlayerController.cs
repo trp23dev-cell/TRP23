@@ -105,6 +105,16 @@ namespace TrapMadeIt.World
         [Tooltip("Where the camera sits. Created automatically if left empty.")]
         public Transform cameraTarget;
 
+        [Header("Body")]
+        [Tooltip("What the player looks like. Found in children if left empty. " +
+                 "The controller drives it and knows nothing else about it — see " +
+                 "ICharacterVisual for why that boundary is enforced rather than intended.")]
+        public MonoBehaviour characterVisual;
+
+        [Tooltip("Hide the body when the camera is inside its head. First person " +
+                 "otherwise looks out through the inside of a neck.")]
+        public bool hideBodyInFirstPerson = true;
+
         /// <summary>True when the ground check found something underfoot.</summary>
         public bool Grounded { get; private set; } = true;
 
@@ -112,6 +122,7 @@ namespace TrapMadeIt.World
         public float Speed { get; private set; }
 
         CharacterController _controller;
+        ICharacterVisual _visual;
         float _speed;
         float _verticalVelocity;
         float _jumpTimeoutDelta;
@@ -154,6 +165,17 @@ namespace TrapMadeIt.World
                 head.transform.SetParent(transform, false);
                 cameraTarget = head.transform;
             }
+
+            // Interface, resolved once. The serialized field is a MonoBehaviour
+            // because Unity cannot serialize an interface reference, which is
+            // the one place this seam costs anything.
+            _visual = characterVisual as ICharacterVisual;
+            if (_visual == null) _visual = GetComponentInChildren<ICharacterVisual>(true);
+
+            // First person: the camera sits in the head, so the body must not
+            // be drawn over the lens. CameraBoom also culls the player layer;
+            // this covers the case where there is no boom.
+            if (_visual != null && hideBodyInFirstPerson) _visual.SetVisible(false);
 
 #if ENABLE_INPUT_SYSTEM
             ResolveActions();
@@ -348,6 +370,11 @@ namespace TrapMadeIt.World
 
             _controller.Move(_heading.normalized * (_speed * Time.deltaTime)
                              + new Vector3(0f, _verticalVelocity, 0f) * Time.deltaTime);
+
+            // Tell the body what it is doing. Speed and a ground flag — never an
+            // animation state, because which clip that becomes belongs to the
+            // visual layer and not here.
+            _visual?.SetLocomotion(_speed, Grounded);
         }
 
         /// <summary>

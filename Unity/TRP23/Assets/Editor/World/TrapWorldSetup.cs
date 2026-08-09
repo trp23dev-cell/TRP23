@@ -342,9 +342,9 @@ namespace TrapMadeIt.World.EditorTools
             var player = new GameObject("Player");
 
             var cc = player.AddComponent<CharacterController>();
-            cc.height = 1.8f;
-            cc.radius = 0.3f;
-            cc.center = new Vector3(0f, 0.9f, 0f);
+            cc.height = TrapCharacterScale.Height;
+            cc.radius = TrapCharacterScale.Radius;
+            cc.center = new Vector3(0f, TrapCharacterScale.CapsuleCentreY, 0f);
             // A kerb is not a wall and a doorstep is not a climb. Lincoln has
             // plenty of both.
             cc.stepOffset = 0.35f;
@@ -354,19 +354,26 @@ namespace TrapMadeIt.World.EditorTools
             // collider comes off: the CharacterController is the collision, and
             // a second one fights it.
             var body = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-            body.name = "Body";
+            body.name = "CharacterVisual";
             body.transform.SetParent(player.transform, false);
-            body.transform.localPosition = new Vector3(0f, 0.9f, 0f);
-            body.transform.localScale = new Vector3(0.6f, 0.9f, 0.6f);
+            body.transform.localPosition = new Vector3(0f, TrapCharacterScale.CapsuleCentreY, 0f);
+            body.transform.localScale = new Vector3(0.6f, TrapCharacterScale.Height * 0.5f, 0.6f);
             Object.DestroyImmediate(body.GetComponent<Collider>());
+
+            // The visual is a component implementing ICharacterVisual, not a
+            // loose primitive, so the controller drives it through the same
+            // interface a UMA humanoid will use. Swapping this line is the
+            // whole cost of adopting UMA once it is imported and proven.
+            var visual = body.AddComponent<CapsuleCharacterVisual>();
 
             // Where the camera lives. The controller drives it to eye height.
             var head = new GameObject("PlayerCameraRoot");
             head.transform.SetParent(player.transform, false);
-            head.transform.localPosition = new Vector3(0f, 1.68f, 0f);
+            head.transform.localPosition = new Vector3(0f, TrapCharacterScale.EyeHeight, 0f);
 
             var controller = player.AddComponent<TrapPlayerController>();
             controller.cameraTarget = head.transform;
+            controller.characterVisual = visual;
             // The streamed city is built at runtime on the Default layer, so
             // that is what counts as ground. Left at Nothing, CheckSphere never
             // finds the floor and the player falls through Lincoln for ever

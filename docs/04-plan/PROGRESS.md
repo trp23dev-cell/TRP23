@@ -68,6 +68,7 @@ Full work packages are written **as each is picked up**, one horizon ahead — n
 | U08 | Premises + Kimani's interior | AI + art | L | ⬜ | U07, D-01 |
 | U09 | Server-driven content in Unity | AI | S | ⬜ | U05 |
 | U10–U12 | High Street slice: dressing, pedestrians, budgets | AI | L | ⬜ | Phase B |
+| U17a | Character visual seam + UMA preflight | AI | M | 🔨 | log S13. **Seam built and guarded; UMA researched, NOT imported.** Needs H-15 |
 | U14–U22 | **Standing · Phone · NPCs · character · drops · entitlements · opportunities · flagship · bank** | AI + art | — | ⬜ | See [dependency map](IMPLEMENTATION-DEPENDENCY-MAP.md) §2 |
 | [U13](work-packages/WP-U13-navigational-map.md) | Navigational map + route planning (road graph, not a straight line) | AI + design | L–XL | ⬜ **backlog** | U03, 026, U07 |
 
