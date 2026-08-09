@@ -136,7 +136,25 @@ Five dimensions, each with a real cost, **never shown as a number** — the case
 
 **Street vs Standing is the central tension and the Bible's actual subject:** the skills that kept you alive in the trap are real skills that cost you something in the legitimate world.
 
-**Money is not progression.** Coins buy things; they open nothing.
+**Money is not progression** (D-W16). Coins buy things; they open nothing. A wealthy player may have poor Standing; a player with little money may be far along the journey.
+
+### Standing coverage matrix
+
+**Not a points table.** No dimension has a number, and none should ever be awarded as `MISSION COMPLETE = +10`. This exists so that future mission authors reach consistent consequences for similar behaviour.
+
+| Dimension | Behavioural meaning | May rise when the player… | May fall when the player… | Content that exercises it |
+|---|---|---|---|---|
+| **Trust** | *Will people rely on you when it costs them something?* | keeps a commitment · returns after breaking one · says the awkward true thing when silence would pay | no-shows without repairing · takes an advantage quietly · lets someone carry a cost they did not agree to | Commitments · bookings · repair beats · being overpaid · vouching |
+| **Craft** | *Is your work good enough to put a name on?* | does work properly when fast would pass · repeats something until it is right · finishes what was started | rushes visible work · leaves a job half-done · accepts "good enough" where standards were stated | Shift work · making · preparing product · anything with a visible quality difference |
+| **Street** | *Do you see what is actually happening in a room?* | notices a discrepancy · reads an intention early · declines something that was going to cost them | misses an obvious tell · is talked into something · takes a story at face value | NOTICE beats · negotiation · offers that are not what they seem |
+| **Standing** | *Does the legitimate city know your name — for the right reasons?* | is publicly, visibly useful · is vouched for · does legitimate work others can see | is associated with something that goes wrong publicly · trades on someone else's name · is visibly unreliable | Premises relationships · public work · community events · tenancy |
+| **Steadiness** | *Do you keep turning up when nothing is happening?* | returns across sessions without prompting · maintains something over time · does the unglamorous repeat | disappears for a long stretch · only appears when there is something to gain | The weekly rhythm · maintenance · long commitments · decays quietly with absence |
+
+**Two rules for authors.**
+
+**The player should be able to say why it changed.** If they cannot trace a Standing consequence to a specific thing they did, it is indistinguishable from randomness — and the case file exists precisely to make it traceable.
+
+**Street and Standing pull against each other on purpose.** The awareness that kept someone alive in the trap reads as guarded to people in the legitimate world. That tension is the Bible's actual subject and should not be smoothed away.
 
 ---
 
@@ -396,8 +414,21 @@ Vehicles · multiplayer · player tenancy and rented shops · other real brands 
 | 4 | **`defaultWorld.js` still validates checkout `locationId`** with stale fictional shops | Retires with the Premises system |
 | 5 | **Vol 5's ten pillars are ~10% represented** | Run club, barbering, education, ambassadors have no representation. Deliberate, not forgotten |
 | 6 | **Standing is designed twice** — five dimensions here, `trustStatus` in the schema | Reconcile when Standing is built |
-| 7 | **Nothing in a normal session earns TC.** §8 says money is not progression; the session ([HIGH-STREET-SESSION](HIGH-STREET-SESSION.md) finding 1) shows a player spending with no income. Where does spending money come from? | Surfaced by writing the session. Needs a design answer, not a decision |
-| 8 | **Three of five Standing dimensions go unexercised** in the slice — only Trust does work | Either the slice gains a beat that uses Craft/Street/Steadiness, or the model has more dimensions than the game currently needs |
+| 7 | ~~Nothing earns TC~~ **addressed in session rev 2** — a paid drop-week shift at the flagship. **But it works once**; recurring vs episodic earning is spec Q6 | Partially closed |
+| 8 | ~~Standing unexercised~~ **addressed** — rev 2 exercises Craft, Street and Trust through behaviour. **Standing and Steadiness remain untested in any written session**, both needing multi-session content | Partially closed |
+| 9 | **No jeopardy anywhere.** Nothing in the written session can go badly wrong; the worst outcome is being slightly less liked | Acceptable for a first slice, not for a game. Needs stakes before Horizon 2 |
+| 10 | **Trap Coins have one real sink** — clothing. A currency with one sink is a score with extra steps | Spec Q7 |
+| 11 | **Silent Standing consequences are invisible.** Declining to correct an overpayment does something the player cannot perceive | Deliberate — the game must not keep score aloud — but it must surface eventually, probably through the case file |
+
+---
+
+## 27a · Development rule — D-W17
+
+> **Every major TRP23 vertical slice must have a representative 20–30 minute player session written and reviewed before implementation scope is authorised.**
+
+Architecture asks *"can this work?"* The session asks *"is there actually a game here?"* **Both must pass.**
+
+Adopted because the first session found four design gaps that reading the specification did not — the most serious being that a player could go twenty-five minutes without earning a penny in an economy the specification described as functioning.
 
 ---
 
@@ -405,15 +436,13 @@ Vehicles · multiplayer · player tenancy and rented shops · other real brands 
 
 Only what this specification cannot settle from evidence or from D-W01–D-W10.
 
-**Q1 · Reward Entitlements, or provenance-tagged Trap Coins?** *(§11 — the sharpest question here.)* I propose a separate non-currency entitlement, because tagging provenance onto one balance creates spend-order and refund-order accounting that has to be right every time or the invariant leaks. **Recommend entitlements.** This shapes the economy schema, so it wants deciding before anything is built.
+~~Q1 Reward Entitlements~~ **decided — D-W11.** ~~Q2 barber booking~~ **decided — D-W12.** ~~Q4 anchoring policy~~ **decided — D-W14.** ~~Q5 first campaign~~ **decided — D-W15.**
 
-**Q2 · Does the real barber booking survive D-W04?** The booking is a business function and a fictional member of staff can take it — but the reconciliation assumed Kimani's own presence, and you may feel differently now the character is gone. **No recommendation: this is a business relationship question, not a design one.**
+**Q3 · Which Lincoln building is THE COME UP and the starter home?** D-W13 settles that they **share** one, and that it must not be aspirational. **The building itself is still unchosen, and I have deliberately not invented one.** It needs to be somewhere plausibly cheap and slightly off the prime High Street frontage, within walking distance of the flagship — the session assumes "above a shop at the wrong end of the High Street" as a placeholder only.
 
-**Q3 · Where are THE COME UP and the player's home?** D-W01 frees the JD building and D-W09 asks for a home; neither now has a location. They could be the same building — a chapter-one home you later return to — which is cheap and thematically apt. **Recommend one building serving both, subject to your view on the geography.**
+**Q6 · Does an ordinary player have a job, or only opportunities?** The revised session earns through a one-off paid shift. That works once. **Whether TRP23 has recurring employment** — a standing shift you can return to — or only episodic opportunities changes the shape of the economy and the risk of becoming a job simulator. *No recommendation: it is a pace-of-play question and depends on how long you expect a session to be.*
 
-**Q4 · Which real Lincoln premises may we anchor to at all?** Buildings are anchored by OSM id and named fictionally, which handles trading names. It does not handle an actual occupant objecting to their premises being in a game. **Recommend a written policy before the slice ships.**
-
-**Q5 · What is the first funded campaign?** §12 needs one real example to prove the loop — a discount on a real garment, a contribution toward an appointment, something small and genuinely funded. **Recommend the smallest thing that is real**, because a fake one proves nothing.
+**Q7 · What does the player spend Trap Coins on, besides clothing?** Currently: garments, and nothing else. A currency with one sink is a score. Food, transport, tools, materials, rent, a haircut — **something must compete with the wardrobe for the money**, or saving is never a real choice.
 
 ---
 

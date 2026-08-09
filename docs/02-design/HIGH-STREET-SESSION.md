@@ -1,188 +1,305 @@
 # A High Street Session
 
-**Twenty-five minutes, written as a player experiences it.**
+**Twenty-eight minutes, written as a player experiences it. Revision 2.**
 
 **Date:** 9 August 2026 · **Status:** 🟡 **proposed, for owner review. Nothing implemented.**
-**Systems specified in:** [WORLD-AND-GAMEPLAY-SPECIFICATION](WORLD-AND-GAMEPLAY-SPECIFICATION.md)
+**Systems:** [WORLD-AND-GAMEPLAY-SPECIFICATION](WORLD-AND-GAMEPLAY-SPECIFICATION.md) · **Decisions:** D-W01–D-W17
 
-> **This exists to find out whether the systems compose into a game.** A feature list can look complete and still not be playable. So this is written as one continuous experience, and every system it touches is named in the margin — including the moments where a system we have specified turns out to do nothing.
->
-> **It is a test, not a script.** Where it exposes a problem, §Findings says so rather than writing around it.
+> **This is a product test, not a script.** Revision 1 exposed four gaps: no way to earn money, Standing dimensions that did nothing, invisible campaign scarcity, and a reward the player could not trace. This revision is built to answer all four, and §Validation says honestly where it still falls short.
 
 ---
 
-## 0:00 — Waking up somewhere you would rather not
+## 0:00 — The flat above the chip shop
 
-You start in a small flat above a shop on the wrong end of the High Street. Damp patch on the ceiling. A mattress, a kettle, a mirror, a wardrobe with four things in it.
+You wake where Chapter One started, because it is also where you live. *(D-W13)*
 
-**It is not aspirational and that is deliberate.** *(D-W09)* Vol 3 begins with recognising where you actually are, and a game about untrapping yourself cannot open in a penthouse.
+One room over a takeaway at the wrong end of the High Street. The extractor runs until eleven and you can smell it. A kettle, a mattress, a mirror, a wardrobe with four things in it, and a window that looks at a wall.
 
-The wardrobe holds what you own. Three of the four items are the plain things you started with. The fourth is a Trap Made It tee you have not earned the right to wear yet — **you can see it, greyed, with a line under it: `TRAP MADE IT · CHAPTER TWO · not yours yet`.** *(§6 acquisition modes — visible, locked)*
+**It is not aspirational and that is the whole point.** Vol 3 opens with recognising where you actually are. You will be able to leave here eventually. Not today.
 
-> **Design note.** Seeing what you have not earned is more motivating than not knowing it exists, and it is honest — Vol 11 rewards participation with *access*, so access has to be visible to be worth anything.
-
-**Phone buzzes.** *(D-W08)*
-
----
-
-## 0:02 — The phone tells you; it does not do anything
-
-Three things on the lock screen:
-
-```
-TRAP MADE IT          THE ARCHIVE drops Friday. 3 days.
-MESSAGE               Ade — "you still coming in thursday or what"
-CASE FILE             1 open commitment
-```
-
-You open the **Case File**. One line, in your own handwriting from Chapter One:
+On the wall by the door, where you pinned it: **the card, in your handwriting.**
 
 > *"I say yes to things and then don't turn up."*
 
-Under it, the commitment you made last session: **Thursday, 4pm, the barber. Two days left.** *(§9 Trap Card · §7 COMMIT)*
+*(§9 Trap Card — Vol 3 Stage 3, written here in Chapter One and still here afterwards)*
 
-The phone shows `Wallet: 420 TC · TRP Central Bank: 2,850 TC`. **It shows them. There is no button to move them.** *(D-W08, D-W05)*
+The wardrobe has your four things and, greyed out, a fifth:
 
----
+```
+THE ARCHIVE · hooded top
+Not yours yet.
+```
 
-## 0:05 — Lincoln, on foot
-
-Down the stairs and onto the High Street. It is late morning and overcast — **the server said so**, so it is overcast for everyone *(D-118)*. Wet pavement, people with umbrellas down but not away.
-
-**The street has people in it.** *(§24 ambient)* Someone is pulling a shutter up. Two people outside a café. A delivery van half on the kerb. None of them are missions. They are the reason the city is not a diagram.
-
-You walk up toward the Stonebow. **The ground climbs and you feel it** — Steep Hill is behind you and the gradient is already telling you which way is up. *(`SlopeCost`, already built and tested)*
-
-Your phone map has three markers: **home**, **the flagship**, **the barber**. *(§23)*
+**You can see what you have not earned.** That is deliberate — Vol 11 rewards participation with *access*, and access nobody can see is worth nothing. *(§6)*
 
 ---
 
-## 0:08 — The flagship, and a drop you cannot buy yet
+## 0:03 — The phone, which tells you things and does nothing
 
-The Trap Made It flagship — the building everyone in Lincoln knows as the big sportswear shop on the High Street, except in here it is ours. *(D-W01, §20)*
+*(D-W08)*
 
-**The window is the drop.** THE ARCHIVE, three days out. Not a poster: the garments are in the window, lit, with the collection's line on the glass. *(§6, §7 rule 4 — a live drop changes the world, not just the shop)*
+```
+TRAP MADE IT     Prep shift today — flagship, 11am. Paid.
+                 First 100 who work a drop-week shift get a
+                 funded contribution toward THE ARCHIVE.
+                 61 places left · closes Friday
 
-Inside, fictional staff — a woman restocking who nods at you, because you have been in before. *(D-W04, §24)*
+ADE              "thursday still on?"
 
-You try the hoodie on. Your character wears it, in the mirror, in the right size for your archetype. **You cannot buy it.** The tag reads:
+CASE FILE        Thursday 4pm — the barber. 2 days.
+```
+
+**Read the second line again.** *"61 places left · closes Friday."* You know the campaign is limited **before** you spend an hour on it. That was Revision 1's worst failure — a player finished the work and was then told they had lost a race nobody mentioned. *(§12, campaign availability)*
+
+Wallet says `Wallet: 40 TC · TRP Central Bank: 0 TC`. **You are broke.** That is not a soft-launch balance; it is Chapter One.
+
+---
+
+## 0:06 — Uphill, which you feel
+
+Out and left, up the High Street toward the Stonebow. Overcast — **the server decided that, so it is overcast for everyone** *(D-118)*. Pavements still wet from earlier.
+
+The city is doing things that are not about you: a delivery van half on the kerb, a man wrestling a shutter, two people outside a café not moving out of your way. *(§24 ambient)*
+
+The ground climbs and **you notice it in the walk** — this is the bottom of the hill Lincoln is built on, and the pace change is real, not cosmetic. *(`SlopeCost`, built and tested)*
+
+Phone map shows three markers. You walk. It takes four minutes and that is fine — four minutes of a city you recognise is not dead time.
+
+---
+
+## 0:10 — The flagship, on delivery day
+
+The Trap Made It flagship. Everyone in Lincoln knows this building as the big sportswear shop; **in here it is ours.** *(D-W01, D-W14, §20)*
+
+The window is **THE ARCHIVE** — the collection, lit, three days out. Not a poster. The garments. *(§6)*
+
+Inside is boxes. **Naomi**, who runs the floor, is trying to get a drop into a shop with two people. *(§24 fictional staff — D-W04)*
+
+> *"You're the one Ade sent. Right — steamer's out back. Everything on that rail needs doing before Friday and I'd rather it was done properly than done fast."*
+
+### The work — this is the earn loop *(§ economy gap)*
+
+You steam and hang the drop. It is a real activity with a real dial: **fast, or properly.**
+
+- **Fast** — more garments through, a rail that looks fine from three feet
+- **Properly** — fewer done, seams straight, hang lines right
+
+**Naomi can tell the difference, and she looks.** *(Craft — §8)*
+
+You do it properly. You get through fewer than you might have. She runs a hand down a sleeve on her way past and says nothing, which from her is quite a lot.
+
+> **Why this is not a chore.** A chore has one correct execution and you either did it or you did not. This has a **standard**, and the standard is the brand's — Vol 9: *"every product must communicate purpose before appearance."* Doing it properly costs you throughput and buys you something you cannot see yet.
+
+### The thing you notice
+
+Halfway through, the count is wrong. The rail is short of the manifest taped to the box — **two hooded tops that are on the paperwork and not in the room.** *(Street — §8)*
+
+Nothing highlights it. There is no glowing outline. You either read the manifest or you did not.
+
+You tell Naomi. She swears mildly, checks the back, finds them in a second box that was mislabelled, and says: *"Good spot."*
+
+> **What just happened mechanically:** noticing exercised **Street**. Saying so exercised **Trust**. **Neither produced a number and neither was announced.** The consequence is that Naomi now knows something about you.
+
+### Paid
+
+`+180 TC`. She counts it out.
+
+> *"That's four hours at the rate. You did three and a half."*
+> *"...I did three and a half."*
+> *"You did four."*
+
+**She has decided to pay you for four.** *(Trust, offered rather than tested)*
+
+You can take it or you can say something. There is no `[HONEST]` / `[GREEDY]` prompt — just a woman holding notes and a pause that is slightly too long.
+
+*If you correct her:* she shrugs, pays you three and a half, and **remembers.** *If you don't:* nothing happens, today.
+
+> **This is the honesty beat and it is deliberately small.** Vol 3 Stage 5 asks *"did I do what I promised myself?"* — a question you answer when nobody is checking. Forty coins is exactly the right size for it: enough to notice, not enough to be a moral crisis.
+
+---
+
+## 0:19 — The drop you still cannot buy
+
+On the way out you stop at the rail you just hung.
+
+You can try it on — your character wears it, in your archetype's fit, in the mirror. **You cannot buy it.** *(§6 `MISSION_UNLOCK`)*
 
 ```
 THE ARCHIVE · Friday
-Available to anyone who has kept a commitment this week.
+Open to anyone who worked a drop-week shift.
+You have.
 ```
 
-*(§6 `MISSION_UNLOCK` — access, not ownership)*
+**You qualified an hour ago and you did not know that was what you were doing.** The work was the work. The unlock noticed it.
 
-> **This is the moment the whole design either works or does not.** You are not told *"complete 3 tasks."* You are told the thing you already promised to do is the thing that qualifies you. **The mission was not invented for the drop; the drop noticed the mission.**
+> This is the moment the whole design lives or dies. Revision 1 got it right and it survives unchanged: **the mission was not invented for the drop — the drop noticed the mission.**
 
 ---
 
-## 0:13 — The bank is a place
+## 0:21 — The bank, and the first real decision
 
-You need to move money — you want cash on you for Thursday. **There is no banking button.** *(D-W10)*
+`Wallet: 220 TC`. In your pocket, in a game where you have never had 220 TC.
 
-TRP Central Bank, Mint Street. The building the city knows as the NatWest; in here it is ours. *(§21)*
+**There is no banking button.** *(D-W10)* TRP Central Bank, Mint Street — the building the city knows as the NatWest. *(§21)* Marble, quiet, too big for what it does.
 
-Inside is quiet, marble, too big for what it does. A teller. You withdraw 200 TC.
+The teller. You have been in twice this week already, both times taking money out.
 
-She looks at the screen and says, without any particular tone:
+**The decision:** *(§ spend/save)*
 
-> *"Third time this week."*
+| | |
+|---|---|
+| **Keep it** | Thursday's appointment costs 45. THE ARCHIVE digital is 900 — you cannot afford it either way |
+| **Bank it** | It is out of reach, which is the point, and the bank starts noticing a pattern that is not withdrawals |
 
-That is all. **No penalty, no morality meter, no lecture.** *(§8 — never a number)* But you notice it, because she is right.
+You put 150 in and keep 70.
 
-> **Design note.** This is the Bible doing work that dialogue usually does badly. Vol 3 Stage 5's Weekly Self Audit asks *"what distracted me?"* — the teller is that question, asked by someone who can see your account.
+She looks at the screen — the same screen that has watched you empty it twice — and says:
 
----
+> *"First time this month that's gone the other way."*
 
-## 0:17 — Thursday is not Thursday yet
+**No penalty. No prompt. No number.** *(§8 — never a number)* She just says the true thing, which is what the bank is for. *(§21 — the bank as the game's mirror, not an ATM with a face)*
 
-Walking back you pass the barber's — 25 Corporation Street, which OSM still thinks is a shop called Mankind. *(§17 — anchored by id, not name)*
-
-**It is open.** *(§22)*
-
-You are not booked until Thursday, so there is nothing to do here. But you go in, because the door works, and a fictional barber tells you they are full today and Thursday still stands.
-
-**Nothing happened, and that matters.** A world where every door is a mission is a menu with walls. *(§14)*
+> **Why the money mattered.** It was not a score going up. It was 220 coins and three things that wanted them, and you had to pick. *(D-W16 — money is choices, not progression)*
 
 ---
 
-## 0:20 — A choice that is not a dialogue wheel
+## 0:25 — Thursday is still Thursday
 
-Outside, Ade is waiting — the person from the message. Someone he knows needs a hand shifting stock tonight. **Sixty quid, cash, and it clashes with Thursday.** *(§7 CHOOSE)*
+Corporation Street on the way home. The barber's is open — the shop OSM still thinks is called Mankind. *(§17, D-W14)*
 
-There is no `[GOOD]` / `[BAD]`. There are two things you could do, and one of them is money you could use today.
+You are not booked until Thursday. **You go in anyway**, and a barber you have met twice confirms Thursday still stands and tells you to come earlier if it rains.
 
-You say no.
-
-Ade shrugs. He is not offended, and he does not vanish from the game. **He will ask again**, and one day the answer might be different. *(§8 Trust · §18 recurring NPC)*
-
-Your phone, thirty seconds later, without ceremony:
-
-```
-CASE FILE  ·  commitment intact
-```
-
-**No fanfare. No coins.** *(§7 rule 1 — the mission is about the person)*
+Nothing happened. **A world where every door is a mission is a menu with walls.** *(§14)*
 
 ---
 
-## 0:24 — What Thursday is worth
+## 0:27 — What you actually earned
 
-Home. The phone has one more thing:
+Home. Phone, once, without ceremony:
 
 ```
-TRAP MADE IT
-You've kept your word this week.
-THE ARCHIVE hoodie unlocks Friday — and there's £15
-against the physical one if you want it. 40 left.
+DROP 01 · COMMUNITY REWARD
+
+You worked a drop-week shift at the flagship before Friday.
+That's what qualified you.
+
+£10 toward THE ARCHIVE hooded top — physical.
+Funded by Trap Made It. 60 places left.
+Expires 30 days after the drop closes.
+
+It is not Trap Coins and it cannot be cashed.
+It comes off the price of that garment, on the website.
 ```
 
-*(§11 Reward Entitlement · §12 funded campaign — `40 left` is the claim count, and it is decremented at grant)*
+*(§11 Reward Entitlement · §12 funded campaign · D-W11, D-W15)*
 
-**Two distinct things, and the difference is the whole product:**
+**Four things that message does deliberately:** it says *what happened*, *why you qualified*, *what it is worth and on what*, and *that it is not money*. **Nothing is auto-redeemed.** *(§causality)*
 
-- **The digital hoodie** — yours Friday, bought with TC, appears in your wardrobe, **touches no physical stock** *(D-W07)*
-- **£15 toward the real one** — a funded entitlement, redeemed on the web, against a real garment in a real box *(D-W06)*
-
-You did not buy your way to either. You said no to sixty quid and turned up when you said you would.
-
-**Session ends.** The commitment is still open. Thursday is real, and it is in a diary in a shop you walked past this afternoon.
+> Revision 1 failed here. The player was told they had qualified and not what for. **A consequence you cannot trace is indistinguishable from a random reward**, and the case file exists to make consequences traceable.
 
 ---
 
-## Findings — does it compose?
+## End state — what changed
 
-**Yes, with four gaps this exercise exposed.** Writing it as a session found things the specification did not.
-
-### It works
-
-**The spine holds.** Home → phone → street → premises → choice → consequence → home. Every beat is a system already specified, and none of them needed a menu.
-
-**The drop is not an advert.** Because the qualifying mission existed for its own reasons and the drop *noticed* it, the commercial moment lands as recognition rather than a task list. That was the biggest product risk and this is the shape that survives it.
-
-**The teller is the best thing in it** — and she is four words. Vol 3's self-audit, delivered by someone with access to your account, costs almost nothing to build.
-
-**Nothing happening at the barber is load-bearing.** A world where every door is a mission is a menu with walls.
-
-### The four gaps
-
-| # | Gap | Why it matters |
+| | Before | After |
 |---|---|---|
-| **1** | **Nothing in this session earns TC.** The player spends and withdraws; the only rewards are an unlock and an entitlement. **A 25-minute session with no income is not sustainable** — but per §8 money is not progression, so where does spending money come from? Jobs? Chapters only? **Unspecified** |
-| **2** | **The `40 left` counter is invisible to the player until the grant.** If two players race for the last claim, the loser is told after the fact. Scarcity is fine; **surprise scarcity is a bad feeling** and needs a design answer |
-| **3** | **Nothing here uses Craft, Street or Steadiness.** Only Trust does work. Three of five Standing dimensions are specified and unexercised — either the slice needs a beat that uses them, or the slice needs fewer dimensions |
-| **4** | **The player has no way to see why the hoodie unlocked.** They are told they qualified, not what qualified them. **A consequence you cannot trace is indistinguishable from a random reward** — and traceability is the whole point of the case file |
+| Wallet | 40 TC | **70 TC** |
+| TRP Central Bank | 0 TC | **150 TC** |
+| Digital entitlement | — | **THE ARCHIVE unlocked** — buyable Friday, 900 TC. *You cannot afford it yet* |
+| Reward Entitlement | — | **£10 toward the physical**, funded, 30-day expiry, not cashable |
+| Trust | — | Naomi knows you flag things. *And knows whether you corrected her about the money* |
+| Craft | — | The rail is right, and she looked |
+| Street | — | You read the manifest when nothing asked you to |
+| Contacts | Ade | **+ Naomi** |
+| Commitment | Thursday 4pm | **Still open.** Two days |
+| Chapter | 01 | 01 — *unchanged, and that is fine* |
 
-### One thing this session deliberately does not do
-
-**It never tells the player they did the right thing.** No score, no morality prompt, no "+10 Trust". The teller notices, Ade shrugs, the phone states a fact. Vol 3's *"accountability before anyone else needs to"* only works if the game is not the one keeping score out loud.
+**You are still broke, still in the flat, still owe Thursday.** But you have 150 saved for the first time, somebody on the High Street knows your name, and there is a hooded top on Friday you can afford about a fifth of.
 
 ---
 
-## What this session proves about the slice
+# Validation
 
-If it can be played end to end as written, the slice has demonstrated: a real city walked on foot · a phone that informs and does not act · a drop as narrative · a mission that is a promise rather than a chore · banking as a place · a real premises with a real booking · digital and physical as visibly different things · a funded real-world benefit · and a world that remembered what you did.
+## Is there agency?
 
-**That is the product, in twenty-five minutes, with one street.**
+**Yes — four decisions, none of them a dialogue wheel.**
+
+Work fast or properly · read the manifest or don't · correct the overpayment or don't · bank it or keep it. **None is labelled right or wrong**, and three of them cost something either way.
+
+**Weakest:** the manifest is closest to a hidden collectible. It survives because you can miss it entirely and the session still works, and because it pays in reputation rather than loot.
+
+## Is there an earn loop?
+
+**Yes. `+180 TC` for four hours of prep work at the flagship**, paid by a person, for a reason that makes sense in the world.
+
+It earns its place because **payment is narratively obvious** (a shop is short-staffed in drop week) and because it is **not repeatable on demand** — it is drop week, not a job board. It does not turn TRP23 into a job simulator because there is no job to grind; there is a shop that needed help this week.
+
+**Weakness: it works once.** See §Weaknesses 1.
+
+## Is there a spend/save decision?
+
+**Yes, and it is real because the player is poor.** 220 coins, three claims on it, and one of them (the 900 TC digital top) is out of reach either way — which is what makes banking the surplus a *choice* rather than obviously correct.
+
+**Weakness: only clothing and the haircut want the money.** A currency with one real sink is a score with extra steps. See §Weaknesses 3, and spec Q7.
+
+## Did Standing matter?
+
+**Three of five, all through behaviour rather than award.**
+
+| | Where |
+|---|---|
+| **Craft** | Doing the rail properly when fast would have passed |
+| **Street** | Reading the manifest with nothing prompting it |
+| **Trust** | Flagging the short count · the overpayment · Thursday still open |
+
+**Standing** and **Steadiness** are untouched, correctly — Standing needs public visibility this session does not have, and Steadiness is measured across weeks and cannot be shown in twenty-eight minutes. **Forcing all five would have been artificial**, which is what the brief warned against.
+
+**No dimension produced a number, a popup or a sound.** The consequence is that Naomi has an opinion.
+
+## Did Lincoln matter?
+
+**Yes.** The walk up the High Street has a gradient you feel, the flagship is a building people know, the bank is at Mint Street because that is where it is, and the barber is on Corporation Street. **The session could not happen in a menu, and could not happen in a generic city** — the specific geography is doing work.
+
+**Weakest:** the 0:06 walk is four minutes of nothing happening. Justified now by ambient life and the hill; **it would not survive a second identical walk in the same session.**
+
+## Did the physical world matter?
+
+**Every meaningful action required being somewhere.** The work is at the flagship, the money moves at the bank, the appointment is at the shop. The phone told you three things and did none of them. *(D-W08, D-W10)*
+
+## Did Trap Made It matter?
+
+**Yes — the brand is the gameplay, not an advert in it.** The paid work *is* preparing the collection; the quality standard *is* the brand's standard (Vol 9); the drop in the window is the reason the shop is busy. The player earns money from the brand, earns access to the brand, and earns a funded contribution toward the brand's physical product — **without being sold to once.**
+
+## Did the real-world connection matter?
+
+**Yes, and it stays in proportion.** One message at the end, £10, clearly labelled as not-money, nothing auto-redeemed. It is a consequence of the session rather than the point of it — **you could ignore it entirely and the session still worked.**
+
+## Was causality understandable?
+
+**Yes, now.** Every consequence traces: paid because you worked · unlocked because you worked a drop-week shift · entitled because of the same, stated in the message · Naomi's opinion because of what you did in front of her.
+
+**One gap:** if you *did not* correct the overpayment, nothing tells you that mattered. That is intentional — the game does not keep score out loud — but it means **an invisible consequence is indistinguishable from no consequence** until it surfaces later. See §Weaknesses 4.
+
+## Was it fun?
+
+**Honest assessment: it is quietly good, and it is not yet exciting.**
+
+**What works.** The overpayment pause is the best thing in it — a moment of genuine discomfort with no interface. The teller's *"first time this month that's gone the other way"* does more with eight words than a progression bar. Steaming garments to a standard is unexpectedly satisfying because the standard is real and someone checks. And **the drop noticing work you did for other reasons** is the design's central trick, and it lands.
+
+**What does not.** There is **no jeopardy anywhere in these twenty-eight minutes.** Nothing can go wrong, nobody wants anything from you that costs you, and the worst outcome available is being slightly less liked. That is fine for a session-one slice and it will not carry a game.
+
+**Nothing here is a tutorial, an advert, or a menu in a room.** The four minutes of walking is the only stretch approaching filler.
+
+---
+
+## Remaining weaknesses
+
+| # | Weakness | Why it is not fixed here |
+|---|---|---|
+| **1** | **The earn loop works once.** A drop-week shift is not repeatable. What does an ordinary Tuesday pay? | Recurring employment vs episodic opportunity is a pace-of-play decision — **spec Q6** |
+| **2** | **No jeopardy.** Nothing can go badly wrong | Session-one slice. But the game needs stakes before Horizon 2 |
+| **3** | **One meaningful money sink.** Clothing, plus a 45 TC haircut | Needs food, transport, materials, rent — **spec Q7** |
+| **4** | **Silent consequences are invisible.** Not correcting the overpayment does something, and the player cannot tell | Deliberate — the game must not keep score out loud — but it needs to *surface* eventually, probably via the case file |
+| **5** | **Standing and Steadiness untested** in any session yet written | Both need multi-session content. A twenty-eight-minute test cannot exercise a dimension defined by weeks |
+| **6** | **Naomi is the only real character.** One relationship carrying the whole session | Acceptable for a slice; thin for a district |
+| **7** | **Chapter progress did not move.** The session is entirely live-world | Arguably correct — chapters should not advance every session — but it means the slice does not demonstrate chapter progression at all |
