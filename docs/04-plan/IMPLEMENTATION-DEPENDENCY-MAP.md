@@ -163,7 +163,7 @@ Ordered, with size. Prefer S/M throughout; nothing XL survives unsplit.
 | 2 | **U17a** | Player character model + basic animation | **M** | U03 | ✅ **first visible** |
 | 3 | **U16a** | NPC foundation — spawn, stand, look, be talked to | **M** | U03 | ✅ |
 | 4 | **U07** | Interaction framework — one way to use anything | **M** | U03 | ✅ |
-| 5 | **U15a** | Phone shell + map/messages | **M** | U03 | ✅ |
+| 5 | **U15a** | Phone shell + map/messages | **M** | U03 | ✅ **BUILT** — S15 |
 | 6 | **U05** | Typed API client · geo constants · world clock | **M** | U03 | ❌ |
 | 7 | **U08a** | Premises model + door/interior transitions | **M** | U07 | ✅ |
 | 8 | **U21a** | Flagship interior shell | **M** | U08a, U16a | ✅ |

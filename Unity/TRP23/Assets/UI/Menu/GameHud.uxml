@@ -2,6 +2,7 @@
     <Style src="project://database/Assets/UI/Styles/TrapTokens.uss" />
     <Style src="project://database/Assets/UI/Styles/TrapComponents.uss" />
     <Style src="project://database/Assets/UI/Styles/TrapHud.uss" />
+    <Style src="project://database/Assets/UI/Styles/TrapPhone.uss" />
 
     <ui:VisualElement class="hud-root" picking-mode="Ignore">
 
@@ -141,6 +142,39 @@
                 <ui:VisualElement class="acct-row"><ui:Label text="PHONE" class="k" /><ui:Label name="ap-phone" text="—" class="v" /></ui:VisualElement>
                 <ui:VisualElement class="acct-row"><ui:Label text="TWO-FACTOR" class="k" /><ui:Label name="ap-2fa" text="Off" class="v" /></ui:VisualElement>
                 <ui:Button name="account-logout" text="LOG OUT" class="btn-outline btn-danger" style="margin-top: 16px;" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+
+        <!-- PHONE (WP-U15a shell)
+             Chrome only. Every app surface is built in C# by PhoneController,
+             so a future package changes one class rather than editing markup
+             that six packages share. -->
+        <ui:VisualElement name="phone-layer" class="phone-layer hidden">
+            <ui:VisualElement class="phone-body">
+                <ui:VisualElement class="phone-screen">
+
+                    <!-- Status bar. Not a simulation of a real phone: it carries
+                         the two things the player actually needs at a glance. -->
+                    <ui:VisualElement class="ph-status">
+                        <ui:Label text="TRP" class="ph-carrier" />
+                        <ui:Label name="phone-clock" text="--:--" class="ph-clock" />
+                        <ui:Label text="▮▮▮" class="ph-batt" />
+                    </ui:VisualElement>
+
+                    <ui:VisualElement class="ph-head">
+                        <ui:Label name="phone-title" text="TRAPFONE" class="ph-title" />
+                        <ui:Button name="phone-close" text="✕" class="ph-x" />
+                    </ui:VisualElement>
+
+                    <!-- Exactly one of these is visible at a time. -->
+                    <ui:VisualElement name="phone-home" class="ph-home" />
+                    <ui:VisualElement name="phone-stage" class="ph-stage" />
+
+                    <ui:VisualElement class="ph-bar">
+                        <ui:Button name="phone-back" text="CLOSE" class="ph-back" />
+                    </ui:VisualElement>
+
+                </ui:VisualElement>
             </ui:VisualElement>
         </ui:VisualElement>
 

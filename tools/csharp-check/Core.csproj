@@ -14,6 +14,6 @@
     <OutputPath>bin/Core/</OutputPath>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="../../Unity/TRP23/Assets/Core/*.cs" />
+    <Compile Include="../../Unity/TRP23/Assets/Core/**/*.cs" />
   </ItemGroup>
 </Project>

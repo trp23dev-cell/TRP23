@@ -206,6 +206,34 @@ namespace TrapCollisionCheck
             Assert("a scene change lets go of everything",
                 !TrapMadeIt.PointerFocus.Wanted && !TrapMadeIt.GameFreeze.Wanted);
 
+            // THREE SURFACES AT ONCE (WP-U15a)
+            //
+            // The Phone is the third holder, and the failure it could introduce
+            // is the one nobody notices in a demo: open Phone, open map from it,
+            // shut the map -- and the world stays frozen because a holder was
+            // dropped, or unfreezes early because a holder was shared. Named
+            // holders make the order irrelevant, and this proves it rather than
+            // asserting it in a comment.
+            TrapMadeIt.GameFreeze.Request("phone");
+            TrapMadeIt.GameFreeze.Request("hud");
+            TrapMadeIt.GameFreeze.Request("map");
+            TrapMadeIt.GameFreeze.Release("phone");
+            TrapMadeIt.GameFreeze.Release("map");
+            Assert("closing the Phone and the map leaves a panel still holding",
+                TrapMadeIt.GameFreeze.Wanted, "the last surface open must still freeze the world");
+            TrapMadeIt.GameFreeze.Release("hud");
+            Assert("the last of three surfaces to close is the one that restores control",
+                !TrapMadeIt.GameFreeze.Wanted);
+
+            // And the Phone releasing a holder it never took must not free the
+            // world out from under an open panel. Teardown() calls Release
+            // unconditionally, so this is the real path, not a hypothetical.
+            TrapMadeIt.PointerFocus.Request("hud");
+            TrapMadeIt.PointerFocus.Release("phone");
+            Assert("the Phone letting go of a hold it never had does not free the cursor",
+                TrapMadeIt.PointerFocus.Wanted);
+            TrapMadeIt.PointerFocus.ReleaseAll();
+
             return bad;
         }
 

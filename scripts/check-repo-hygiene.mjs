@@ -184,13 +184,13 @@ if (reachingUp.length) {
 // ---------------------------------------------------------------------------
 // THE CHARACTER FRAMEWORK MUST STAY REPLACEABLE
 //
-// WP-U17a trials UMA as the humanoid visual layer. A trial you cannot walk back
-// from is not a trial: if UMA fails on mobile cost or its bundled art licensing
-// cannot be cleared, leaving must cost one adapter rather than every file that
-// ever touched a character.
+// UMA was evaluated and rejected (D-C01) -- a mismatch with fixed archetypes,
+// not a defect. The rule survives the decision, because its value was never
+// UMA-specific: whatever character technology is adopted, it is confined to the
+// adapter folder and everything else talks to ICharacterVisual.
 //
-// So UMA namespaces are confined to the adapter folder. Everything else talks
-// to ICharacterVisual. This is the mechanism, not the intention.
+// The seam is what let the trial be abandoned at zero cost. Keeping the guard
+// is what keeps that true for the next candidate.
 // ---------------------------------------------------------------------------
 const ADAPTER_DIR = "Unity/TRP23/Assets/World/Scripts/CharacterVisual/";
 const UMA_NAMESPACE = /^\s*using\s+UMA\b|(?<![A-Za-z0-9_.])UMA\s*\./m;

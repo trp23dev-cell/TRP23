@@ -21,6 +21,7 @@ namespace TrapMadeIt.UI
         private bool _haveBalances;
         private WalletService _wallet;
         private TrapCardController _caseFile;
+        private TrapMadeIt.UI.Phone.PhoneController _phone;
 
         // Which chapter the player is in, and how many there are. Hardcoded
         // until Unity has the chapter flow — the card only needs to know
@@ -51,6 +52,22 @@ namespace TrapMadeIt.UI
             // any screen runs.
             _wallet = context.Wallet;
             _caseFile = new TrapCardController(_root, context.CaseFile);
+
+            // The Phone links to the case file rather than reimplementing it —
+            // see MissionsApp. Handing it the same TogglePanel path the C key
+            // uses means there is one way in, however it was asked for.
+            _phone = new TrapMadeIt.UI.Phone.PhoneController(_root, () =>
+            {
+                ShowPanel("panel-casefile", true);
+                _caseFile.Show(_level, LastLevel);
+            });
+            // Never two full-screen surfaces at once. The registers would cope,
+            // but the player would be looking at a panel through a phone.
+            _phone.Opened += CloseAllPanels;
+            // Opening the Phone is the moment its balance stops being stale, so
+            // that is when to ask. Cheap, and it means the Wallet app is right
+            // without polling anything.
+            _phone.Opened += () => Reload(null);
 
             _root.Q<Button>("open-store").clicked += () => ShowPanel("panel-store", true);
             // Open first, then reload: the panel should appear at once and fill
@@ -98,8 +115,14 @@ namespace TrapMadeIt.UI
             });
         }
 
-        private void RefreshCoins() =>
+        private void RefreshCoins()
+        {
             _root.Q<Label>("coin-amt").text = _haveBalances ? _cash.ToString("N0") : "—";
+            // One paint site for balances, so the Phone cannot show a number the
+            // HUD has already moved on from. It is pushed what the server said,
+            // never allowed to work anything out.
+            _phone?.SetBalances(_cash, _bank, _haveBalances);
+        }
 
         private void RefreshChip()
         {
@@ -257,6 +280,11 @@ namespace TrapMadeIt.UI
             var k = Keyboard.current;
             if (k == null) return;
 
+            // The Phone gets first refusal, and says whether it took the key.
+            // Escape is wanted by the Phone, the panels and the map, and must
+            // reach exactly one of them.
+            if (_phone != null && _phone.HandleKeys()) return;
+
             if (k.cKey.wasPressedThisFrame) TogglePanel("panel-casefile");
 
             // Only when something is actually open — otherwise this would eat
@@ -269,7 +297,7 @@ namespace TrapMadeIt.UI
         private void TogglePanel(string name)
         {
             bool open = _openPanels.Contains(name);
-            if (!open) CloseAllPanels();   // never two panels stacked on each other
+            if (!open) { CloseAllPanels(); _phone?.Close(); }   // never two surfaces stacked
             ShowPanel(name, !open);
             if (!open && name == "panel-casefile") _caseFile.Show(_level, LastLevel);
         }
@@ -289,6 +317,7 @@ namespace TrapMadeIt.UI
             _openPanels.Clear();
             TrapMadeIt.PointerFocus.Release("hud");
             TrapMadeIt.GameFreeze.Release("hud");
+            _phone?.Teardown();   // its holders are separate, so it releases its own
         }
 
         private void Msg(string name, string text, string kind)

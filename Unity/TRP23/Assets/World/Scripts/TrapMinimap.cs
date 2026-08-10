@@ -270,8 +270,25 @@ namespace TrapMadeIt.World
             Time.timeScale = GameFreeze.Wanted ? 0f : 1f;
         }
 
+        void OnEnable()
+        {
+            // The Phone's Map app cannot call this directly -- TRP23.UI must not
+            // reference TRP23.World (WP-U01) -- so it raises a signal and the
+            // map, which owns opening itself, answers it. Paired with the
+            // unsubscribe in OnDisable: a static event that outlives its scene
+            // is a leak and a call into a destroyed object.
+            GameSignals.OpenMapRequested += OnOpenMapRequested;
+        }
+
+        void OnOpenMapRequested()
+        {
+            if (!BigMap) SetBigMap(true);
+        }
+
         void OnDisable()
         {
+            GameSignals.OpenMapRequested -= OnOpenMapRequested;
+
             // Never leave the game paused or the cursor captured because a
             // scene changed with the map open -- there would be nothing left to
             // release either of them.

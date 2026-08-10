@@ -566,3 +566,57 @@ All eight gates after every change. Green throughout. Guest session shape and th
 ### Next recommended action
 
 Unchanged: **WP-007 (backups)** before **WP-005 (ledger)**.
+
+---
+
+## Session 15 — 10 August 2026 · Character route closed, WP-U15a Phone shell
+
+### Decisions recorded, not made by me
+
+**D-C01** UMA rejected — a product/architecture mismatch, explicitly *not* a claim UMA is defective. **D-C02** fixed authored archetypes, no runtime generation, no unrestricted sliders. **D-C03** prove **one** body end to end before any others.
+
+Documentation no longer implies UMA adoption is planned. The containment guard **stays**, re-read as a general third-party boundary — its value was never that it named UMA, and the next candidate gets the same treatment.
+
+`docs/03-technical/CANONICAL-BODY-ASSET-BRIEF.md` is written and complete enough to hand to an artist unchanged. **It is a specification, not an order.** Nothing has been commissioned. **H-16 closed → H-17 opened**, which is a decision about who makes the body and what it costs.
+
+U17b is now **CHARACTER FRAMEWORK ROUTE RESOLVED — ART ASSET REQUIRED**, and is not a blocker for anything else. U15a was chosen to demonstrate that rather than assert it.
+
+### WP-U15a — the Phone
+
+Shell only. Six apps, three of which do something today.
+
+**The doctrine did the design work.** *The Phone tells you; the world is where you do it.* Each app had a moment where it could **do** the thing or **point at** it, and each points: Wallet shows two server-reported balances and offers no transfer; Map asks the existing map to open; Missions opens the existing case file panel. That is also the safer build — the Wallet app holds no money logic to get wrong.
+
+**Nothing was duplicated.** Where a screen already existed, the Phone links to it. Two entry points to one implementation is fine; two implementations of one case file is how the JS and C# trap-card logic drifted apart in the first place.
+
+**No new input mechanism.** The Phone is the third customer of `PointerFocus` / `GameFreeze`, holder name `"phone"`. No pause flag, no focus boolean, no cursor write of its own.
+
+### Two things found on the way
+
+**A gate had quietly switched itself off.** `tools/csharp-check/*.csproj` used non-recursive globs, so `Assets/UI/Scripts/Phone/` compiled **nowhere** — the assembly-boundary check would have passed a UI→World reference in any new folder. All three are now recursive, and the guard was re-proved by planting `using TrapMadeIt.World;` in the new folder (fails, 1 error) and removing it (passes).
+
+That is worth stating plainly: the check did not report a problem, and would not have. It was found because the new code failed to compile for an unrelated reason.
+
+**The assembly boundary was real, not theoretical.** `TRP23.UI` cannot reference `TRP23.World`, so the Map app cannot call `TrapMinimap`. One event in Core — `GameSignals.OpenMapRequested` — rather than a second map inside the Phone or a Map app that says "press M". Not a general message bus; a signal hides who is talking to whom, and that cost is only worth paying where a reference is forbidden.
+
+### Commands run
+
+`check:csharp` (all three assemblies, 0 errors), `check:repo`, `check:trap`, `check:world`, `check:api`. Three new register checks in `check:world` for three-surface nesting, including **the Phone releasing a hold it never took** — `Teardown()` releases unconditionally, so that is the real path rather than a hypothetical.
+
+### Not verified
+
+**Unity has not been run.** There is no licence in this environment. So:
+
+- **Nothing visual has been seen.** Layout, spacing, the glyphs and whether the phone reads as designed rather than as a debug panel are all **unconfirmed**. The USS compiles as text; it has not rendered.
+- The `.meta` files were hand-written with fresh GUIDs. Unity may re-import them.
+- Open/close, nesting and back navigation are proven **at the register level** and by compilation. The behaviour in a running scene is owner-verified — checklist in the report.
+
+### Unresolved
+
+- 🔴 **H-17** — the body is not commissioned.
+- 🔴 **H-11**, 🔴 **H-04**, 🔴 **D-01** — unchanged.
+- **H-14** — WP-U03 still needs its Unity pass.
+
+### Next recommended action
+
+**WP-U07, the interaction framework.** Reasons in the report.

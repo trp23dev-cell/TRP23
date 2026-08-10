@@ -14,7 +14,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="UnityStubs.cs" />
-    <Compile Include="../../Unity/TRP23/Assets/Core/*.cs" />
-    <Compile Include="../../Unity/TRP23/Assets/World/Scripts/*.cs" />
+    <Compile Include="../../Unity/TRP23/Assets/Core/**/*.cs" />
+    <Compile Include="../../Unity/TRP23/Assets/World/Scripts/**/*.cs" />
   </ItemGroup>
 </Project>

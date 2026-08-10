@@ -1,0 +1,181 @@
+/* TRAP MADE IT — Phone (WP-U15a)
+ *
+ * Tokens only. Every colour here is a var() from TrapTokens.uss, so the Phone
+ * re-skins with the rest of the game rather than becoming its own palette that
+ * someone has to find and fix later.
+ *
+ * SCALING
+ *
+ * The device is sized in percentages of the screen with a max in pixels. That
+ * gives the two behaviours the package needs: it fills a phone in portrait, and
+ * it stops growing on a desktop monitor instead of becoming a wall. UI Toolkit
+ * has no safe-area primitive, so the outer layer carries generous percentage
+ * padding — a notch or a gesture bar eats into that padding rather than into the
+ * screen. Real per-device insets belong to the mobile package (WP-U04), and this
+ * is deliberately not pretending to be that.
+ */
+
+.phone-layer {
+    position: absolute;
+    left: 0; top: 0; right: 0; bottom: 0;
+    align-items: flex-end;              /* the phone sits in your right hand */
+    justify-content: center;
+    padding-right: 4%;
+    padding-top: 5%;
+    padding-bottom: 5%;
+    background-color: rgba(10, 9, 8, 0.55);
+}
+
+.phone-layer.hidden { display: none; }
+
+/* The device. Aspect is held by height:100% + a width cap rather than a fixed
+ * pixel size, so it scales with the window and never overflows it. */
+.phone-body {
+    height: 100%;
+    max-height: 780px;
+    width: 34%;
+    min-width: 300px;
+    max-width: 380px;
+    background-color: var(--ink);
+    border-left-width: 2px; border-right-width: 2px;
+    border-top-width: 2px; border-bottom-width: 2px;
+    border-left-color: var(--gold-dim); border-right-color: var(--gold-dim);
+    border-top-color: var(--gold-dim); border-bottom-color: var(--gold-dim);
+    border-top-left-radius: 26px; border-top-right-radius: 26px;
+    border-bottom-left-radius: 26px; border-bottom-right-radius: 26px;
+    padding: 10px;
+}
+
+.phone-screen {
+    flex-grow: 1;
+    background-color: var(--panel);
+    border-top-left-radius: 18px; border-top-right-radius: 18px;
+    border-bottom-left-radius: 18px; border-bottom-right-radius: 18px;
+    overflow: hidden;
+}
+
+/* Status bar */
+.ph-status {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 14px;
+    background-color: var(--panel2);
+}
+.ph-carrier { color: var(--gold); font-size: 11px; letter-spacing: 2px; }
+.ph-clock   { color: var(--bone); font-size: 11px; }
+.ph-batt    { color: var(--bone-dim); font-size: 10px; }
+
+/* Title row */
+.ph-head {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 16px 10px 16px;
+    border-bottom-width: 1px;
+    border-bottom-color: var(--line);
+}
+.ph-title { color: var(--bone); font-size: 15px; letter-spacing: 3px; -unity-font-style: bold; }
+.ph-x {
+    background-color: rgba(0,0,0,0);
+    border-left-width: 0; border-right-width: 0; border-top-width: 0; border-bottom-width: 0;
+    color: var(--bone-dim);
+    font-size: 15px;
+    width: 32px; height: 32px;              /* a touch target, not a glyph */
+}
+.ph-x:hover { color: var(--gold); }
+
+/* Home grid. Wrapping rather than a fixed 3x2 so a narrower screen reflows
+ * instead of clipping an app off the edge. */
+.ph-home {
+    flex-grow: 1;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    padding: 14px 8px;
+}
+.ph-tile {
+    width: 33%;
+    height: 92px;
+    background-color: rgba(0,0,0,0);
+    border-left-width: 0; border-right-width: 0; border-top-width: 0; border-bottom-width: 0;
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+    padding: 6px;
+}
+.ph-tile-glyph {
+    font-size: 26px;
+    color: var(--gold);
+    width: 54px; height: 54px;
+    -unity-text-align: middle-center;
+    background-color: var(--panel2);
+    border-left-width: 1px; border-right-width: 1px;
+    border-top-width: 1px; border-bottom-width: 1px;
+    border-left-color: var(--line); border-right-color: var(--line);
+    border-top-color: var(--line); border-bottom-color: var(--line);
+    border-top-left-radius: 14px; border-top-right-radius: 14px;
+    border-bottom-left-radius: 14px; border-bottom-right-radius: 14px;
+}
+.ph-tile:hover .ph-tile-glyph { border-left-color: var(--gold); border-right-color: var(--gold); border-top-color: var(--gold); border-bottom-color: var(--gold); }
+.ph-tile-label {
+    margin-top: 7px;
+    font-size: 9px;
+    letter-spacing: 1px;
+    color: var(--bone-dim);
+    -unity-text-align: middle-center;
+    white-space: nowrap;
+}
+.ph-tile:hover .ph-tile-label { color: var(--bone); }
+
+/* App surface */
+.ph-stage { flex-grow: 1; }
+.ph-surface { flex-grow: 1; padding: 16px; }
+
+.ph-pending-title { color: var(--bone); font-size: 15px; letter-spacing: 1px; margin-bottom: 6px; }
+.ph-pending-body  { color: var(--bone-dim); font-size: 11px; white-space: normal; }
+.ph-note          { color: var(--bone-dim); font-size: 10px; white-space: normal; margin-top: 14px; }
+.ph-line          { color: var(--bone); font-size: 12px; }
+
+.ph-row {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    padding: 11px 0;
+    border-bottom-width: 1px;
+    border-bottom-color: var(--line);
+}
+.ph-k { color: var(--bone-dim); font-size: 10px; letter-spacing: 1px; }
+.ph-v { color: var(--gold);     font-size: 15px; }
+
+.ph-action {
+    margin-top: 16px;
+    height: 42px;                            /* comfortably tappable */
+    background-color: rgba(0,0,0,0);
+    color: var(--gold);
+    font-size: 11px;
+    letter-spacing: 2px;
+    border-left-width: 1px; border-right-width: 1px;
+    border-top-width: 1px; border-bottom-width: 1px;
+    border-left-color: var(--gold-dim); border-right-color: var(--gold-dim);
+    border-top-color: var(--gold-dim); border-bottom-color: var(--gold-dim);
+}
+.ph-action:hover { border-left-color: var(--gold); border-right-color: var(--gold); border-top-color: var(--gold); border-bottom-color: var(--gold); color: var(--bone); }
+
+/* Home bar */
+.ph-bar {
+    padding: 10px 16px 14px 16px;
+    border-top-width: 1px;
+    border-top-color: var(--line);
+}
+.ph-back {
+    height: 40px;
+    background-color: var(--panel2);
+    color: var(--bone-dim);
+    font-size: 11px;
+    letter-spacing: 2px;
+    border-left-width: 0; border-right-width: 0; border-top-width: 0; border-bottom-width: 0;
+    border-top-left-radius: 12px; border-top-right-radius: 12px;
+    border-bottom-left-radius: 12px; border-bottom-right-radius: 12px;
+}
+.ph-back:hover { color: var(--gold); }

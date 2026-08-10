@@ -265,8 +265,11 @@ Full findings: [CHARACTER-VISUAL-PIPELINE](../03-technical/CHARACTER-VISUAL-PIPE
 
 **Stop and tell me if:** avatar generation causes a visible hitch on the Android. That is the number that decides whether UMA is viable for this project at all, and no amount of good looks compensates for it.
 
-### H-16 · Decide the character route
-**Who:** Richard + Kimani · **Time:** 20 min · **Blocks:** U17b, U16a, U12 (archetypes)
+### H-16 · Decide the character route — ✅ **DECIDED 10 Aug**
+**Outcome:** UMA rejected (**D-C01**); fixed authored archetypes chosen (**D-C02**); **one** body proven end to end before any others (**D-C03**). Superseded by **H-17**, which is the part that needs a person.
+
+<details><summary>The evidence it was decided on</summary>
+
 
 **WP-U17b stopped at import and imported nothing.** Evidence in [CHARACTER-VISUAL-PIPELINE §12](../03-technical/CHARACTER-VISUAL-PIPELINE.md).
 
@@ -286,3 +289,24 @@ The short version: UMA v3.03 is **over 1.3 GB and would not finish downloading**
 **If A:** the next question is who authors the bodies, and that is a commission, not a coding task.
 
 **One caveat I want on the record:** procedural variety genuinely matters for **crowds**, not for the player. Hand-authoring a convincing crowd is expensive. That trade belongs to U16a with its own evidence — do not let it decide the player character today.
+
+</details>
+
+---
+
+### H-17 · Get the canonical body made
+**Who:** Kimani decides · **Time:** 15 min to decide, then art time · **Blocks:** the character package · **Blocks nothing else**
+
+The specification is written and needs no further work from me: [CANONICAL-BODY-ASSET-BRIEF](../03-technical/CANONICAL-BODY-ASSET-BRIEF.md). It is complete enough to hand to an artist unchanged — dimensions, skeleton, topology, UVs, triangle budget, the test garment, first-person requirements, export settings, and the licence clause.
+
+**It has not been commissioned. Nothing has been ordered or paid for.** That decision is yours:
+
+| | |
+|---|---|
+| **Kimani models it** | Free, and the look is his directly. Costs his time, and Blender rigging is a real skill |
+| **Commission a Blender artist** | The brief is the commissioning document as it stands. Costs money — get a quote before agreeing |
+| **Licensed base mesh** | Fastest. Must permit **console redistribution** with no per-title fee, and §12 of the brief must be satisfied in writing **before** work starts |
+
+**What I need back is one body, not a cast.** D-C03 is deliberately one body → one skeleton → one garment. If a quote covers four bodies, that is more than we asked for and more than we can currently prove.
+
+**This does not block anything else.** The capsule fallback is a working body, the `ICharacterVisual` seam is built and tested, and U15a proved the point by shipping player-visible work while this sits open. Do not let it hold up the roadmap.

@@ -294,3 +294,28 @@ Not CONDITIONAL: that implies a desktop proof that pending mobile work would con
 ## 12.8 · What U17b did not change
 
 **Nothing was imported. No files were added to `Assets/`.** The U17a seam, `CapsuleCharacterVisual`, `TrapCharacterScale`, the eleven tests and the UMA containment guard are all untouched and still passing — and the guard remains correct and useful whatever character technology is eventually chosen.
+
+
+---
+
+# 13 · Decided — 10 August 2026
+
+The owner accepted the U17b report and closed the question.
+
+**D-C01 — UMA rejected.** A product/architecture mismatch, not a defect in UMA. Recorded reasons: fixed archetypes already chosen; apparel fitting is a core product requirement; procedural bodies multiply garment fitting; the usable footprint is very large; bundled art provenance cannot be verified sufficiently to ship; runtime generation adds mobile risk for a capability TRP23 does not need; and the `ICharacterVisual` seam means no framework has to be forced.
+
+**D-C02 — fixed authored archetypes.** TRP23-owned or explicitly licensed base bodies, Unity Humanoid compatible, one shared skeleton where practical, garments fitted per archetype. **No runtime body generation. No unrestricted sliders.**
+
+**D-C03 — one body first.** One body → one skeleton → Humanoid rig → locomotion → one test garment → Lincoln scale → first person → mobile budget. No character creator, no second body, no production garments until that chain holds.
+
+## 13.1 · What changed in the repository
+
+Nothing in the code, which is the point. The seam, the capsule, the scale canon and the containment guard were built so that this decision could be made without a rewrite, and it was.
+
+The guard **stays**, re-read as a general third-party boundary rather than a UMA-specific one: whatever character technology is adopted later lives in `World/Scripts/CharacterVisual/` and nowhere else. Its value was never that it named UMA.
+
+## 13.2 · Where the work moved to
+
+To an artist. [CANONICAL-BODY-ASSET-BRIEF](CANONICAL-BODY-ASSET-BRIEF.md) is the full specification — prepared, **not commissioned**. The open item is **H-17**, and it is a decision about who makes the body and what it costs, not a coding task.
+
+**The absence of a humanoid model does not block unrelated packages**, and must not be used as a reason to stall the roadmap.

@@ -8,9 +8,13 @@ WP-U17a trial reversible: if UMA is rejected on mobile cost or because its
 bundled art licensing cannot be cleared, leaving costs one adapter rather than
 every file that ever touched a character.
 
-**Currently empty, deliberately.** UMA has not been imported — see
-`docs/03-technical/CHARACTER-VISUAL-PIPELINE.md`. The working implementation is
-`../CapsuleCharacterVisual.cs`, which stays in the project permanently as the
-no-dependency fallback.
+**UMA was evaluated and rejected — D-C01.** Not because it is defective, but
+because TRP23 chose fixed archetypes (D-111, D-C02) and UMA exists for runtime
+procedural bodies. See `docs/03-technical/CHARACTER-VISUAL-PIPELINE.md` §12.
 
-When UMA is imported, `UmaCharacterVisual.cs` goes here and nowhere else.
+The working implementation is `../CapsuleCharacterVisual.cs`. It stays until an
+authored archetype body exists (D-C03), and the seam it implements is unchanged
+by the framework decision — which was the point of building it first.
+
+**The guard stays.** It now reads as a general third-party containment rule: any
+character technology adopted later belongs here and nowhere else.

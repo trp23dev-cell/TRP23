@@ -16,7 +16,9 @@
     <Compile Include="UnityStubs.cs" />
     <Compile Include="UIElementsStubs.cs" />
     <Compile Include="../../Unity/TRP23/Assets/Core/*.cs" />
-    <Compile Include="../../Unity/TRP23/Assets/UI/Scripts/*.cs" />
-    <Compile Include="../../Unity/TRP23/Assets/UI/Scripts/Auth/*.cs" />
+    <!-- Recursive. A non-recursive glob silently stops covering the assembly
+         the moment someone adds a folder, which is a gate that quietly turns
+         itself off — Assets/UI/Scripts/Phone did exactly that. -->
+    <Compile Include="../../Unity/TRP23/Assets/UI/Scripts/**/*.cs" />
   </ItemGroup>
 </Project>
