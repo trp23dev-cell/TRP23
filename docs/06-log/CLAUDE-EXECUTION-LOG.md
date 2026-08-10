@@ -620,3 +620,49 @@ That is worth stating plainly: the check did not report a problem, and would not
 ### Next recommended action
 
 **WP-U07, the interaction framework.** Reasons in the report.
+
+---
+
+## Session 16 — 10 August 2026 · WP-U15a repair pass
+
+Owner verified U15a in Unity. Everything passed except one thing, and it was a real design hole rather than a slip.
+
+### The stacking bug
+
+**Root cause: the exclusivity rule had no owner.** `PointerFocus` and `GameFreeze` are *permission* registers — they answer "does anybody want the cursor / the freeze" and are **additive on purpose**, which is why nesting has never broken. Additive is the opposite of exclusive, so nothing in either register says two surfaces must not be on screen together. The map and the case file were both open, both correctly froze the world, both correctly released it. **Every check passed. The screen still had two things on it.**
+
+It was already half-solved the wrong way: I had hand-wired Phone↔panel exclusivity in two places in `TrapHudController`. That is n² relationships, it omitted the map — and it **could not have included** the map, because that code is in `TRP23.UI` and the map is in `TRP23.World`. The bespoke approach was structurally incapable of reaching the surface that was actually broken.
+
+**Fix: `Core/ModalSurface.cs`.** Same shape as the other two registers, opposite rule. A surface knows its own name and how to close itself; a seventh surface is one `Register` call and no edits elsewhere. Nested views never touch it — the Phone claims once and its apps navigate underneath. Both hand-wired checks were deleted.
+
+The one subtlety is re-entrancy: `Claim` clears `current` **before** closing the outgoing surface, so that surface's `Yield` on the way out is a no-op instead of clearing the claim being made. It has its own check.
+
+**Six new checks, proven in both directions** — commenting out the close call fails exactly the three exclusivity assertions, and restoring it passes 26.
+
+### Map zoom
+
+The cap was a hardcoded 2400 m orthographic size — a **4.8 km** view of a world that is 294 tiles at 250 m. Chosen before anything knew how big Lincoln was.
+
+Implemented, because it was genuinely trivial and isolated as the brief allowed: `MapClient.WorldExtent` from the manifest tiles, passed through `WorldStreamer` narrowly (the map needs one fact, not the network layer), clamped in `TrapMinimap`. The old 2400 survives only as the pre-manifest fallback.
+
+**Panning is not clamped, because the map cannot be panned** — it is centred on the player. Recorded that U13 must clamp against the same extent the moment it adds panning, or the same bug returns on the other axis.
+
+### Recorded, not implemented
+
+`docs/04-plan/work-packages/U13-MAP-AND-NAVIGATION-REQUIREMENTS.md`. The routing requirement in full, plus the dependency nobody has costed: **a routable graph does not exist.** The pipeline builds meshes from OSM ways; it does not extract a connected network with junction topology. That extraction is the substantial part of U13 and is **larger than the drawing work it enables** — U13 should be sized against the graph, not the line on the map.
+
+In-world guidance candidates recorded but **not chosen**: D-W17 applies.
+
+### Physical locations — stated plainly
+
+**TRP Central Bank, the Trap Made It flagship, the barber and the starter home do not exist.** No buildings, no interiors, no in-world services. U15a does not satisfy any of those packages and must not be read as progress on them. The Phone *showing* a balance is the doctrine working; it is not the bank existing. **D-W20** — which building is the starter home — remains the owner's, and I must not invent one.
+
+The Bank panel is legacy and is intended to retire when TRP Central Bank exists physically. **Not removed** — no package authorised it, and removing the only route to a balance before its replacement exists is a regression dressed as tidying up.
+
+### Not verified
+
+Unity has not been run here. The coordination is proven at the register level and by compilation; the on-screen behaviour is owner-verified. **The zoom clamp has not been seen** — the arithmetic is checked, the framing is not.
+
+### Next recommended action
+
+Unchanged: **WP-U07**, the interaction framework.

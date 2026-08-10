@@ -61,9 +61,21 @@ GameFreeze.Request("phone");     // the street should not carry on while you rea
 
 Escape is wanted by the Phone, the panels and the map, and must reach **exactly one**. The HUD's `Update` gives the Phone first refusal and it reports whether it consumed the key. On the Phone, Escape goes **back**, then closes.
 
-### One surface at a time
+### One surface at a time — `ModalSurface`
 
-The registers would tolerate a panel open behind the Phone, but the player would be reading a panel through a phone. So opening the Phone closes the panels, and opening a panel closes the Phone.
+The first attempt wired this by hand: the Phone closed panels, panels closed the Phone. Owner verification found the hole immediately — **the map still stacked**, because the map lives in `TRP23.World` and the hand-wiring lived in `TRP23.UI`, which cannot see it. Pairwise checks were never going to reach it.
+
+`Core/ModalSurface.cs` is the neutral mechanism. Same shape as the other two registers — named holders, static, release-safe — and the **opposite rule**:
+
+| Register | Question | Rule |
+|---|---|---|
+| `PointerFocus` | does anyone want the cursor? | **additive** |
+| `GameFreeze` | does anyone want the world held? | **additive** |
+| `ModalSurface` | who has the screen? | **exclusive** |
+
+A surface knows its own name and how to close itself, and nothing else. Adding a seventh is one `Register` call and no edits anywhere. Nested views — the Phone's home and apps, which panel the HUD is showing — never touch it: the surface claims once when it opens.
+
+`Claim` clears `current` **before** closing the outgoing surface, so the `Yield` that surface fires on its way out is a harmless no-op instead of clearing the claim being made. That re-entrancy is the one subtle thing in the file, and it has its own check.
 
 ---
 

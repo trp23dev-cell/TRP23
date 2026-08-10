@@ -67,6 +67,13 @@ namespace TrapMadeIt.World
 
         /// Footprints for the tiles currently in, so walking hits walls.
         public WorldCollision Collision { get; } = new WorldCollision();
+
+        /// <summary>
+        /// How big Lincoln actually is, in metres. Zero-size until the manifest
+        /// lands. Exposed narrowly rather than handing out the MapClient: the
+        /// map needs one fact, not the network layer.
+        /// </summary>
+        public Bounds WorldExtent => client != null ? client.WorldExtent : new Bounds();
         readonly HashSet<Vector2Int> inFlight = new HashSet<Vector2Int>();
         Vector2Int? lastTile;
         bool ready;

@@ -253,11 +253,13 @@ namespace TrapMadeIt.World
             {
                 PointerFocus.Request("map");   // you need a cursor to set a waypoint
                 GameFreeze.Request("map");     // and the city should not move while you read
+                ModalSurface.Claim("map");     // and nothing else may share the screen
             }
             else
             {
                 PointerFocus.Release("map");
                 GameFreeze.Release("map");
+                ModalSurface.Yield("map");
             }
             Apply();
             ApplyPause();
@@ -278,6 +280,11 @@ namespace TrapMadeIt.World
             // unsubscribe in OnDisable: a static event that outlives its scene
             // is a leak and a call into a destroyed object.
             GameSignals.OpenMapRequested += OnOpenMapRequested;
+
+            // The map is a primary surface like any other. It could not join the
+            // old arrangement at all -- that lived in TRP23.UI, which cannot see
+            // this assembly -- so the map was the one thing left stacking.
+            ModalSurface.Register("map", () => { if (BigMap) SetBigMap(false); });
         }
 
         void OnOpenMapRequested()
@@ -288,6 +295,7 @@ namespace TrapMadeIt.World
         void OnDisable()
         {
             GameSignals.OpenMapRequested -= OnOpenMapRequested;
+            ModalSurface.Unregister("map");
 
             // Never leave the game paused or the cursor captured because a
             // scene changed with the map open -- there would be nothing left to
@@ -375,12 +383,37 @@ namespace TrapMadeIt.World
                 // being read, not glanced at, and 900m is a starting point
                 // rather than the only useful scale. Bounded so it cannot be
                 // scrolled into either a single roof or the whole county.
-                bigMapMetres = Mathf.Clamp(bigMapMetres * (by > 0 ? 1.2f : 1f / 1.2f), 120f, 2400f);
+                bigMapMetres = Mathf.Clamp(bigMapMetres * (by > 0 ? 1.2f : 1f / 1.2f), 120f, MaxBigMapMetres());
             }
             Apply();
         }
 
         /// The corner dial's fixed zoom steps, on the bracket keys.
+        /// <summary>
+        /// How far out the big map is allowed to go.
+        ///
+        /// The cap used to be a hardcoded 2400 m of orthographic size -- a 4.8 km
+        /// view of a world that is not 4.8 km across -- so zooming out kept
+        /// working long after there was anything left to see, and the city
+        /// shrank into a corner of a mostly empty screen.
+        ///
+        /// The real answer is the extent of the tiles the server actually has.
+        /// Half the larger side frames the whole city and no more; a little
+        /// margin keeps the edge off the very edge of the screen. The hardcoded
+        /// value survives only as the fallback for the moment before the
+        /// manifest lands, when nothing knows how big the world is yet.
+        ///
+        /// Panning is a separate question and is NOT clamped here -- the big map
+        /// is centred on the player and cannot be panned yet. When U13 adds
+        /// panning it must clamp against this same extent.
+        /// </summary>
+        float MaxBigMapMetres()
+        {
+            var e = world != null ? world.WorldExtent : new Bounds();
+            if (e.size.x <= 0f || e.size.z <= 0f) return 2400f;
+            return Mathf.Max(e.size.x, e.size.z) * 0.5f * 1.08f;
+        }
+
         void StepDial(int by)
         {
             if (BigMap) return;

@@ -39,7 +39,7 @@
 | **U08** premises + interior | ⬜ | ⚠️ **retarget.** Was "Kimani's interior"; D-W04 removes the character and the session needs the **flagship** first |
 | **U09** server-driven content | ⬜ | ⚠️ **grows** into the Collection/Drop/Product model (D-W02) |
 | **U10–U12** slice dressing, pedestrians, budgets | ⬜ | ✅ correct, still late |
-| **U13** navigational map | ⬜ backlog | ⚠️ **partially promoted.** The session needs markers and named locations, not routing |
+| **U13** navigational map | ⬜ backlog | ⚠️ **partially promoted.** The session needs markers and named locations, not routing. **Requirements recorded** from owner verification: [U13-MAP-AND-NAVIGATION-REQUIREMENTS](work-packages/U13-MAP-AND-NAVIGATION-REQUIREMENTS.md) — routable graph is the real cost, and it is bigger than the drawing |
 | **026** offline map | ⬜ | ✅ correct, independent |
 
 **Nothing in the existing roadmap is wrong. Three packages grow, one retargets, one splits.**
@@ -163,7 +163,7 @@ Ordered, with size. Prefer S/M throughout; nothing XL survives unsplit.
 | 2 | **U17a** | Player character model + basic animation | **M** | U03 | ✅ **first visible** |
 | 3 | **U16a** | NPC foundation — spawn, stand, look, be talked to | **M** | U03 | ✅ |
 | 4 | **U07** | Interaction framework — one way to use anything | **M** | U03 | ✅ |
-| 5 | **U15a** | Phone shell + map/messages | **M** | U03 | ✅ **BUILT** — S15 |
+| 5 | **U15a** | Phone shell + map/messages | **M** | U03 | ✅ **BUILT + owner-verified** — S15/S16 |
 | 6 | **U05** | Typed API client · geo constants · world clock | **M** | U03 | ❌ |
 | 7 | **U08a** | Premises model + door/interior transitions | **M** | U07 | ✅ |
 | 8 | **U21a** | Flagship interior shell | **M** | U08a, U16a | ✅ |

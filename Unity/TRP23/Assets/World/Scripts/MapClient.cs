@@ -25,6 +25,39 @@ namespace TrapMadeIt.World
         /// manifest failed to parse, and permitting everything in that case is
         /// what let a broken parser look like a working world.
         public bool Has(Vector2Int t) => available.Contains(t);
+
+        /// <summary>
+        /// The world's actual footprint in metres, from the tiles the server
+        /// says it has. Zero-size until the manifest lands.
+        ///
+        /// Lincoln is not infinite -- it is 294 tiles -- and anything that lets
+        /// the player look past the edge is showing them nothing and calling it
+        /// a map. The extent has to come from here because this is the only
+        /// thing that knows which tiles exist.
+        /// </summary>
+        public Bounds WorldExtent { get; private set; }
+
+        void RecomputeExtent()
+        {
+            if (available.Count == 0) { WorldExtent = new Bounds(); return; }
+
+            int minX = int.MaxValue, minZ = int.MaxValue, maxX = int.MinValue, maxZ = int.MinValue;
+            foreach (var t in available)
+            {
+                if (t.x < minX) minX = t.x;
+                if (t.y < minZ) minZ = t.y;
+                if (t.x > maxX) maxX = t.x;
+                if (t.y > maxZ) maxZ = t.y;
+            }
+
+            // Tile (x,z) covers [x*TileSize, (x+1)*TileSize), so the far edge is
+            // max+1. Getting that wrong loses a tile off two sides.
+            float x0 = minX * TrapGeo.TileSize, x1 = (maxX + 1) * TrapGeo.TileSize;
+            float z0 = minZ * TrapGeo.TileSize, z1 = (maxZ + 1) * TrapGeo.TileSize;
+            WorldExtent = new Bounds(
+                new Vector3((x0 + x1) * 0.5f, 0f, (z0 + z1) * 0.5f),
+                new Vector3(x1 - x0, 0f, z1 - z0));
+        }
         public bool TryCached(Vector2Int t, out TilePayload p) => cache.TryGetValue(t, out p);
 
         [Tooltip("How many times to retry the manifest before giving up.")]
@@ -62,6 +95,7 @@ namespace TrapMadeIt.World
                         Manifest.tiles = ParseTileIndex(json);
                         available.Clear();
                         foreach (var t in Manifest.tiles) available.Add(t);
+                        RecomputeExtent();
 
                         if (available.Count == 0)
                         {

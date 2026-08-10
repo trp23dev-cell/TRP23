@@ -57,6 +57,14 @@ namespace UnityEngine {
     public static Vector2 operator *(Vector2 a, float f) => new Vector2(a.x*f, a.y*f);
     public static Vector2 operator -(Vector2 a, Vector2 b) => new Vector2(a.x-b.x, a.y-b.y);
   }
+  /// Enough Bounds for the map's zoom clamp: a centre, a size, and the
+  /// default-constructed zero-size case the clamp treats as "world unknown".
+  public struct Bounds {
+    public Vector3 center; public Vector3 size;
+    public Bounds(Vector3 c, Vector3 s) { center = c; size = s; }
+    public Vector3 extents => new Vector3(size.x * 0.5f, size.y * 0.5f, size.z * 0.5f);
+  }
+
   public struct Vector3 {
     public static Vector3 zero => default;
     public static Vector3 up => default;

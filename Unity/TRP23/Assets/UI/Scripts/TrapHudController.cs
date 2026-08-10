@@ -63,11 +63,16 @@ namespace TrapMadeIt.UI
             });
             // Never two full-screen surfaces at once. The registers would cope,
             // but the player would be looking at a panel through a phone.
-            _phone.Opened += CloseAllPanels;
             // Opening the Phone is the moment its balance stops being stale, so
             // that is when to ask. Cheap, and it means the Wallet app is right
             // without polling anything.
             _phone.Opened += () => Reload(null);
+
+            // The panel layer is ONE primary surface. Which panel is showing is
+            // this class's business; that a panel is showing at all is the
+            // coordinator's. It used to close the Phone by hand here and knew
+            // nothing about the map — which is why the map stacked.
+            TrapMadeIt.ModalSurface.Register("hud", CloseAllPanels);
 
             _root.Q<Button>("open-store").clicked += () => ShowPanel("panel-store", true);
             // Open first, then reload: the panel should appear at once and fill
@@ -261,6 +266,12 @@ namespace TrapMadeIt.UI
             // un-pause a panel that is still open.
             if (_openPanels.Count > 0) TrapMadeIt.GameFreeze.Request("hud");
             else TrapMadeIt.GameFreeze.Release("hud");
+
+            // And take the screen, which is a different question from wanting
+            // the cursor or the freeze — those are additive by design, this one
+            // is exclusive. Claiming shuts the map or the Phone if either had it.
+            if (_openPanels.Count > 0) TrapMadeIt.ModalSurface.Claim("hud");
+            else TrapMadeIt.ModalSurface.Yield("hud");
         }
 
         /// <summary>
@@ -297,7 +308,11 @@ namespace TrapMadeIt.UI
         private void TogglePanel(string name)
         {
             bool open = _openPanels.Contains(name);
-            if (!open) { CloseAllPanels(); _phone?.Close(); }   // never two surfaces stacked
+            // Only ever one panel of our own. Closing the Phone or the map is
+            // not this method's job any more — ShowPanel claims the screen and
+            // the coordinator does it, for every surface rather than the two
+            // this class happened to know about.
+            if (!open) CloseAllPanels();
             ShowPanel(name, !open);
             if (!open && name == "panel-casefile") _caseFile.Show(_level, LastLevel);
         }
@@ -318,6 +333,7 @@ namespace TrapMadeIt.UI
             TrapMadeIt.PointerFocus.Release("hud");
             TrapMadeIt.GameFreeze.Release("hud");
             _phone?.Teardown();   // its holders are separate, so it releases its own
+            TrapMadeIt.ModalSurface.Unregister("hud");
         }
 
         private void Msg(string name, string text, string kind)

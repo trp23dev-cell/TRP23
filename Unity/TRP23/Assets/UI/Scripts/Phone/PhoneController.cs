@@ -72,8 +72,8 @@ namespace TrapMadeIt.UI.Phone
 
             // The six. Order is the home-screen order, and it is deliberate:
             // the three that do something today come first.
-            apps.Add(new MapApp(() => { Close(); TrapMadeIt.GameSignals.RequestOpenMap(); }));
-            apps.Add(new MissionsApp(() => { Close(); openCaseFile?.Invoke(); }));
+            apps.Add(new MapApp(TrapMadeIt.GameSignals.RequestOpenMap));
+            apps.Add(new MissionsApp(() => openCaseFile?.Invoke()));
             apps.Add(wallet);
             apps.Add(new PendingApp("messages", "MESSAGES", "✉",
                 "No messages", "the Messages package"));
@@ -83,6 +83,10 @@ namespace TrapMadeIt.UI.Phone
                 "No contacts yet", "the Contacts package"));
 
             BuildHome();
+
+            // One primary surface among three. Its own home/app navigation is
+            // nested inside this claim and never touches the coordinator.
+            TrapMadeIt.ModalSurface.Register(Holder, Close);
 
             if (back != null) back.clicked += GoBack;
             var shut = layer.Q<Button>("phone-close");
@@ -155,6 +159,7 @@ namespace TrapMadeIt.UI.Phone
             // uses; no third mechanism.
             TrapMadeIt.PointerFocus.Request(Holder);
             TrapMadeIt.GameFreeze.Request(Holder);
+            TrapMadeIt.ModalSurface.Claim(Holder);   // shuts the map or a panel if either had the screen
 
             open = null;                    // always opens on the home screen
             stage?.Clear();
@@ -170,6 +175,7 @@ namespace TrapMadeIt.UI.Phone
             stage?.Clear();
             TrapMadeIt.PointerFocus.Release(Holder);
             TrapMadeIt.GameFreeze.Release(Holder);
+            TrapMadeIt.ModalSurface.Yield(Holder);
             Apply();
         }
 
@@ -185,6 +191,7 @@ namespace TrapMadeIt.UI.Phone
             open = null;
             TrapMadeIt.PointerFocus.Release(Holder);
             TrapMadeIt.GameFreeze.Release(Holder);
+            TrapMadeIt.ModalSurface.Unregister(Holder);
             Apply();
         }
 

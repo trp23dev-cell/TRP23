@@ -234,6 +234,57 @@ namespace TrapCollisionCheck
                 TrapMadeIt.PointerFocus.Wanted);
             TrapMadeIt.PointerFocus.ReleaseAll();
 
+            // ONE SURFACE ON SCREEN (WP-U15a repair)
+            //
+            // Every check above passed while the map and the case file were both
+            // visible at once, which is the point: PointerFocus and GameFreeze
+            // are additive by design and cannot express exclusivity. Nothing
+            // tested it because nothing owned it.
+            TrapMadeIt.ModalSurface.ReleaseAll();
+            bool mapOpen = false, hudOpen = false, phoneOpen = false;
+            TrapMadeIt.ModalSurface.Register("map", () => mapOpen = false);
+            TrapMadeIt.ModalSurface.Register("hud", () => hudOpen = false);
+            TrapMadeIt.ModalSurface.Register("phone", () => phoneOpen = false);
+
+            mapOpen = true; TrapMadeIt.ModalSurface.Claim("map");
+            hudOpen = true; TrapMadeIt.ModalSurface.Claim("hud");
+            Assert("opening the case file over the map closes the map",
+                hudOpen && !mapOpen, "this is the reported bug, in one line");
+
+            phoneOpen = true; TrapMadeIt.ModalSurface.Claim("phone");
+            Assert("opening the Phone over a panel closes the panel",
+                phoneOpen && !hudOpen);
+
+            mapOpen = true; TrapMadeIt.ModalSurface.Claim("map");
+            Assert("opening the map over the Phone closes the Phone",
+                mapOpen && !phoneOpen);
+
+            // The re-entrant case, which is the one that would actually break.
+            // A real surface yields as it closes, and that Yield lands in the
+            // middle of the Claim that is closing it -- so a naive
+            // implementation clears the incoming holder and the screen ends up
+            // owned by nobody.
+            TrapMadeIt.ModalSurface.ReleaseAll();
+            TrapMadeIt.ModalSurface.Register("map", () => TrapMadeIt.ModalSurface.Yield("map"));
+            TrapMadeIt.ModalSurface.Register("hud", () => TrapMadeIt.ModalSurface.Yield("hud"));
+            TrapMadeIt.ModalSurface.Claim("map");
+            TrapMadeIt.ModalSurface.Claim("hud");
+            Assert("a surface yielding as it closes does not steal the new claim",
+                TrapMadeIt.ModalSurface.Current == "hud",
+                $"the screen is owned by {TrapMadeIt.ModalSurface.Current ?? "nobody"}");
+
+            // Nested views inside a surface must not touch this at all: the
+            // Phone claims once and its apps navigate underneath.
+            TrapMadeIt.ModalSurface.Claim("hud");
+            Assert("re-claiming the surface you already hold is not an event",
+                TrapMadeIt.ModalSurface.Current == "hud");
+
+            TrapMadeIt.ModalSurface.Yield("hud");
+            Assert("closing the last surface leaves the screen to the world",
+                !TrapMadeIt.ModalSurface.AnyOpen);
+
+            TrapMadeIt.ModalSurface.ReleaseAll();
+
             return bad;
         }
 
