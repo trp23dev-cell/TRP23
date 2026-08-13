@@ -666,3 +666,41 @@ Unity has not been run here. The coordination is proven at the register level an
 ### Next recommended action
 
 Unchanged: **WP-U07**, the interaction framework.
+
+---
+
+## Session 17 — 10 August 2026 · Lincoln visual fidelity audit (read-only)
+
+**Nothing implemented.** Two documents produced: `docs/01-audit/LINCOLN-VISUAL-FIDELITY-AUDIT.md` and `docs/04-plan/VISUAL-ROADMAP.md`.
+
+### The finding
+
+The world is far better instrumented than it looks. The tiler already classifies every building by material, period, listing, ground-floor use and roof shape; already extracts roads with surfaces, paved areas, walls, trees and furniture; already pins story locations to real OSM ids. Unity already generates façade textures with window rows, brick courses and shopfronts.
+
+**None of it is visible because wall albedo is computed twice and the two are multiplied together.** `CityTextures.Base("brick")` returns `(0.216, 0.173, 0.145)`; `BuildingMeshBuilder.WallColour` returns the same constant × the OSM tint; the shader does `texture × _BaseColor × vertexColour`. A typical brick wall lands at **≈ 3.4 % albedo — darker than asphalt.** The façades are being multiplied into the floor of the dynamic range.
+
+The comment in `WallColour` predicts this exactly and is out of date: it says the stand-in colours apply "until the facades are ported". They were ported. The stand-in was never removed.
+
+Second-order: `Tonemapping.mode = 0 (None)` with HDR on, the volume profile is Unity's stock template still carrying `CopyPasteTestComponent2` and `TestAnimationCurveVolumeComponent`, and the scene has `m_Sun: 0`.
+
+### Evidence
+
+Every figure comes from reading the pipeline and querying the shipped 294-tile export, not from memory. The six-tile High Street slice — `(-1,-1) (0,-1) (-1,0) (0,0) (-1,1) (0,1)`, x ∈ [−250, 250], z ∈ [−250, 500] — was **computed**, not chosen by eye: all three existing story anchors fall inside it on nearly the same line, the Bank at world origin.
+
+528 buildings, 252 named, 278 shopfronts, 413 gabled roofs, 535 road segments, **29 step runs**, and **2 street lamps**. That last number decides Part 7: lamps cannot be data-driven in Lincoln and must be procedural.
+
+### Two owner decisions surfaced, not taken
+
+**The Trap Made It flagship has no anchor.** JD, the Bank, the Barber and the Prison are pinned; the flagship is not. I did not invent one — same rule as D-W20.
+
+**`way/705942979` on the High Street is tagged "Toby's Barber Shop"**, while Kimani's anchor is on Corporation Street. High Street footfall against the real address is a product trade-off and not mine to make.
+
+### Not verified
+
+**Unity was not run.** No rendered image was inspected. The visual claims are derived from the shader, the texture generator and the vertex data — the arithmetic is checked, the picture is not. Nothing was downloaded, viewed or imported.
+
+### Next recommended action
+
+**WORLD-V01** — material and lighting baseline. XS–S, reversible, no pipeline or geometry change, and the prerequisite for judging every later visual package. Not authorised.
+
+Gameplay-wise **U07** is still the thing that unblocks shops, the barber, Drops and NPCs. Which of the two goes first is the owner's call.
