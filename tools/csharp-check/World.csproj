@@ -7,7 +7,11 @@
     <Nullable>disable</Nullable>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <NoWarn>CS0649;CS0169</NoWarn>
-    <DefineConstants>ENABLE_INPUT_SYSTEM</DefineConstants>
+    <!-- DEVELOPMENT_BUILD so dev-only code is still compile-checked. Without
+         it, DevPositionReadout compiles to nothing here and could break the
+         editor unnoticed, which is exactly how TrapPostProcess reached Safe
+         Mode. Nothing else under Assets branches on this symbol. -->
+    <DefineConstants>ENABLE_INPUT_SYSTEM;DEVELOPMENT_BUILD</DefineConstants>
     <AssemblyName>TRP23.World</AssemblyName>
     <BaseIntermediateOutputPath>obj/World/</BaseIntermediateOutputPath>
     <OutputPath>bin/World/</OutputPath>

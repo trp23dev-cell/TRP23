@@ -5,6 +5,7 @@ using System;
 using System.Collections;
 namespace UnityEngine {
   public class Object {
+    public HideFlags hideFlags { get; set; }
     public static T FindFirstObjectByType<T>() where T : Object => null;}
   public class MonoBehaviour : Component { public Transform transform => null; public bool enabled { get; set; } public static T FindAnyObjectByType<T>() where T : Component, new() => new T(); public static T[] FindObjectsByType<T>(FindObjectsSortMode m) where T : Component => new T[0]; public Coroutine StartCoroutine(IEnumerator r) => null; public void Invoke(string m, float t) {} public void CancelInvoke() {} public void CancelInvoke(string m) {} public static void DontDestroyOnLoad(Object o) {} public static void Destroy(Object o) {} }
   public class Coroutine {}
@@ -273,6 +274,7 @@ namespace UnityEngine {
       new Color32((byte)(c.r*255), (byte)(c.g*255), (byte)(c.b*255), (byte)(c.a*255));
   }
   public class Texture2D : Texture {
+    public static Texture2D whiteTexture => null;
     public Texture2D(int w, int h, TextureFormat f, bool mips) {}
     public Texture2D(int w, int h, TextureFormat f, bool mips, bool linear) {}
     public void SetPixels32(Color32[] px) {}
@@ -321,7 +323,7 @@ namespace UnityEngine {
     public static void DrawRay(Vector3 from, Vector3 direction) {}
     public static void DrawLine(Vector3 a, Vector3 b) {}
   }
-  public struct Rect {
+  public struct Rect { public Rect(float x, float y, float w, float h) { width = w; height = h; }
     public float width, height;
     public bool Contains(Vector2 p) => false;
   }
@@ -378,6 +380,36 @@ namespace UnityEngine.Rendering {
 namespace UnityEngine.Rendering.Universal {
   public enum TonemappingMode { None, Neutral, ACES }
   public class Tonemapping : VolumeComponent { public VolumeParameter<TonemappingMode> mode = new VolumeParameter<TonemappingMode>(); }
+}
+
+// Enough IMGUI for the dev overlay. Legacy OnGUI is the right tool for a
+// debug readout -- no document, no UXML, nothing that can disturb the
+// production HUD -- and it still has to compile.
+namespace UnityEngine {
+  public enum HideFlags { None = 0, DontSave = 52 }
+  public enum RuntimeInitializeLoadType { AfterSceneLoad, BeforeSceneLoad, BeforeSplashScreen, SubsystemRegistration }
+  [System.AttributeUsage(System.AttributeTargets.Method)]
+  public class RuntimeInitializeOnLoadMethodAttribute : System.Attribute {
+    public RuntimeInitializeOnLoadMethodAttribute() { }
+    public RuntimeInitializeOnLoadMethodAttribute(RuntimeInitializeLoadType t) { }
+  }
+  public class RectOffset { public RectOffset(int l, int r, int t, int b) { } }
+  public class GUIContent { public string text; }
+  public class GUIStyleState { public Color textColor; }
+  public class GUIStyle {
+    public GUIStyle() { }
+    public GUIStyle(GUIStyle other) { }
+    public int fontSize; public TextAnchor alignment; public RectOffset padding;
+    public GUIStyleState normal = new GUIStyleState();
+    public Vector2 CalcSize(GUIContent c) => new Vector2();
+  }
+  public class GUISkin { public GUIStyle label = new GUIStyle(); }
+  public static class GUI {
+    public static GUISkin skin { get; } = new GUISkin();
+    public static Color color { get; set; }
+    public static void Label(Rect r, GUIContent c, GUIStyle s) { }
+    public static void DrawTexture(Rect r, Texture t) { }
+  }
 }
 
 namespace UnityEngine.UI {
@@ -446,6 +478,7 @@ namespace UnityEngine.InputSystem {
     public ButtonControl leftBracketKey => null;
     public ButtonControl rightBracketKey => null;
     public ButtonControl escapeKey => null;
+    public ButtonControl f3Key => null;
     public ButtonControl tabKey => null;
     public ButtonControl enterKey => null;
     // The rest of the alphabet, so adding a shortcut does not also mean

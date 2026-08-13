@@ -850,3 +850,29 @@ Geometry unchanged: **0/288,726 triangles wound wrong, 0/5,969 approaches breach
 ### Next
 
 Nothing until the screenshots. **V03 is roofs** — eaves, gable ends, chimneys — renumbered because the owner reordered on the V01 evidence.
+
+---
+
+## Session 21 — 10 August 2026 · Dev position readout
+
+A small tool, at the owner's request, so coordinates can be read back during V02 visual acceptance.
+
+**F3** toggles it. Bottom-left, one line: `POS  X 0.0  |  Y 10.4  |  Z 80.0    [F3]`. On by default.
+
+**The whole file is inside `#if UNITY_EDITOR || DEVELOPMENT_BUILD`** — not the draw call, the file. A production build contains no readout, no key handler and no class, so there is nothing to strip later and nothing to forget.
+
+**It installs itself** via `RuntimeInitializeOnLoadMethod` rather than sitting in the scene. A debug overlay living in `TrapGame.unity` is one that shows up in the scene diff of every unrelated commit and eventually gets deleted by accident.
+
+**IMGUI on purpose.** The production HUD is UI Toolkit and this must not touch it; `OnGUI` needs no document, no UXML and no place in the visual tree, so it cannot disturb the Phone, the panels or the map by construction. It allocates a little per frame, which is the right trade for something that does not ship.
+
+It takes **no PointerFocus, no GameFreeze, no ModalSurface** — it is not a surface, never wants the cursor and never closes anything. It reads the player transform directly, so there is no second copy of the position to drift. In the menu there is no player, so there is no readout.
+
+**F3 was verified free** against every key the game reads: A, C, D, E, Escape, `[`, `]`, LeftShift, M, P, Q, R, S, Space, W.
+
+### One thing worth keeping
+
+`DEVELOPMENT_BUILD` is now defined in `tools/csharp-check/World.csproj`. Without it this file compiles to nothing in CI and could have broken the editor unnoticed — **which is exactly how TrapPostProcess reached Safe Mode.** Dev-only code is still code, and it now gets compiled.
+
+### Not verified
+
+Unity has not been run. The overlay has never been seen.
