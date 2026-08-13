@@ -141,7 +141,15 @@ function roofShapeOf(tags, type, footprintArea) {
   const tagged = (tags["roof:shape"] || "").toLowerCase();
   if (tagged) {
     if (/gable|round|saltbox/.test(tagged)) return "gabled";
-    if (/hip|pyramid|mansard|half-hip/.test(tagged)) return "gabled";
+    // WORLD-V03: hips are now their own shape rather than being folded into
+    // gabled. They were indistinguishable in the tiles, so the client had to
+    // infer them from footprint aspect -- which is real measured evidence, but
+    // an explicit roof:shape from someone who stood in the street and looked
+    // at it beats it every time. This makes that tag survive the trip.
+    if (/hip|pyramid|half-hip/.test(tagged)) return "hipped";
+    // Mansard stays gabled: its silhouette from a street is a steep pitch with
+    // a ridge, which is what the gable path draws.
+    if (/mansard/.test(tagged)) return "gabled";
     if (/flat|skillion|shed/.test(tagged)) return "flat";
     if (/dome|onion|spherical/.test(tagged)) return "flat";
   }

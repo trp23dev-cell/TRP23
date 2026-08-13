@@ -217,8 +217,15 @@ namespace TrapMadeIt.World
 
         /// The door bay of a shop. Houses already have a door in their ground
         /// texture, so they keep it and cost nothing extra.
+        ///
+        /// ONE key, not one per wall style. It was per style, which quietly
+        /// bought five materials to vary a strip of surround that sits inside a
+        /// 16cm recess and is in shadow whenever it is visible at all. The
+        /// budget check caught it: five draw calls for something nobody can
+        /// see is exactly the trade this package is supposed to refuse.
+        public const string EntranceKey2 = "ground:entrance:render";
         public static string EntranceKey(BuildingData b) =>
-            b.g == "shopfront" ? "ground:entrance:" + (b.st ?? "brick") : GroundKey(b);
+            b.g == "shopfront" ? EntranceKey2 : GroundKey(b);
 
         public static void Extrude(BuildingData b, Buffers walls, Buffers roofs,
                                    Buffers ground = null, Buffers trim = null,
@@ -368,9 +375,25 @@ namespace TrapMadeIt.World
                     // Pilaster on the joint between this bay and the next. Not
                     // after the last one -- that is the building corner, which
                     // already reads as a break.
-                    if (trim != null && frontage && q < bays.Count - 1)
+                    //
+                    // SHOPFRONTS ONLY, AND GROUND FLOOR ONLY. Both were wider
+                    // before, and the measured budget is why they are not:
+                    // pilasters were 23,376 triangles, a quarter of everything
+                    // in the slice.
+                    //
+                    // Narrowing them is also the more correct answer, which is
+                    // the useful part. A pilaster framing a bay is a COMMERCIAL
+                    // device -- it is what holds up a Victorian shopfront and
+                    // it stops at the fascia. A brick terrace of houses is
+                    // divided by its party walls and its chimneys, not by
+                    // pilasters, and running them full height turns every
+                    // corner shop into a bank. What separates the upper storeys
+                    // of a terrace is the per-bay tint, which costs nothing and
+                    // is how a real terrace reads: continuous brick above,
+                    // articulated shopfronts below.
+                    if (trim != null && frontage && b.g == "shopfront" && q < bays.Count - 1)
                         Pilaster(trim, ax + ux * bay.End, az + uz * bay.End,
-                                 ux, uz, nx, nz, street, top, tint);
+                                 ux, uz, nx, nz, street, groundTop, tint);
                 }
             }
 
@@ -384,11 +407,13 @@ namespace TrapMadeIt.World
 
             if (b.rs != "flat" && obb.valid && fill > 0.78f && Mathf.Min(obb.w, obb.d) > 3.5f)
             {
-                PitchedRoof(roofs, obb, top, tint);
+                PitchedRoof(roofs, obb, top, tint, facades ? walls : null,
+                            facades ? trim : null, b, facades);
             }
             else
             {
                 FlatRoof(roofs, ring, order, top, tint);
+                if (facades && trim != null) Parapet(trim, ring, order, top, tint);
             }
         }
 
@@ -488,13 +513,65 @@ namespace TrapMadeIt.World
         }
 
         /// A gabled roof: ridge along the long axis, two slopes, two gable ends.
-        static void PitchedRoof(Buffers b, Obb o, float top, Color tint)
+        // --------------------------------------------------- WORLD-V03 roofs
+        //
+        // WHAT MAKES A ROOF READ, AND WHAT DOES NOT
+        //
+        // Before this, a pitched roof was two slope quads and two gable
+        // triangles: six triangles, zero thickness, no overhang, welded flush
+        // to the wall it sat on. That is a prism on a box, and no texture fixes
+        // it, because what says "roof" from a street is the EDGE -- the shadow
+        // line under an overhang, the depth of the fascia against the sky, and
+        // a chimney breaking the ridge.
+        //
+        // So the triangles here are spent on edges and silhouette, and
+        // deliberately not on:
+        //
+        //   RIDGE CAPS -- 2 triangles a building for a line that is invisible
+        //   past about twenty metres and already implied by the two slopes
+        //   meeting.
+        //
+        //   CHIMNEY POTS -- 8+ triangles each, on an object that is a silhouette
+        //   blob at any distance you actually see a roofline from.
+        //
+        //   INNER PARAPET FACES -- you cannot see into a flat roof from a
+        //   pavement. From Steep Hill looking down you could, which is the one
+        //   place this is wrong, and it is worth 115 x 14 triangles not to be.
+        //
+        // Both of those omissions are choices, not oversights.
+
+        /// <summary>Roof edge thickness -- rafter, felt and tile, as one board.</summary>
+        const float RoofThickness = 0.20f;
+
+        /// <summary>
+        /// How far the eaves stand out from the wall.
+        ///
+        /// EAVES ONLY, NEVER THE GABLE ENDS. In a terrace the gable is a party
+        /// wall shared with next door, and a verge overhang there would push
+        /// straight through the neighbour's roof -- which is both wrong
+        /// architecturally and a z-fighting seam down every terrace in Lincoln.
+        /// English terraces have flush verges for exactly the same reason.
+        /// </summary>
+        const float EavesOverhang = 0.34f;
+
+        const float ParapetHeight = 0.55f;
+        const float ParapetThickness = 0.22f;
+
+        /// <summary>
+        /// A pitched roof with edges: overhang, fascia, soffit, real gable
+        /// walls, and chimneys where a terrace would have them.
+        ///
+        /// <paramref name="walls"/> receives the gable ends. They used to go
+        /// into the roof buffer, which meant every gable in the city was
+        /// rendered in SLATE -- a masonry wall wearing a roof texture. Moving
+        /// them is one line and changes how every pitched building reads.
+        /// </summary>
+        static void PitchedRoof(Buffers b, Obb o, float top, Color tint,
+                                Buffers walls, Buffers trim, BuildingData bd, bool detail)
         {
             bool alongLong = o.w >= o.d;
             float halfLong = (alongLong ? o.w : o.d) * 0.5f;
             float halfShort = (alongLong ? o.d : o.w) * 0.5f;
-            // ~38 degrees, the usual British pitch, capped so a wide building
-            // does not grow a spire.
             float rise = Mathf.Min(halfShort * 0.78f, 5.2f);
             float ridgeY = top + rise;
 
@@ -505,20 +582,220 @@ namespace TrapMadeIt.World
             Vector3 P(float l, float sOff, float y)
                 => new Vector3(o.cx + lx * l + sx * sOff, y, o.cz + lz * l + sz * sOff);
 
-            var eaveA0 = P(-halfLong, -halfShort, top);
-            var eaveA1 = P(halfLong, -halfShort, top);
-            var eaveB0 = P(-halfLong, halfShort, top);
-            var eaveB1 = P(halfLong, halfShort, top);
-            var ridge0 = P(-halfLong, 0f, ridgeY);
-            var ridge1 = P(halfLong, 0f, ridgeY);
+            if (!detail)
+            {
+                // The cheap path, unchanged, for background tiles.
+                var a0 = P(-halfLong, -halfShort, top);
+                var a1 = P(halfLong, -halfShort, top);
+                var b0 = P(-halfLong, halfShort, top);
+                var b1 = P(halfLong, halfShort, top);
+                var r0 = P(-halfLong, 0f, ridgeY);
+                var r1 = P(halfLong, 0f, ridgeY);
+                float sl = Mathf.Sqrt(halfShort * halfShort + rise * rise);
+                AddQuad(b, a0, a1, r1, r0, halfLong * 2f, sl, tint);
+                AddQuad(b, r0, r1, b1, b0, halfLong * 2f, sl, tint);
+                AddTri(b, a0, r0, b0, tint);
+                AddTri(b, b1, r1, a1, tint);
+                return;
+            }
 
-            float slope = Mathf.Sqrt(halfShort * halfShort + rise * rise);
-            AddQuad(b, eaveA0, eaveA1, ridge1, ridge0, halfLong * 2f, slope, tint);
-            AddQuad(b, ridge0, ridge1, eaveB1, eaveB0, halfLong * 2f, slope, tint);
-            // Gable ends, or you see daylight through the roof from the side.
-            AddTri(b, eaveA0, ridge0, eaveB0, tint);
-            AddTri(b, eaveB1, ridge1, eaveA1, tint);
+            // HIPPED OR GABLED.
+            //
+            // The shipped tiles carry `rs` as gabled-or-flat only: classify.mjs
+            // folds hip, pyramid and mansard into "gabled", so an explicit
+            // roof:shape=hipped is not in the data yet. classify.mjs now emits
+            // "hipped" so the next re-tile carries it -- and until then the
+            // FOOTPRINT is the evidence available, which is real measured data
+            // rather than an invention: a near-square plan is hipped or
+            // pyramidal far more often than it is gabled, and a long thin plan
+            // is almost never hipped. An explicit tag outranks this the moment
+            // one arrives.
+            float aspect = Mathf.Max(o.w, o.d) / Mathf.Max(Mathf.Min(o.w, o.d), 0.01f);
+            bool hipped = bd.rs == "hipped" || (bd.rs != "gabled" && aspect < 1.35f);
+
+            // The eaves sit slightly ABOVE the wall top, so the fascia has a
+            // face to be. Welded flush is exactly the look this is fixing.
+            float eaveY = top + RoofThickness;
+            float outer = halfShort + EavesOverhang;
+
+            // Hips pull the ridge in from both ends; a gable runs it the full
+            // length. hipRun is how far in, and it is what makes a hip a hip.
+            float hipRun = hipped ? Mathf.Min(halfShort, halfLong * 0.75f) : 0f;
+            float ridgeHalf = halfLong - hipRun;
+            float longOuter = hipped ? halfLong + EavesOverhang : halfLong;
+
+            var eA0 = P(-longOuter, -outer, eaveY);
+            var eA1 = P(longOuter, -outer, eaveY);
+            var eB0 = P(-longOuter, outer, eaveY);
+            var eB1 = P(longOuter, outer, eaveY);
+            var rg0 = P(-ridgeHalf, 0f, ridgeY);
+            var rg1 = P(ridgeHalf, 0f, ridgeY);
+
+            float slope = Mathf.Sqrt(outer * outer + rise * rise);
+            var roofTint = tint * 1.0f;
+
+            if (hipped)
+            {
+                // Two trapezoid slopes and two triangular hip ends.
+                AddQuad(b, eA0, eA1, rg1, rg0, longOuter * 2f, slope, roofTint);
+                AddQuad(b, rg0, rg1, eB1, eB0, longOuter * 2f, slope, roofTint);
+                AddTri(b, eA0, rg0, eB0, roofTint);
+                AddTri(b, eB1, rg1, eA1, roofTint);
+            }
+            else
+            {
+                AddQuad(b, eA0, eA1, rg1, rg0, longOuter * 2f, slope, roofTint);
+                AddQuad(b, rg0, rg1, eB1, eB0, longOuter * 2f, slope, roofTint);
+            }
+
+            // Fascia and soffit on the two eaves. This is the package's whole
+            // point: the fascia is a vertical board catching sky, the soffit is
+            // a horizontal one in permanent shadow, and the dark line between
+            // them is what a roof edge looks like from a pavement.
+            if (trim != null)
+            {
+                Eave(trim, eA0, eA1, P(-longOuter, -halfShort, top), P(longOuter, -halfShort, top), tint);
+                Eave(trim, eB1, eB0, P(longOuter, halfShort, top), P(-longOuter, halfShort, top), tint);
+
+                if (hipped)
+                {
+                    Eave(trim, eA1, eB1, P(halfLong, -halfShort, top), P(halfLong, halfShort, top), tint);
+                    Eave(trim, eB0, eA0, P(-halfLong, halfShort, top), P(-halfLong, -halfShort, top), tint);
+                }
+            }
+
+            if (!hipped && walls != null)
+            {
+                // Gable ends, in WALL material -- masonry, which is what they
+                // are. Drawn at the wall line rather than the overhang, because
+                // a gable is the wall carried up, not a piece of roof.
+                var gA = P(-halfLong, -halfShort, top);
+                var gB = P(-halfLong, halfShort, top);
+                var gR = P(-halfLong, 0f, ridgeY);
+                AddTri(walls, gA, gR, gB, tint * 0.88f);
+
+                var hA = P(halfLong, -halfShort, top);
+                var hB = P(halfLong, halfShort, top);
+                var hR = P(halfLong, 0f, ridgeY);
+                AddTri(walls, hB, hR, hA, tint * 0.88f);
+            }
+
+            // CHIMNEYS.
+            //
+            // On the party walls -- the gable ends -- which is where a terrace
+            // actually has them, because the flues run up the wall shared with
+            // next door. Skipped on modern and monumental fabric, which does
+            // not have them, and on anything too small to have a fireplace.
+            bool smokes = bd.st != "modern" && bd.st != "monument" && halfShort > 2.2f;
+            if (trim != null && smokes && !hipped)
+            {
+                // Deterministic: the same terrace has the same chimneys every
+                // run, and two neighbours do not accidentally match.
+                float h0 = 0.85f + TrapHash.Unit(bd.i, 4100) * 0.7f;
+                float h1 = 0.85f + TrapHash.Unit(bd.i, 4200) * 0.7f;
+                Chimney(trim, P(-halfLong + 0.55f, 0f, ridgeY), lx, lz, sx, sz, h0, tint);
+                Chimney(trim, P(halfLong - 0.55f, 0f, ridgeY), lx, lz, sx, sz, h1, tint);
+            }
+            else if (trim != null && smokes && hipped)
+            {
+                // A hipped roof has no party wall to sit on, so one stack near
+                // the ridge end, which is where a detached house has it.
+                float h = 0.9f + TrapHash.Unit(bd.i, 4100) * 0.7f;
+                Chimney(trim, P(ridgeHalf * 0.6f, 0f, ridgeY), lx, lz, sx, sz, h, tint);
+            }
         }
+
+        /// <summary>
+        /// The fascia board and the soffit under an overhanging eave.
+        ///
+        /// <paramref name="o0"/>/<paramref name="o1"/> are the outer edge at
+        /// roof level; <paramref name="w0"/>/<paramref name="w1"/> are the wall
+        /// line below. Four triangles for the single strongest silhouette cue
+        /// on the building.
+        /// </summary>
+        static void Eave(Buffers b, Vector3 o0, Vector3 o1, Vector3 w0, Vector3 w1, Color tint)
+        {
+            var below0 = new Vector3(o0.x, o0.y - RoofThickness, o0.z);
+            var below1 = new Vector3(o1.x, o1.y - RoofThickness, o1.z);
+
+            // Fascia: vertical, facing out, catching the sky.
+            AddQuad(b, below0, below1, o1, o0, (o1 - o0).magnitude, RoofThickness, tint);
+            // Soffit: horizontal, facing down, in permanent shadow. The dark
+            // line it makes against the wall is the whole effect.
+            AddQuad(b, w1, w0, below0, below1, (o1 - o0).magnitude, EavesOverhang, tint * 0.55f);
+        }
+
+        /// <summary>
+        /// A stack. Four sides and a cap, ten triangles.
+        ///
+        /// No pots: they would be eight more triangles each on something that
+        /// is a silhouette blob at any distance you see a roofline from, and
+        /// this package is meant to be ruthless about exactly that trade.
+        /// </summary>
+        static void Chimney(Buffers b, Vector3 baseAt, float lx, float lz,
+                            float sx, float sz, float height, Color tint)
+        {
+            const float half = 0.32f;
+            var L = new Vector3(lx, 0f, lz) * half;
+            var S = new Vector3(sx, 0f, sz) * half;
+
+            // Start below the ridge so the stack passes through the roof rather
+            // than balancing on it.
+            var b0 = baseAt - L - S - Vector3.up * 0.8f;
+            var b1 = baseAt + L - S - Vector3.up * 0.8f;
+            var b2 = baseAt + L + S - Vector3.up * 0.8f;
+            var b3 = baseAt - L + S - Vector3.up * 0.8f;
+            var up = Vector3.up * (height + 0.8f);
+
+            var brick = tint * 0.95f;
+            AddQuad(b, b0, b1, b1 + up, b0 + up, half * 2f, height, brick);
+            AddQuad(b, b1, b2, b2 + up, b1 + up, half * 2f, height, brick);
+            AddQuad(b, b2, b3, b3 + up, b2 + up, half * 2f, height, brick);
+            AddQuad(b, b3, b0, b0 + up, b3 + up, half * 2f, height, brick);
+            AddQuad(b, b0 + up, b1 + up, b2 + up, b3 + up, half * 2f, half * 2f, tint * 1.05f);
+        }
+
+        /// <summary>
+        /// A parapet round a flat roof, with its coping.
+        ///
+        /// The commercial equivalent of an eave: on a High Street the flat
+        /// roofs are shops and offices, and what you see of them from the
+        /// pavement is the parapet line against the sky, never the roof itself.
+        ///
+        /// Outer face and coping only -- two quads an edge. The INNER face is
+        /// skipped deliberately: from a pavement you cannot see into a flat
+        /// roof. Looking down from Steep Hill you could, and that is the one
+        /// place this is knowingly wrong.
+        /// </summary>
+        static void Parapet(Buffers b, float[] ring, int[] order, float top, Color tint)
+        {
+            int n = order.Length;
+            for (int k = 0; k < n; k++)
+            {
+                int i = order[k], j = order[(k + 1) % n];
+                float ax = ring[i * 2], az = ring[i * 2 + 1];
+                float bx = ring[j * 2], bz = ring[j * 2 + 1];
+                float ex = bx - ax, ez = bz - az;
+                float len = Mathf.Sqrt(ex * ex + ez * ez);
+                if (len < 0.4f) continue;
+
+                float nx = ez / len, nz = -ex / len;
+                var outward = new Vector3(nx, 0f, nz);
+
+                var a0 = new Vector3(ax, top, az) + outward * ParapetThickness * 0.5f;
+                var b0 = new Vector3(bx, top, bz) + outward * ParapetThickness * 0.5f;
+                var a1 = a0 + Vector3.up * ParapetHeight;
+                var b1 = b0 + Vector3.up * ParapetHeight;
+
+                AddQuad(b, a0, b0, b1, a1, len, ParapetHeight, tint);
+                // Coping: the stone on top, paler, and the bit that actually
+                // reads as an edge against the sky.
+                var inA = a1 - outward * ParapetThickness;
+                var inB = b1 - outward * ParapetThickness;
+                AddQuad(b, inA, inB, b1, a1, len, ParapetThickness, tint * 1.12f);
+            }
+        }
+
 
         static Vector3 FaceNormal(Vector3 p, Vector3 q, Vector3 r)
         {

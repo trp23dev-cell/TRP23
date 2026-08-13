@@ -36,7 +36,10 @@ namespace TrapMadeIt.World
         public float h;     // height above street level
         public string st;   // brick | limestone | render | modern | monument
         public string g;    // shopfront | residential | blank
-        public string rs;   // gabled | flat
+        public string rs;   // gabled | hipped | flat
+                            // "hipped" arrives only from a re-tile: the shipped
+                            // export predates it, so PitchedRoof falls back to
+                            // footprint aspect. See FACADE-SYSTEM / ROOF-SYSTEM.
         public int[] c;     // colour, 0-255
         public string m;    // massing: gateway | cathedral | castle
         public int lm;      // 1 = a landmark, drawn from the manifest instead

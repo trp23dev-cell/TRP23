@@ -876,3 +876,53 @@ It takes **no PointerFocus, no GameFreeze, no ModalSurface** — it is not a sur
 ### Not verified
 
 Unity has not been run. The overlay has never been seen.
+
+---
+
+## Session 22 — 10 August 2026 · WORLD-V03 roofs and silhouette
+
+### What was there
+
+Six triangles: two slopes and two gable triangles. Zero thickness, zero overhang, welded flush to the wall — and the gable triangles went into the **roof** buffer, so **every gable end in Lincoln was rendered in slate**, a masonry wall wearing a roof texture.
+
+What says "roof" from a street is the **edge**. So the triangles went on edges and silhouette: overhang, fascia, soffit, roof thickness, gable ends in wall material, party-wall chimneys, parapets on the flat commercial roofs.
+
+**Eaves only, never the gable ends.** In a terrace the gable is a party wall, and a verge overhang pushes through the neighbour's roof — wrong architecturally and a z-fighting seam down every terrace in the city. English terraces have flush verges for the same reason.
+
+### Hips, honestly
+
+`rs` in the shipped tiles is gabled-or-flat only: `classify.mjs` folded hip, pyramid and mansard into "gabled", so an explicit `roof:shape=hipped` never reached the client. It now emits `"hipped"` so a re-tile carries it, and **until then footprint aspect decides** — real measured data rather than an invention, and explicitly subordinate to a tag when one arrives.
+
+### Ruthless, with evidence rather than opinion
+
+The budget now runs the **real builder over the real tiles** and breaks the result down per material. That made one thing obvious: **`trim` was 54.6 % of every triangle in the slice.**
+
+Two cuts followed, and both are also the more correct architecture. **Pilasters restricted to shopfronts, ground floor only** — a pilaster framing a bay is a commercial device that stops at the fascia; a brick terrace is divided by party walls and chimneys, and running pilasters full height turns every corner shop into a bank. **Entrance materials collapsed five to one** — five materials to vary a surround inside a 16 cm recess that is in shadow whenever it is visible.
+
+Slice **96,569 → 87,965**; city-wide **×3.38 → ×2.67**; materials **25 → 21**.
+
+Not built, deliberately: ridge caps, chimney pots, inner parapet faces. Each is a stated trade with a triangle count next to it.
+
+### A stub was lying
+
+The runaway-chimney guard did not fire when a chimney was sabotaged to **40 metres**.
+
+**`Vector3.up` in UnityStubs returned `default` — (0,0,0).** Every `Vector3.up` in the codebase evaluated to nothing under CI: chimneys had no height, parapets had no height, and the guard was measuring a chimney lying flat on the roof. Unity would have built them correctly; **CI was measuring geometry that did not exist.**
+
+Same lesson as the assembly graph, one level down: **a stub that compiles is not a stub that behaves.** A number measured through a wrong stub is worse than no number, because it reads as evidence.
+
+It was found only because the guard was tested by breaking it. **A guard nobody sabotages is a guard nobody has checked.**
+
+A second weak check went the same way: roof determinism compared triangle *counts*, and a random chimney height has exactly as many triangles as a deterministic one — so it passed while roofs reshuffled every build. It now hashes every vertex position to the millimetre, and fails loudly when sabotaged.
+
+### Verified
+
+`check:world` **47 checks**, four guard classes proven by breaking them. Geometry safety unchanged: 0/288,726 wound wrong, 0/5,969 approaches breached. All other gates green.
+
+### Not verified
+
+**Unity has not been run and nothing has been seen.** The arithmetic and the budget are real; whether the skyline now reads as a British street is exactly the thing I cannot tell you.
+
+### Next
+
+Screenshots, then V04. Nothing before that.

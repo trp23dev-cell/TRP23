@@ -39,6 +39,9 @@ namespace TrapCollisionCheck
             var collision = new WorldCollision();
             var rings = new List<float[]>();
             var meshable = new List<BuildingData>();
+            // Kept with their tile so the budget can tell the High Street slice
+            // from the rest -- measuring the real cost beats estimating it.
+            var placed = new List<(int tx, int tz, BuildingData bd)>();
 
             using (var raw = File.OpenRead(path))
             using (var gz = new GZipStream(raw, CompressionMode.Decompress))
@@ -68,7 +71,10 @@ namespace TrapCollisionCheck
                         bd.g = Str(b, "g");
                         bd.rs = Str(b, "rs");
                         bd.m = Str(b, "m");
+                        bd.i = Str(b, "i");
+                        bd.rs = Str(b, "rs");
                         buildings.Add(bd);
+                        placed.Add((tx, tz, bd));
                         meshable.Add(bd);
                         rings.Add(ring);
                     }
@@ -80,6 +86,7 @@ namespace TrapCollisionCheck
             Console.WriteLine($"loaded {collision.FootprintCount} footprints, {Grid.Count} check cells");
             int slopeFailures = CheckSlope();
             int freezeFailures = CheckFreezeContract();
+            int roofFailures = RoofAndBudget(placed);
             if (collision.FootprintCount < 1000)
             {
                 Console.Error.WriteLine("FAIL  too few footprints loaded — the export or the parse is wrong");
@@ -140,7 +147,7 @@ namespace TrapCollisionCheck
                 Console.Error.WriteLine($"FAIL  only {approaches} approaches tested — the sample is not meaningful");
                 return 1;
             }
-            return ok && windingFailures == 0 && slopeFailures == 0 && freezeFailures == 0 ? 0 : 1;
+            return ok && windingFailures == 0 && slopeFailures == 0 && freezeFailures == 0 && roofFailures == 0 ? 0 : 1;
         }
 
 
@@ -290,6 +297,145 @@ namespace TrapCollisionCheck
             TrapMadeIt.ModalSurface.ReleaseAll();
 
             bad += FacadeChecks();
+
+            return bad;
+        }
+
+        /// <summary>
+        /// Roofs, and what the whole articulated build actually costs
+        /// (WORLD-V03).
+        ///
+        /// MEASURED, NOT ESTIMATED. This runs the real mesh builder over the
+        /// real shipped tiles, twice -- once with the detail path off and once
+        /// on -- and counts the triangles that come out. An arithmetic estimate
+        /// of a geometry budget is a guess dressed as a number, and the whole
+        /// reason V03 exists is that nobody had measured what the roofs cost.
+        ///
+        /// It also fails if the cost runs away, which is the point: a ceiling
+        /// that nothing checks is a wish.
+        /// </summary>
+        static int RoofAndBudget(List<(int tx, int tz, BuildingData bd)> placed)
+        {
+            int bad = 0;
+            void Assert(string what, bool pass, string note = "")
+            {
+                Console.WriteLine($"{(pass ? "ok  " : "FAIL")}  {what}{(note.Length > 0 ? " — " + note : "")}");
+                if (!pass) bad++;
+            }
+
+            var slice = new HashSet<(int, int)>
+            {
+                (-1, -1), (0, -1), (-1, 0), (0, 0), (-1, 1), (0, 1),
+            };
+
+            (int tris, int verts, int mats) Build(IEnumerable<BuildingData> set, bool detail)
+            {
+                var sink = new BuildingMeshBuilder.Sink();
+                foreach (var bd in set) BuildingMeshBuilder.Extrude(bd, sink, detail);
+                int t = 0, v = 0;
+                foreach (var kv in sink.All) { t += kv.Value.triangles.Count / 3; v += kv.Value.vertices.Count; }
+                return (t, v, sink.All.Count);
+            }
+
+            var sliceSet = new List<BuildingData>();
+            foreach (var e in placed) if (slice.Contains((e.tx, e.tz))) sliceSet.Add(e.bd);
+            var all = new List<BuildingData>();
+            foreach (var e in placed) all.Add(e.bd);
+
+            var plain = Build(sliceSet, false);
+            var rich = Build(sliceSet, true);
+            var cityPlain = Build(all, false);
+            var cityRich = Build(all, true);
+
+            Console.WriteLine();
+            Console.WriteLine("geometry budget — measured by running the real builder:");
+            Console.WriteLine($"  slice ({sliceSet.Count} buildings)  {plain.tris,8} -> {rich.tris,8} tris  " +
+                              $"(x{(float)rich.tris / Math.Max(plain.tris, 1):F2})   {plain.verts} -> {rich.verts} verts");
+            Console.WriteLine($"  city  ({all.Count} buildings)  {cityPlain.tris,8} -> {cityRich.tris,8} tris  " +
+                              $"(x{(float)cityRich.tris / Math.Max(cityPlain.tris, 1):F2})");
+            Console.WriteLine($"  materials per build: {plain.mats} plain, {rich.mats} articulated");
+
+            // Per material, so "expensive and barely visible" is answerable
+            // rather than a matter of opinion.
+            var byKey = new BuildingMeshBuilder.Sink();
+            foreach (var bd in sliceSet) BuildingMeshBuilder.Extrude(bd, byKey, true);
+            var rows = new List<(string key, int tris)>();
+            foreach (var kv in byKey.All) rows.Add((kv.Key, kv.Value.triangles.Count / 3));
+            rows.Sort((x, y) => y.tris.CompareTo(x.tris));
+            Console.WriteLine("  slice triangles by material:");
+            foreach (var r in rows)
+                Console.WriteLine($"    {r.key,-28} {r.tris,7}  ({100f * r.tris / Math.Max(rich.tris, 1):F1}%)");
+            Console.WriteLine();
+
+            // Ceilings, with room to tune underneath them. These are the point
+            // at which someone should stop and think, not a target.
+            Assert("the slice stays inside its triangle ceiling", rich.tris < 140000,
+                   $"{rich.tris} of 140000");
+            Assert("articulation costs materials, not a material per building",
+                   rich.mats <= plain.mats + 4, $"{plain.mats} -> {rich.mats}");
+            Assert("detail actually costs more than no detail", rich.tris > plain.tris);
+
+            // ---- roofs are deterministic and land where they should ----
+            var sample = new List<BuildingData>();
+            foreach (var bd in sliceSet) { if (sample.Count < 60) sample.Add(bd); }
+
+            // A hash of every vertex POSITION, not a count.
+            //
+            // Counting triangles was the first attempt and it proved nothing:
+            // a chimney given a random height has exactly as many triangles as
+            // one given a deterministic height, so the check passed while the
+            // roofs reshuffled on every build. Positions are the thing that has
+            // to be stable, so positions are what gets compared.
+            long Shape(IEnumerable<BuildingData> set)
+            {
+                var sink = new BuildingMeshBuilder.Sink();
+                foreach (var bd in set) BuildingMeshBuilder.Extrude(bd, sink, true);
+                long h = 1469598103934665603L;
+                foreach (var kv in sink.All)
+                {
+                    foreach (var c in kv.Key) { h ^= c; h *= 1099511628211L; }
+                    foreach (var v in kv.Value.vertices)
+                    {
+                        // Quantised to a millimetre: float noise is not drift.
+                        h ^= (long)Math.Round(v.x * 1000.0); h *= 1099511628211L;
+                        h ^= (long)Math.Round(v.y * 1000.0); h *= 1099511628211L;
+                        h ^= (long)Math.Round(v.z * 1000.0); h *= 1099511628211L;
+                    }
+                }
+                return h;
+            }
+
+            long shape1 = Shape(sample), shape2 = Shape(sample);
+            Assert("the same buildings build the same roofs twice, vertex for vertex",
+                   shape1 == shape2, $"{shape1:X} then {shape2:X}");
+
+            // Nothing may end up below the ground it stands on, and nothing may
+            // shoot into orbit. A chimney with a sign error does both.
+            float lowest = float.MaxValue, highest = float.MinValue;
+            float worstOver = 0f;
+            foreach (var bd in sliceSet)
+            {
+                var sink = new BuildingMeshBuilder.Sink();
+                BuildingMeshBuilder.Extrude(bd, sink, true);
+                foreach (var kv in sink.All)
+                {
+                    foreach (var v in kv.Value.vertices)
+                    {
+                        if (v.y < lowest) lowest = v.y;
+                        if (v.y > highest) highest = v.y;
+                        float over = v.y - (bd.s + bd.h);
+                        if (over > worstOver) worstOver = over;
+                    }
+                }
+            }
+            Assert("no roof geometry is buried below the world", lowest > -30f, $"lowest {lowest:F1}m");
+            // Ridge + chimney: a 5.2m maximum rise plus a 1.55m stack plus the
+            // 0.8m the stack starts below the ridge. Anything past that is a
+            // bug, not a tall house.
+            Assert("nothing rises implausibly above its own wall top", worstOver < 8.0f,
+                   $"worst {worstOver:F2}m above the wall");
+            Assert("the tallest thing in the slice is still a building", highest < 200f,
+                   $"highest {highest:F1}m");
 
             return bad;
         }

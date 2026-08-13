@@ -1,6 +1,6 @@
 # Visual roadmap — Lincoln
 
-**Status:** V01 built + owner-verified. **V02 built 10 Aug** (façades, not roofs — see below). V03–V07 proposed, **not authorised**.
+**Status:** V01 and V02 built + owner-verified. **V03 built 10 Aug.** V04–V07 proposed, **not authorised**.
 **Evidence:** [LINCOLN-VISUAL-FIDELITY-AUDIT](../01-audit/LINCOLN-VISUAL-FIDELITY-AUDIT.md)
 **Standing constraints:** do not rewrite the world · do not replace the data pipeline · do not rescale Lincoln · do not import asset packs · beautify the slice, not the city.
 
@@ -60,7 +60,11 @@ Bay subdivision, per-bay UV, shopfront fascias, pilasters, recessed entrances, a
 
 ---
 
-## WORLD-V03 · Roof upgrade **[S–M]** *(was V02)*
+## WORLD-V03 · Roofs and architectural silhouette — ✅ **BUILT, 10 Aug** (owner screenshots pending)
+
+Eaves, fascia, soffit, roof thickness, gable ends in wall material, hips from footprint aspect, party-wall chimneys, parapets on flat roofs. General, gated by the same tier as façades. Detail: [ROOF-SYSTEM](../03-technical/ROOF-SYSTEM.md).
+
+<details><summary>The original V03 brief</summary>
 
 **Objective.** A Lincoln skyline: eaves, gable ends, chimneys.
 
@@ -75,6 +79,8 @@ Bay subdivision, per-bay UV, shopfront fascias, pilasters, recessed entrances, a
 **Checks.** `check:world` — roofs must not spill outside walls on the 58 % of footprints that are concave; chimneys must not float.
 
 **Owner verification.** Fly to 100 m over the slice. The roofscape should read as a town, not as a set of lids. 413 gabled roofs in the slice will change at once.
+
+</details>
 
 ---
 
@@ -172,7 +178,7 @@ Bay subdivision, per-bay UV, shopfront fascias, pilasters, recessed entrances, a
 |---|---|---|---|
 | **V01 material + lighting** | **XS–S** | — | ✅ **built** |
 | **V02 façades** | **L** | V01 | ✅ **built** |
-| V03 roofs *(was V02)* | S–M | V01 | No |
+| **V03 roofs** | S–M | V01 | ✅ **built** |
 | V03 street surface | M | V01 | No |
 | V04 façades | **L** | V01 | No |
 | V05 dressing | M | V03 | Partly |

@@ -70,6 +70,7 @@ Full work packages are written **as each is picked up**, one horizon ahead — n
 | U10–U12 | High Street slice: dressing, pedestrians, budgets | AI | L | ⬜ | Phase B |
 | U17a | Character visual seam + UMA preflight | AI | M | ✅ | log S13. Seam built, guarded, tested. Scale canon + 11 tests |
 | U17b | Character framework route | AI | M | ✅ **ROUTE RESOLVED — ART ASSET REQUIRED** | log S14. UMA rejected (D-C01); fixed archetypes chosen (D-C02). **Not a technical blocker for other packages** |
+| V03 | **Roofs + silhouette** | AI | M | ✅ | log S22. Eaves, gables, hips, chimneys, parapets. Measured budget. **Owner screenshots pending** |
 | V02 | **High Street façade structure** | AI | L | ✅ | log S20. Bays, shopfronts, entrances, window alignment. Slice-gated. **Owner screenshots pending** |
 | V01 | **Material + lighting baseline** | AI | S | ✅ | log S18. Albedo contract, normals, tonemapping, sun, MSAA. **Owner screenshots pending** |
 | — | **Lincoln visual fidelity audit** | AI | M | ✅ | log S17. Read-only. [audit](../01-audit/LINCOLN-VISUAL-FIDELITY-AUDIT.md) + [roadmap](VISUAL-ROADMAP.md). **V01 recommended, not authorised** |

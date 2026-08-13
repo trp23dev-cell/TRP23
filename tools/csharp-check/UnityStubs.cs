@@ -69,7 +69,16 @@ namespace UnityEngine {
 
   public struct Vector3 {
     public static Vector3 zero => default;
-    public static Vector3 up => default;
+    // REAL. This returned `default` -- (0,0,0) -- so every Vector3.up in the
+    // codebase evaluated to nothing in CI. Chimneys had no height, parapets had
+    // no height, and the check that was supposed to catch a runaway chimney
+    // measured a chimney that was flat on the roof.
+    //
+    // It was found by sabotaging a chimney to 40 metres and watching the guard
+    // not fire. Same lesson as the assembly graph, one level down: a stub that
+    // COMPILES is not a stub that BEHAVES, and a number measured through a
+    // wrong stub is worse than no number because it reads as evidence.
+    public static Vector3 up => new Vector3(0f, 1f, 0f);
     public static Vector3 down => new Vector3(0f,-1f,0f);
     public static Vector3 forward => new Vector3(0f,0f,1f);
     public static Vector3 right => new Vector3(1f,0f,0f);
