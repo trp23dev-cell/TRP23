@@ -18,6 +18,7 @@
     <Compile Include="../../Unity/TRP23/Assets/Core/GameFreeze.cs" />
     <Compile Include="../../Unity/TRP23/Assets/Core/ModalSurface.cs" />
     <Compile Include="../../Unity/TRP23/Assets/World/Scripts/TrapGeo.cs" />
+    <Compile Include="../../Unity/TRP23/Assets/World/Scripts/TrapMaterials.cs" />
     <Compile Include="../../Unity/TRP23/Assets/World/Scripts/TileModels.cs" />
     <Compile Include="../../Unity/TRP23/Assets/World/Scripts/WorldCollision.cs" />
     <Compile Include="../../Unity/TRP23/Assets/World/Scripts/BuildingMeshBuilder.cs" />

@@ -1,6 +1,6 @@
 # Visual roadmap — Lincoln
 
-**Status:** proposed. **Nothing authorised, nothing implemented.**
+**Status:** V01 built (10 Aug). V02–V07 proposed, **not authorised**.
 **Evidence:** [LINCOLN-VISUAL-FIDELITY-AUDIT](../01-audit/LINCOLN-VISUAL-FIDELITY-AUDIT.md)
 **Standing constraints:** do not rewrite the world · do not replace the data pipeline · do not rescale Lincoln · do not import asset packs · beautify the slice, not the city.
 
@@ -24,7 +24,7 @@ V06 hero override system  (independent of V02–V05)
 
 ---
 
-## WORLD-V01 · Material and lighting baseline **[XS–S]** — recommended first
+## WORLD-V01 · Material and lighting baseline **[XS–S]** — ✅ **BUILT, 10 Aug** (owner screenshots pending)
 
 **Objective.** Make the city render at the brightness it was drawn at, and give it a tonemap.
 
@@ -42,7 +42,9 @@ V06 hero override system  (independent of V02–V05)
 
 **Non-goals.** No new geometry. No new OSM extraction. No asset imports. No mobile-tier changes beyond what falls out for free.
 
-**Automated checks.** `check:csharp` · `check:world` (the wall-winding and collision tests must be **unaffected** — if they move, something touched geometry that should not have) · a new `check:world` assertion that no wall material's final albedo falls below a floor, so this bug cannot silently return.
+**Automated checks.** `check:csharp` · `check:world` (geometry unchanged: **288,726 triangles and 5,969 approaches, identical before and after**) · new **`check:materials`**, which turned out to be the better home for the albedo floor — see [MATERIAL-COLOUR-CONTRACT](../03-technical/MATERIAL-COLOUR-CONTRACT.md).
+
+**What actually shipped differed in two places.** The volume profile is built in code rather than authored as an asset — hand-writing a `VolumeProfile` YAML with URP GUID references, with no Unity to validate it, risks a file that diffs cleanly and fails to load. And the scene sun is assigned by `WorldAtmosphere` at runtime rather than by editing `TrapGame.unity`, for the same reason: code beats hand-edited scene YAML when nothing can open the scene to check.
 
 **Owner verification.** Play `TrapGame`. Stand in front of a brick building — **window rows and courses should now be visible where before there was a dark shape.** Look up a street: distance should read as fog, not as black. Check limestone uphill and brick downhill are distinguishable.
 
@@ -160,7 +162,7 @@ V06 hero override system  (independent of V02–V05)
 
 | Package | Size | Depends on | Gated by art? |
 |---|---|---|---|
-| **V01 material + lighting** | **XS–S** | — | No |
+| **V01 material + lighting** | **XS–S** | — | ✅ **built** |
 | V02 roofs | S–M | V01 | No |
 | V03 street surface | M | V01 | No |
 | V04 façades | **L** | V01 | No |
@@ -177,8 +179,9 @@ V06 hero override system  (independent of V02–V05)
 | | |
 |---|---|
 | **Authorise V01** (or not) | It is the prerequisite for everything else |
-| **Pick the Trap Made It flagship building** | No anchor exists. I must not invent one — same rule as D-W20. A `way/…` id or an address is enough |
-| **Decide the barber's location** | `way/705942979` on the High Street is tagged *Toby's Barber Shop*; Kimani's anchor is on Corporation Street. Authenticity vs footfall — your call |
+| ~~Pick the flagship building~~ | ✅ **D-V01** — the JD Sports building, anchor evolved not duplicated |
+| ~~Decide the barber's location~~ | ✅ **D-V02** — stays on Corporation Street |
+| **Tidy the stock volume profile** | `DefaultVolumeProfile.asset` still carries Unity's `CopyPasteTestComponent2` and friends. Inert and overridden; deleting them means hand-editing a Unity asset, which I would rather you did in the editor |
 | **Confirm photographic reference** | Own photos of Lincoln brick, limestone, shopfronts and Steep Hill would improve V01 and V04 and cost nothing but a walk |
 
 ---

@@ -39,26 +39,16 @@ namespace TrapMadeIt.World
 
         readonly Dictionary<string, Material> palette = new Dictionary<string, Material>();
 
-        static readonly Dictionary<string, Color> Palette = new Dictionary<string, Color>
-        {
-            { "asphalt",  new Color(0.18f, 0.17f, 0.16f) },
-            { "paving",   new Color(0.42f, 0.41f, 0.38f) },
-            { "cobble",   new Color(0.26f, 0.24f, 0.22f) },
-            { "concrete", new Color(0.34f, 0.34f, 0.33f) },
-            { "gravel",   new Color(0.30f, 0.27f, 0.22f) },
-            { "grass",    new Color(0.24f, 0.34f, 0.16f) },
-            { "wood",     new Color(0.16f, 0.24f, 0.11f) },
-            // Water is the one smooth thing in the city, so it is the one thing
-            // that catches the sky — which is what actually reads as water.
-            { "water",    new Color(0.09f, 0.14f, 0.18f) },
-            { "wall",     new Color(0.40f, 0.38f, 0.33f) },
-            { "hedge",    new Color(0.14f, 0.21f, 0.10f) },
-            { "bark",     new Color(0.20f, 0.16f, 0.11f) },
-            { "foliage",  new Color(0.18f, 0.28f, 0.13f) },
-            { "furniture",new Color(0.14f, 0.14f, 0.15f) },
-            // Kerbstone: paler than the road, darker than the flags behind it,
-            // which is what makes the line along the carriageway read at all.
-            { "kerb",     new Color(0.46f, 0.45f, 0.42f) },
+        /// Surface colours come from TrapMaterials -- the one table. This used
+        /// to be a second private palette, which is the same mistake the walls
+        /// made: two places deciding what a thing is made of.
+        static Color PaletteColour(string kind) => TrapMaterials.Surface(kind);
+
+        /// Every non-building surface that wants its own material.
+        static readonly string[] PaletteKeys = {
+            "asphalt", "paving", "cobble", "concrete", "gravel",
+            "grass", "wood", "water",
+            "wall", "hedge", "bark", "foliage", "furniture", "kerb",
         };
 
         MapClient client;
@@ -113,16 +103,18 @@ namespace TrapMadeIt.World
             if (buildingMaterial == null) buildingMaterial = Make(known, wallTint, 0.08f, "TrapWall");
             if (roofMaterial == null) roofMaterial = Make(known, roofTint, 0.10f, "TrapRoof");
 
-            foreach (var kv in Palette)
+            foreach (var key in PaletteKeys)
             {
-                // Water is smooth so it reflects; everything else is matte.
-                float smooth = kv.Key == "water" ? 0.85f : 0.05f;
-                var mat = Make(known, kv.Value, smooth, "Trap_" + kv.Key);
+                var mat = Make(known, PaletteColour(key), TrapMaterials.Smoothness(key), "Trap_" + key);
+                // Relief where the surface has any. NormalFor returns null for
+                // grass, water and anything else that is flat in life, and a
+                // null here simply leaves the shader's flat default in place.
+                SetNormal(mat, CityTextures.NormalFor(key));
 
                 // Drawn ground, at real size: 600mm flags, 100mm setts. The
                 // colour stays as the fallback for anything with no texture --
                 // water, which is meant to be flat, and anything added later.
-                var tex = CityTextures.Surface(kv.Key);
+                var tex = CityTextures.Surface(key);
                 if (tex != null && mat != null)
                 {
                     mat.mainTexture = tex;
@@ -130,7 +122,7 @@ namespace TrapMadeIt.World
                     // again and the ground comes out twice as dark.
                     if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", Color.white);
                 }
-                palette[kv.Key] = mat;
+                palette[key] = mat;
             }
 
             Debug.Log($"[world] walls: {(buildingMaterial != null ? buildingMaterial.name : "NONE")}, " +
@@ -152,6 +144,24 @@ namespace TrapMadeIt.World
             else mat.color = colour;
             if (mat.HasProperty("_Smoothness")) mat.SetFloat("_Smoothness", smoothness);
             return mat;
+        }
+
+        /// <summary>
+        /// Hand a material its generated normal map, if it has one.
+        ///
+        /// One map per material FAMILY, shared by every building that uses it —
+        /// eleven for the whole city. Per-building normals would be the fastest
+        /// way to turn a 5.8 MB world into a mobile memory problem, and would
+        /// buy nothing: what varies between two brick terraces is their colour,
+        /// which the vertex tint already carries, not the shape of their
+        /// mortar.
+        /// </summary>
+        static void SetNormal(Material mat, Texture2D normal, float scale = 1f)
+        {
+            if (mat == null || normal == null) return;
+            if (!mat.HasProperty("_BumpMap")) return;
+            mat.SetTexture("_BumpMap", normal);
+            if (mat.HasProperty("_BumpScale")) mat.SetFloat("_BumpScale", scale);
         }
 
         IEnumerator Start()
@@ -388,23 +398,31 @@ namespace TrapMadeIt.World
 
             var parts = key.Split(':');
             Texture2D tex;
+            Texture2D normal = null;
+            float normalScale = 1f;
             float smooth = 0.06f;
 
             if (parts[0] == "roof")
             {
                 tex = CityTextures.Roof(parts[1]);
+                normal = CityTextures.NormalFor(parts[1]);
+                smooth = TrapMaterials.Smoothness(parts[1]);
             }
             else if (parts[0] == "ground")
             {
                 // parts: ground : kind : style
                 tex = CityTextures.Ground(parts[1], parts.Length > 2 ? parts[2] : "brick");
                 // Shop glass catches the sky, which is most of what says "glass".
-                if (parts[1] == "shopfront") smooth = 0.55f;
+                // Ground floors get no relief: a shopfront is mostly glass,
+                // and glass with mortar in it is worse than glass without.
+                if (parts[1] == "shopfront") smooth = TrapMaterials.Smoothness("shopfront");
             }
             else
             {
-                tex = CityTextures.Wall(parts.Length > 1 ? parts[1] : "brick");
-                if (parts.Length > 1 && parts[1] == "modern") smooth = 0.45f;
+                var style = parts.Length > 1 ? parts[1] : "brick";
+                tex = CityTextures.Wall(style);
+                normal = CityTextures.NormalFor(style);
+                smooth = TrapMaterials.Smoothness(style);
                 // A monument is one texture over the whole elevation, so a
                 // window row would repeat up it. It gets stonework only.
                 if (parts.Length > 1 && parts[1] == "monument")
@@ -412,7 +430,9 @@ namespace TrapMadeIt.World
             }
 
             var mat = new Material(shader) { name = "Trap_" + key };
+            // White. The colour is in the texture, once — see TrapMaterials.
             if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", Color.white);
+            SetNormal(mat, normal, normalScale);
             if (mat.HasProperty("_Smoothness")) mat.SetFloat("_Smoothness", smooth);
             if (mat.HasProperty("_Cull")) mat.SetFloat("_Cull", 0f);   // hollow shells
             mat.mainTexture = tex;

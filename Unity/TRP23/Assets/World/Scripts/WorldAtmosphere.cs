@@ -58,6 +58,14 @@ namespace TrapMadeIt.World
         void Start()
         {
             if (sun == null) sun = FindBrightestLight();
+
+            // Make sure the tonemap exists even in a scene that was built
+            // before TrapPostProcess did. Presentation of the world is this
+            // component's job -- sky, fog, sun, ambient -- and a scene where
+            // the light is right and the tonemap is missing is a scene that
+            // looks wrong for a reason nobody can see.
+            if (FindFirstObjectByType<TrapPostProcess>() == null)
+                gameObject.AddComponent<TrapPostProcess>();
             if (view == null) view = Camera.main;
             Apply(true);
         }
@@ -96,6 +104,12 @@ namespace TrapMadeIt.World
                 view.clearFlags = CameraClearFlags.SolidColor;
                 view.backgroundColor = m.sky;
             }
+
+            // Tell the lighting system which light is the sun. The scene ships
+            // with m_Sun unset, so anything that asks Unity for the primary
+            // directional light -- including the sky and any future ambient
+            // work -- was being told there is not one.
+            if (RenderSettings.sun != sun) RenderSettings.sun = sun;
 
             if (sun != null)
             {

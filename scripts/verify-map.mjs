@@ -100,7 +100,7 @@ const main = async () => {
 
   // --- anchors ---
   process.stdout.write("\nstory locations:\n");
-  const wanted = ["JD", "TRAP CENTRAL BANK", "KIMANI THE BARBER", "LINCOLN PRISON"];
+  const wanted = ["TRAP MADE IT FLAGSHIP", "TRAP CENTRAL BANK", "KIMANI THE BARBER", "LINCOLN PRISON"];
   for (const name of wanted) {
     const a = manifest.anchors.find((x) => x.name === name);
     check(`${name} present`, !!a);
@@ -239,7 +239,7 @@ const main = async () => {
 
   // Known ground truth, straight off the Environment Agency's own service.
   const landmarks = [
-    ["JD, High Street", 53.2279, -0.5407, 6.3],
+    ["the flagship building, High Street", 53.2279, -0.5407, 6.3],
     ["NatWest, Mint Street", 53.2294, -0.54079, 9.7],
     ["Cathedral quarter", 53.23440, -0.53640, 65.3],
   ];
@@ -441,14 +441,14 @@ const main = async () => {
   const CAMERA_FAR = 2600;          // src/game.js
   const FOG_DENSITY = 0.0018;       // MOODS[0], the darkest and haziest
   const cathedral = buildings.find((b) => /^Lincoln Cathedral$/i.test(b.name || ""));
-  const fromJd = manifest.anchors.find((a) => a.name === "JD");
+  const fromJd = manifest.anchors.find((a) => a.name === "TRAP MADE IT FLAGSHIP");
   check("the Cathedral is in the world", !!cathedral);
   if (cathedral && fromJd) {
     const cx = (cathedral.minX + cathedral.maxX) / 2;
     const cz = (cathedral.minZ + cathedral.maxZ) / 2;
     const dist = Math.hypot(cx - fromJd.x, cz - fromJd.z);
     check("the Cathedral is inside the camera far plane", dist < CAMERA_FAR,
-      `${dist.toFixed(0)}m from JD, far plane ${CAMERA_FAR}m`);
+      `${dist.toFixed(0)}m from the flagship, far plane ${CAMERA_FAR}m`);
     // FogExp2 transmittance: exp(-(density*distance)^2).
     const seen = Math.exp(-((FOG_DENSITY * dist) ** 2));
     check("the Cathedral is not fogged into nothing", seen > 0.12,
@@ -640,7 +640,7 @@ const main = async () => {
   const built = buildFreeRoamWorld({
     THREE,
     group,
-    chapters: [{ name: "JD", sub: "the first one" }],
+    chapters: [{ name: "TRAP MADE IT FLAGSHIP", sub: "the first one" }],
     cleared: 0,
     canvasTex,
   });
@@ -648,7 +648,7 @@ const main = async () => {
 
   check("world exposes every story place", built.places.length === manifest.anchors.length,
     built.places.map((p) => `${p.name}[${p.kind}]`).join(", "));
-  check("JD is the chapter door", built.places.some((p) => p.kind === "chapter" && p.index === 0));
+  check("the flagship is still the chapter-0 door", built.places.some((p) => p.kind === "chapter" && p.index === 0));
   check("bank is the bank door", built.places.some((p) => p.kind === "bank"));
   check("Kimani's is a placeholder door", built.places.some((p) => p.kind === "placeholder"));
   check("every place has an exit", built.places.every((p) => p.exit && Number.isFinite(p.exit.yaw)));

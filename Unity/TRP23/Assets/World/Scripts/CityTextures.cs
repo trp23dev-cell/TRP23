@@ -46,6 +46,14 @@ namespace TrapMadeIt.World
         /// Upper-floor wall for a style, with a row of windows.
         /// </summary>
         public static Texture2D Wall(string style, bool windows = true)
+            => Finish(RawWall(style, windows), $"facade_{style}");
+
+        /// <summary>
+        /// The pixels, before they become a texture. Split out so the normal
+        /// map can be derived from exactly the same draw rather than from a
+        /// second pattern that would drift out of step with it.
+        /// </summary>
+        static Color32[] RawWall(string style, bool windows = false)
         {
             var px = new Color32[Size * Size];
             var rng = new Rng(StyleSeed(style));
@@ -62,7 +70,7 @@ namespace TrapMadeIt.World
 
             if (windows) WindowRow(px, ref rng, style);
             Grain(px, ref rng, 0.03f);
-            return Finish(px, $"facade_{style}");
+            return px;
         }
 
         /// <summary>
@@ -98,6 +106,12 @@ namespace TrapMadeIt.World
         /// </summary>
         public static Texture2D Surface(string kind)
         {
+            var px = RawSurface(kind);
+            return px == null ? null : Finish(px, $"surface_{kind}");
+        }
+
+        static Color32[] RawSurface(string kind)
+        {
             var px = new Color32[Size * Size];
             var rng = new Rng(kind == null ? 5 : kind.Length * 17 + kind[0]);
 
@@ -105,58 +119,58 @@ namespace TrapMadeIt.World
             {
                 case "paving":
                     // 600mm flags: ten across a six-metre tile.
-                    Fill(px, new Color(0.42f, 0.41f, 0.38f));
+                    Fill(px, TrapMaterials.Surface("paving"));
                     Grid(px, ref rng, 10, new Color(0f, 0f, 0f, 0.35f), 0.045f);
                     break;
 
                 case "cobble":
                     // Setts, not cobbles, and about 100mm. Staggered, because
                     // they are laid in courses rather than a grid.
-                    Fill(px, new Color(0.26f, 0.24f, 0.22f));
+                    Fill(px, TrapMaterials.Surface("cobble"));
                     Setts(px, ref rng, 60);
                     break;
 
                 case "kerb":
                     // Long kerbstones with a joint every 900mm.
-                    Fill(px, new Color(0.46f, 0.45f, 0.42f));
+                    Fill(px, TrapMaterials.Surface("kerb"));
                     for (int i = 0; i < 7; i++)
                         VLineSegment(px, i * Size / 7, 0, Size, new Color(0f, 0f, 0f, 0.4f));
                     Grain(px, ref rng, 0.04f);
                     break;
 
                 case "asphalt":
-                    Fill(px, new Color(0.18f, 0.17f, 0.16f));
+                    Fill(px, TrapMaterials.Surface("asphalt"));
                     Grain(px, ref rng, 0.055f);
                     Chips(px, ref rng, 900, new Color(0.42f, 0.41f, 0.39f, 0.5f));
                     break;
 
                 case "concrete":
-                    Fill(px, new Color(0.34f, 0.34f, 0.33f));
+                    Fill(px, TrapMaterials.Surface("concrete"));
                     Grid(px, ref rng, 3, new Color(0f, 0f, 0f, 0.28f), 0.02f);
                     Grain(px, ref rng, 0.03f);
                     break;
 
                 case "gravel":
-                    Fill(px, new Color(0.30f, 0.27f, 0.22f));
+                    Fill(px, TrapMaterials.Surface("gravel"));
                     Chips(px, ref rng, 2600, new Color(0.52f, 0.47f, 0.38f, 0.55f));
                     Grain(px, ref rng, 0.07f);
                     break;
 
                 case "grass":
-                    Fill(px, new Color(0.24f, 0.34f, 0.16f));
+                    Fill(px, TrapMaterials.Surface("grass"));
                     Chips(px, ref rng, 3200, new Color(0.33f, 0.44f, 0.20f, 0.5f));
                     Chips(px, ref rng, 1400, new Color(0.16f, 0.24f, 0.11f, 0.5f));
                     break;
 
                 case "wood":
-                    Fill(px, new Color(0.16f, 0.24f, 0.11f));
+                    Fill(px, TrapMaterials.Surface("wood"));
                     Chips(px, ref rng, 2200, new Color(0.10f, 0.17f, 0.08f, 0.6f));
                     break;
 
                 default:
                     return null;   // water and anything else stays plain
             }
-            return Finish(px, $"surface_{kind}");
+            return px;
         }
 
         /// A square grid of joints, for flags and concrete bays.
@@ -203,13 +217,15 @@ namespace TrapMadeIt.World
         }
 
         /// <summary>Roof covering. Slate courses or clay pantiles.</summary>
-        public static Texture2D Roof(string kind)
+        public static Texture2D Roof(string kind) => Finish(RawRoof(kind), $"roof_{kind}");
+
+        static Color32[] RawRoof(string kind)
         {
             var px = new Color32[Size * Size];
             var rng = new Rng(kind == "pantile" ? 91 : 17);
 
             bool pantile = kind == "pantile";
-            Fill(px, pantile ? new Color(0.30f, 0.16f, 0.11f) : new Color(0.16f, 0.17f, 0.19f));
+            Fill(px, TrapMaterials.Roof(kind));
 
             // Courses run across the slope. Tiles are small, so plenty of them.
             int rows = pantile ? 14 : 20;
@@ -225,22 +241,17 @@ namespace TrapMadeIt.World
                 }
             }
             Grain(px, ref rng, 0.06f);
-            return Finish(px, $"roof_{kind}");
+            return px;
         }
 
         // ------------------------------------------------------------ drawing
 
-        static Color Base(string style)
-        {
-            switch (style)
-            {
-                case "limestone": return new Color(0.427f, 0.408f, 0.341f);
-                case "brick": return new Color(0.216f, 0.173f, 0.145f);
-                case "modern": return new Color(0.290f, 0.290f, 0.298f);
-                case "monument": return new Color(0.455f, 0.435f, 0.365f);
-                default: return new Color(0.376f, 0.353f, 0.318f);   // render
-            }
-        }
+        /// <summary>
+        /// The material's colour. Delegated, so there is exactly one table --
+        /// this method existing separately is how the same constant ended up in
+        /// two places and got multiplied by itself.
+        /// </summary>
+        static Color Base(string style) => TrapMaterials.Base(style);
 
         static int StyleSeed(string style) => style == null ? 3 : style.Length * 31 + style[0];
 
@@ -447,6 +458,108 @@ namespace TrapMadeIt.World
                     255);
             }
         }
+
+        /// <summary>
+        /// A normal map derived from the albedo we just drew.
+        ///
+        /// WHY THIS WORKS RATHER THAN BEING A TRICK
+        ///
+        /// Every pattern here draws recesses DARK: mortar joints, sett gaps,
+        /// paving grout, roof courses. That is not a coincidence of style, it
+        /// is what those features are -- a joint is a groove, and a groove is
+        /// in shadow. So the luminance of the albedo is already a height field,
+        /// and a Sobel of it is already the surface normal.
+        ///
+        /// The alternative was a second hand-authored pattern pass per
+        /// material, which would be more code, would drift out of step with the
+        /// albedo the first time anyone tuned a colour, and would produce the
+        /// same answer.
+        ///
+        /// Written as a plain RGB vector in a LINEAR texture and unpacked in
+        /// the shader as rgb*2-1. Deliberately not Unity's DXT5nm convention:
+        /// that packing exists for compression we are not using, and a runtime
+        /// Texture2D that merely looks like a normal map is a well-known way to
+        /// get a wall that lights inside out.
+        /// </summary>
+        static Texture2D Normal(Color32[] albedo, string name, float strength)
+        {
+            var h = new float[Size * Size];
+            for (int i = 0; i < h.Length; i++)
+            {
+                var c = albedo[i];
+                h[i] = (c.r * 0.299f + c.g * 0.587f + c.b * 0.114f) / 255f;
+            }
+
+            var px = new Color32[Size * Size];
+            for (int y = 0; y < Size; y++)
+            {
+                for (int x = 0; x < Size; x++)
+                {
+                    // Wrapping, because these textures tile -- sampling the far
+                    // edge is correct here, not a mistake.
+                    float l = h[y * Size + ((x - 1 + Size) % Size)];
+                    float r = h[y * Size + ((x + 1) % Size)];
+                    float d = h[((y - 1 + Size) % Size) * Size + x];
+                    float u = h[((y + 1) % Size) * Size + x];
+
+                    var n = new Vector3((l - r) * strength, (d - u) * strength, 1f).normalized;
+                    px[y * Size + x] = new Color32(
+                        (byte)Mathf.Clamp(Mathf.RoundToInt((n.x * 0.5f + 0.5f) * 255f), 0, 255),
+                        (byte)Mathf.Clamp(Mathf.RoundToInt((n.y * 0.5f + 0.5f) * 255f), 0, 255),
+                        (byte)Mathf.Clamp(Mathf.RoundToInt((n.z * 0.5f + 0.5f) * 255f), 0, 255),
+                        255);
+                }
+            }
+
+            // linear: true. A normal is a direction, not a colour, and putting
+            // it through the sRGB curve bends every one of them.
+            var tex = new Texture2D(Size, Size, TextureFormat.RGBA32, true, true)
+            {
+                name = name,
+                wrapMode = TextureWrapMode.Repeat,
+                filterMode = FilterMode.Bilinear,
+                anisoLevel = 8,
+            };
+            tex.SetPixels32(px);
+            tex.Apply(true, true);
+            return tex;
+        }
+
+        /// <summary>
+        /// The normal map for a material family, or null where relief would be
+        /// wrong or wasted.
+        ///
+        /// Deliberately NOT one per building, and not one per key: eleven maps
+        /// cover the whole city. Glass and painted render are flat surfaces in
+        /// life, so giving them relief would be worse than giving them none,
+        /// and it would cost memory on a phone to do it.
+        /// </summary>
+        public static Texture2D NormalFor(string family)
+        {
+            if (normals.TryGetValue(family, out var cached)) return cached;
+
+            Texture2D made = null;
+            switch (family)
+            {
+                case "brick":     made = Normal(RawWall("brick"), "n_brick", 7f); break;
+                case "limestone": made = Normal(RawWall("limestone"), "n_limestone", 5f); break;
+                case "monument":  made = Normal(RawWall("monument"), "n_monument", 5f); break;
+                case "modern":    made = Normal(RawWall("modern"), "n_modern", 3f); break;
+                case "slate":     made = Normal(RawRoof("slate"), "n_slate", 5f); break;
+                case "pantile":   made = Normal(RawRoof("pantile"), "n_pantile", 8f); break;
+                case "paving":    made = Normal(RawSurface("paving"), "n_paving", 5f); break;
+                case "cobble":    made = Normal(RawSurface("cobble"), "n_cobble", 9f); break;
+                case "kerb":      made = Normal(RawSurface("kerb"), "n_kerb", 4f); break;
+                case "asphalt":   made = Normal(RawSurface("asphalt"), "n_asphalt", 2f); break;
+                case "gravel":    made = Normal(RawSurface("gravel"), "n_gravel", 4f); break;
+                // render, glass, grass, water, wood: flat by nature.
+            }
+            normals[family] = made;
+            return made;
+        }
+
+        static readonly System.Collections.Generic.Dictionary<string, Texture2D> normals =
+            new System.Collections.Generic.Dictionary<string, Texture2D>();
 
         static Texture2D Finish(Color32[] px, string name)
         {

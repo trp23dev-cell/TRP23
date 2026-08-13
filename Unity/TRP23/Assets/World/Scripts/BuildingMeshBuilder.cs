@@ -281,39 +281,19 @@ namespace TrapMadeIt.World
         }
 
         /// <summary>
-        /// The colour a wall actually is.
+        /// The per-building VARIATION written into the vertex colour.
         ///
-        /// The tile's `c` is a TINT -- a multiplier the web client lays over a
-        /// procedural facade texture, which is where the real material colour
-        /// lives. Unity has no such texture yet, so multiplying it by a white
-        /// material gave a city of white boxes: every building "plain",
-        /// whatever its tags said.
+        /// Not the material colour. That lives in the texture, once -- see
+        /// TrapMaterials for the contract and for what happened when this
+        /// method returned a material colour too.
         ///
-        /// Until the facades are ported, the base colours from
-        /// src/world/cityTextures.js stand in for them, so brick reads as brick
-        /// and limestone as limestone. Deliberately dark and desaturated, same
-        /// as the web: the gold signage has to stay the brightest thing on the
-        /// street.
+        /// The tiler's tint carries its style's hue, because in the web client
+        /// it was laid over a neutral canvas. Dividing by the style mean leaves
+        /// only how this building differs from the average of its kind, which
+        /// is what makes a terrace read as separate properties rather than one
+        /// long extrusion.
         /// </summary>
-        static Color WallColour(BuildingData b)
-        {
-            var tint = b.c != null && b.c.Length >= 3
-                ? new Color(b.c[0] / 255f, b.c[1] / 255f, b.c[2] / 255f)
-                : Color.white;
-
-            Color material;
-            switch (b.st)
-            {
-                case "limestone": material = new Color(0.427f, 0.408f, 0.341f); break;  // #6d6857
-                case "brick":     material = new Color(0.216f, 0.173f, 0.145f); break;  // #372c25
-                case "modern":    material = new Color(0.290f, 0.290f, 0.298f); break;  // #4a4a4c
-                case "render":    material = new Color(0.376f, 0.353f, 0.318f); break;  // the render hues
-                case "monument":  material = new Color(0.455f, 0.435f, 0.365f); break;  // weathered ashlar
-                default:          material = new Color(0.400f, 0.380f, 0.340f); break;
-            }
-
-            return new Color(material.r * tint.r, material.g * tint.g, material.b * tint.b);
-        }
+        static Color WallColour(BuildingData b) => TrapMaterials.Variation(b.c, b.st);
 
         static void FlatRoof(Buffers b, float[] ring, int[] order, float top, Color tint)
         {

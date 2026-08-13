@@ -67,6 +67,9 @@ namespace TrapMadeIt.World.EditorTools
             // which carries the web client's mood arc: dusk on the first night,
             // lifting toward daylight as chapters clear. Setting any of it here
             // as well would mean two places deciding the weather.
+            // Neutral tonemapping, and nothing else. See TrapPostProcess.
+            new GameObject("PostProcess").AddComponent<TrapPostProcess>();
+
             var air = new GameObject("Atmosphere").AddComponent<WorldAtmosphere>();
             air.sun = sun;
             air.view = cam;
@@ -171,6 +174,12 @@ namespace TrapMadeIt.World.EditorTools
             // By name, because these are not all public properties and the set
             // that is has changed between URP versions.
             Set(so, "m_ShadowDistance", 220f);
+            // 4x MSAA on the PC tier. A city is nothing but hard vertical
+            // edges against a bright sky, which is the worst case for aliasing
+            // and the one place MSAA earns its cost outright. The mobile asset
+            // is left alone deliberately -- see docs/03-technical/RENDER-PIPELINE.md
+            // for the tier intent.
+            Set(so, "m_MSAA", 4);
             Set(so, "m_Cascade2Split", 0.25f);
             Set(so, "m_SoftShadowsSupported", true);
             Set(so, "m_ShadowCascadeCount", 3);

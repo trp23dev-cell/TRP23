@@ -704,3 +704,53 @@ Every figure comes from reading the pipeline and querying the shipped 294-tile e
 **WORLD-V01** — material and lighting baseline. XS–S, reversible, no pipeline or geometry change, and the prerequisite for judging every later visual package. Not authorised.
 
 Gameplay-wise **U07** is still the thing that unblocks shops, the barber, Drops and NPCs. Which of the two goes first is the owner's call.
+
+---
+
+## Session 18 — 10 August 2026 · WORLD-V01 material + lighting baseline
+
+### The defect, corrected
+
+The audit said ≈3.4 % albedo using sRGB arithmetic. The project renders **linear**, and the two channels are not treated alike — a texture is sRGB and converted on sample, a vertex colour is used raw. The real figure is **0.00596 linear against a road at 0.0272: the brick wall was 4.6× darker than the tarmac in front of it.** Worse than reported, same cause.
+
+### The fix is a contract, not a brightness constant
+
+`TrapMaterials.cs` is now the one table. Texture carries material colour and pattern; vertex colour carries per-building variation × AO and is a multiplier around 1.0; `_BaseColor` stays white. Three files stopped deciding what things are made of — `BuildingMeshBuilder`, `CityTextures` and `WorldStreamer` all had their own colour tables, and `WorldStreamer`'s was a *third* one nobody had noticed.
+
+The tint needed care rather than deletion. It is not centred on 1.0 — brick averages `(0.972, 0.801, 0.730)` across 3,452 buildings, because in the web client it was laid over a neutral canvas and carried the brick hue. Using it raw over an already-brick texture re-applies brick-ness. So it is divided by its style's mean and clamped, leaving only how a building differs from the average of its kind — which is what makes a terrace read as separate properties.
+
+**The means are measured from the shipped export, not copied from the tiler's formula**, and `check:materials` recomputes them from that same export. Same discipline as the trap-card shared table.
+
+### Normals without new art or new geometry
+
+Every pattern in `CityTextures` draws recesses dark — mortar joints, sett gaps, roof courses. That is not a stylistic coincidence, it is what those features are, so the albedo's luminance is already a height field and a Sobel of it is already the normal. Eleven maps cover the whole city, one per family, shared. Glass, render, grass and water get none: flat in life.
+
+The shader derives its tangent frame from screen-space derivatives rather than a tangent stream, so no mesh builder was touched and no vertex memory added — which also keeps §8 clean.
+
+### One thing I did not do, and why
+
+The brief asked for an authored TRP volume profile asset. A `VolumeProfile` is a ScriptableObject whose YAML carries GUID references into the URP package, and there is no Unity here to validate it — hand-writing one is a good way to produce a file that diffs cleanly and fails to load. It is built in code instead: project-owned, deterministic, reviewable, and impossible to half-write. Same reasoning for the sun, assigned by `WorldAtmosphere` rather than by editing `TrapGame.unity`.
+
+Unity's stock `DefaultVolumeProfile` still carries `CopyPasteTestComponent2` and friends. They are inert and overridden. Deleting them means hand-editing a Unity asset, so it is an owner task rather than a risk taken in a package about brightness.
+
+### The flagship, and a correction
+
+D-W01 already said the JD anchor must be renamed; my audit said "the flagship has no anchor", which was imprecise — it exists, under the wrong name. Now **TRAP MADE IT FLAGSHIP**, same OSM id, same building, same door, same coordinates.
+
+**The rename did not reach the game at first.** Anchor names are baked into `map-export.json.gz`, and the server refuses an import whose `builtAt` is not newer — correct, defensive behaviour that stops a boot clobbering the database. So the export's `builtAt` had to be bumped for the change to propagate at all. Worth knowing: **editing the export without touching `builtAt` is a silent no-op on any machine that already has the map.**
+
+`kind: "chapter"` is unchanged. D-W01 also wants that reclassified, but it is a gameplay change with content and mission consequences and this is a rendering package.
+
+### Verified
+
+`check:materials` (new, 30 assertions) · `check:csharp` 0 errors ×3 · `check:world` — **geometry byte-identical: 288,726 triangles, 5,969 approaches** · `check:repo` · `check:trap` · `check:api` · `map:verify` all checks passed.
+
+Guard proven both ways: re-planting the original `WallColour` fails exactly the two checks that name it; removing it passes.
+
+### Not verified
+
+**Unity has not been run. No rendered image has been seen.** I can show that the arithmetic is now right and that the geometry did not move. **I cannot tell you it looks good** — whether limestone reads as Lincoln stone, whether the normals are too strong, whether MSAA 4× is affordable. That needs the owner's screenshots, and if the result is technically correct and visually disappointing, that is a real possible outcome of this package.
+
+### Next recommended action
+
+**WORLD-V02, roofs** — but only after the screenshots. Judging V02 against an unverified V01 would repeat the mistake V01 exists to fix.

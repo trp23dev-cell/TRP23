@@ -4,7 +4,8 @@
 using System;
 using System.Collections;
 namespace UnityEngine {
-  public class Object {}
+  public class Object {
+    public static T FindFirstObjectByType<T>() where T : Object => null;}
   public class MonoBehaviour : Component { public Transform transform => null; public bool enabled { get; set; } public static T FindAnyObjectByType<T>() where T : Component, new() => new T(); public static T[] FindObjectsByType<T>(FindObjectsSortMode m) where T : Component => new T[0]; public Coroutine StartCoroutine(IEnumerator r) => null; public void Invoke(string m, float t) {} public void CancelInvoke() {} public void CancelInvoke(string m) {} public static void DontDestroyOnLoad(Object o) {} public static void Destroy(Object o) {} }
   public class Coroutine {}
   public class WaitForSeconds { public WaitForSeconds(float s) {} }
@@ -186,6 +187,7 @@ namespace UnityEngine {
     public static Color fogColor { get; set; }
     public static float fogDensity { get; set; }
     public static Rendering.AmbientMode ambientMode { get; set; }
+    public static Light sun { get; set; }
     public static Color ambientSkyColor { get; set; }
     public static Color ambientEquatorColor { get; set; }
     public static Color ambientGroundColor { get; set; }
@@ -214,6 +216,7 @@ namespace UnityEngine {
   public class RuntimeAnimatorController : Object {}
   public class MeshCollider : Component { public bool convex { get; set; } public Mesh sharedMesh { get; set; } }
   public class Material : Object {
+    public void SetTexture(string n, Texture t) { }
     public Material(Shader s) {}
     public string name { get; set; }
     public Color color { get; set; }
@@ -271,6 +274,7 @@ namespace UnityEngine {
   }
   public class Texture2D : Texture {
     public Texture2D(int w, int h, TextureFormat f, bool mips) {}
+    public Texture2D(int w, int h, TextureFormat f, bool mips, bool linear) {}
     public void SetPixels32(Color32[] px) {}
     public void Apply(bool mips, bool noLongerReadable) {}
   }
@@ -344,6 +348,24 @@ namespace UnityEngine {
     public ScaleMode uiScaleMode { get; set; }
     public Vector2 referenceResolution { get; set; }
   }
+}
+
+// Enough URP for TrapPostProcess to compile. The real types live in the
+// com.unity.render-pipelines.universal package, which is not on disk here --
+// this checks the SHAPE of the call, which is where the mistakes are (a
+// VolumeParameter set without its overrideState does nothing at all, silently).
+namespace UnityEngine {
+  public class ScriptableObject : Object { public string name { get; set; } public static T CreateInstance<T>() where T : ScriptableObject, new() => new T(); }
+}
+namespace UnityEngine.Rendering {
+  public class VolumeProfile : ScriptableObject { public T Add<T>(bool overrides) where T : VolumeComponent, new() => new T(); }
+  public class VolumeComponent : ScriptableObject { }
+  public class VolumeParameter<T> { public bool overrideState; public T value; }
+  public class Volume : MonoBehaviour { public bool isGlobal; public float priority; public VolumeProfile profile; }
+}
+namespace UnityEngine.Rendering.Universal {
+  public enum TonemappingMode { None, Neutral, ACES }
+  public class Tonemapping : VolumeComponent { public VolumeParameter<TonemappingMode> mode = new VolumeParameter<TonemappingMode>(); }
 }
 
 namespace UnityEngine.UI {

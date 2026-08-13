@@ -15,6 +15,11 @@ Shader "TRAP/Vertex Colour"
     Properties
     {
         _BaseMap("Base Map", 2D) = "white" {}
+        // Generated at runtime by CityTextures.NormalFor, written as a plain
+        // rgb vector in a LINEAR texture -- not Unity's DXT5nm packing, which
+        // exists for a compression we are not using.
+        _BumpMap("Normal Map", 2D) = "bump" {}
+        _BumpScale("Normal Scale", Range(0,2)) = 1.0
         _BaseColor("Base Colour", Color) = (1,1,1,1)
         _Smoothness("Smoothness", Range(0,1)) = 0.05
         _Metallic("Metallic", Range(0,1)) = 0.0
@@ -69,9 +74,38 @@ Shader "TRAP/Vertex Colour"
 
             TEXTURE2D(_BaseMap);
             SAMPLER(sampler_BaseMap);
+            TEXTURE2D(_BumpMap);
+            SAMPLER(sampler_BumpMap);
+
+            // Tangent frame from screen-space derivatives.
+            //
+            // The mesh builders write position, normal, uv and colour -- no
+            // tangents. Adding a tangent stream would mean touching every
+            // builder and paying four more floats per vertex across 6,947
+            // buildings, to describe a frame that is already implied by the UVs
+            // we have. This derives it per pixel instead, which is the standard
+            // trick for exactly this case and costs no memory at all.
+            float3x3 CotangentFrame(float3 N, float3 p, float2 uv)
+            {
+                float3 dp1 = ddx(p);
+                float3 dp2 = ddy(p);
+                float2 duv1 = ddx(uv);
+                float2 duv2 = ddy(uv);
+
+                float3 dp2perp = cross(dp2, N);
+                float3 dp1perp = cross(N, dp1);
+                float3 T = dp2perp * duv1.x + dp1perp * duv2.x;
+                float3 B = dp2perp * duv1.y + dp1perp * duv2.y;
+
+                // rsqrt of the larger, so a degenerate UV on one axis cannot
+                // blow the frame up.
+                float invmax = rsqrt(max(dot(T, T), dot(B, B)) + 1e-8);
+                return float3x3(T * invmax, B * invmax, N);
+            }
 
             CBUFFER_START(UnityPerMaterial)
                 float4 _BaseMap_ST;
+                float _BumpScale;
                 half4  _BaseColor;
                 half   _Smoothness;
                 half   _Metallic;
@@ -104,11 +138,19 @@ Shader "TRAP/Vertex Colour"
                 surface.metallic = _Metallic;
                 surface.smoothness = _Smoothness;
                 surface.occlusion = 1.0h;
-                surface.normalTS = half3(0, 0, 1);
+                // Masonry relief. Without this, brick and stone are flat
+                // coloured photographs at every distance -- the courses are
+                // drawn, they just never catch the light.
+                half3 packed = SAMPLE_TEXTURE2D(_BumpMap, sampler_BumpMap, IN.uv).rgb;
+                half3 nTS = half3(packed * 2.0h - 1.0h);
+                nTS.xy *= _BumpScale;
+                surface.normalTS = normalize(nTS);
 
                 InputData input = (InputData)0;
                 input.positionWS = IN.positionWS;
-                input.normalWS = normalize(IN.normalWS);
+                float3 geoN = normalize(IN.normalWS);
+                float3x3 tbn = CotangentFrame(geoN, IN.positionWS, IN.uv);
+                input.normalWS = normalize(mul(surface.normalTS, tbn));
                 input.viewDirectionWS = GetWorldSpaceNormalizeViewDir(IN.positionWS);
                 input.shadowCoord = TransformWorldToShadowCoord(IN.positionWS);
                 input.fogCoord = IN.fogCoord;

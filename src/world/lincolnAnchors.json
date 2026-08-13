@@ -4,13 +4,20 @@
     "Pinned by OSM element id, NEVER resolved by name at runtime: OSM already",
     "has Kimani's shop tagged under a previous occupant ('Mankind'), and an",
     "upstream rename must not be able to break mission one.",
-    "lat/lon is the fallback the tiler uses if an id is deleted upstream."
+    "lat/lon is the fallback the tiler uses if an 22id is deleted upstream.",
+    "Anchor 0 is the building JD Sports occupies in the real world. The",
+    "BUILDING is the anchor; the in-game business is Trap Made It, and the real",
+    "retailer's trading name is deliberately not used (D-05, D-W01).",
+    "`kind` is still 'chapter' here. D-W01 requires it to stop representing",
+    "Chapter 1, but that is a gameplay change with content and mission",
+    "consequences, and WORLD-V01 is a rendering package. Left for the package",
+    "that moves THE COME UP somewhere else."
   ],
   "anchors": [
     {
       "key": 0,
       "kind": "chapter",
-      "name": "JD",
+      "name": "TRAP MADE IT FLAGSHIP",
       "osm": "way/241764018",
       "lat": 53.227914,
       "lon": -0.540746,

@@ -70,6 +70,7 @@ Full work packages are written **as each is picked up**, one horizon ahead — n
 | U10–U12 | High Street slice: dressing, pedestrians, budgets | AI | L | ⬜ | Phase B |
 | U17a | Character visual seam + UMA preflight | AI | M | ✅ | log S13. Seam built, guarded, tested. Scale canon + 11 tests |
 | U17b | Character framework route | AI | M | ✅ **ROUTE RESOLVED — ART ASSET REQUIRED** | log S14. UMA rejected (D-C01); fixed archetypes chosen (D-C02). **Not a technical blocker for other packages** |
+| V01 | **Material + lighting baseline** | AI | S | ✅ | log S18. Albedo contract, normals, tonemapping, sun, MSAA. **Owner screenshots pending** |
 | — | **Lincoln visual fidelity audit** | AI | M | ✅ | log S17. Read-only. [audit](../01-audit/LINCOLN-VISUAL-FIDELITY-AUDIT.md) + [roadmap](VISUAL-ROADMAP.md). **V01 recommended, not authorised** |
 | U15a | **Phone shell** | AI | M | ✅ **verified** | log S15/S16. Shell + 6 apps; links rather than duplicates. Owner-verified in Unity; modal stacking repaired (ModalSurface) |
 | U14–U22 | **Standing · Phone · NPCs · character · drops · entitlements · opportunities · flagship · bank** | AI + art | — | ⬜ | See [dependency map](IMPLEMENTATION-DEPENDENCY-MAP.md) §2 |
