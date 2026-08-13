@@ -89,6 +89,7 @@ namespace TrapMadeIt.World
 
             if (kind == "shopfront") Shopfront(px, ref rng);
             else if (kind == "residential") DoorAndWindow(px, ref rng);
+            else if (kind == "entrance") Entrance(px, ref rng);
 
             Grain(px, ref rng, 0.03f);
             return Finish(px, $"ground_{kind}_{style}");
@@ -350,6 +351,62 @@ namespace TrapMadeIt.World
         }
 
         /// Glazing, stallriser and fascia: a shop, in the order you see them.
+        /// <summary>
+        /// The way in to a shop.
+        ///
+        /// One per building, in the recessed bay. It is a door and a fanlight
+        /// and nothing else -- no handle detail, no numbers, no name. **It does
+        /// not open and it does not lead anywhere**: interaction is U07's and
+        /// this must not grow toward it.
+        /// </summary>
+        static void Entrance(Color32[] px, ref Rng rng)
+        {
+            int fascia0 = Mathf.RoundToInt(0.06f * Size);
+            int fascia1 = Mathf.RoundToInt(0.24f * Size);
+
+            // Same fascia line as the shopfronts either side, so the band runs
+            // across the frontage instead of stepping at the door.
+            Rect(px, 0, fascia0, Size, fascia1, new Color(0.11f, 0.10f, 0.10f));
+
+            int frame = Mathf.RoundToInt(0.20f * Size);
+            int doorTop = fascia1 + 6;
+
+            // Surround, then the leaf inside it.
+            Rect(px, frame - 6, doorTop, Size - frame + 6, Size, new Color(0.16f, 0.15f, 0.14f));
+            Rect(px, frame, doorTop + 8, Size - frame, Size, new Color(0.10f, 0.11f, 0.13f));
+
+            // Fanlight over the door, and glazing in the upper leaf.
+            Rect(px, frame + 4, doorTop + 12, Size - frame - 4,
+                 Mathf.RoundToInt(0.30f * Size), new Color(0.26f, 0.23f, 0.18f));
+            Rect(px, frame + 8, Mathf.RoundToInt(0.34f * Size), Size - frame - 8,
+                 Mathf.RoundToInt(0.62f * Size), new Color(0.05f, 0.06f, 0.08f));
+            Outline(px, frame + 8, Mathf.RoundToInt(0.34f * Size), Size - frame - 8,
+                    Mathf.RoundToInt(0.62f * Size), new Color(0f, 0f, 0f, 0.6f));
+
+            // Threshold.
+            Rect(px, frame - 8, Size - 8, Size - frame + 8, Size, new Color(0.22f, 0.21f, 0.19f));
+        }
+
+        /// <summary>
+        /// Painted trim: fascias and pilasters, for the whole city.
+        ///
+        /// ONE texture, not one per building. Trim is painted timber and
+        /// rendered stone everywhere, and its job is to be a clean surface that
+        /// separates things -- variation comes from the vertex tint, which
+        /// costs nothing.
+        /// </summary>
+        public static Texture2D Trim()
+        {
+            var px = new Color32[Size * Size];
+            var rng = new Rng(613);
+            Fill(px, TrapMaterials.Surface("trim"));
+            Grain(px, ref rng, 0.035f);
+            // A faint horizontal parting, so a long fascia is not a dead flat
+            // band of colour across forty metres.
+            HLine(px, Mathf.RoundToInt(0.5f * Size), new Color(0f, 0f, 0f, 0.16f));
+            return Finish(px, "trim");
+        }
+
         static void Shopfront(Color32[] px, ref Rng rng)
         {
             int fascia0 = Mathf.RoundToInt(0.06f * Size);
@@ -360,15 +417,23 @@ namespace TrapMadeIt.World
             // Fascia board: where the sign goes.
             Rect(px, 0, fascia0, Size, fascia1, new Color(0.11f, 0.10f, 0.10f));
 
-            // The window itself, in two lights with a mullion.
-            Rect(px, 8, glass0, Size - 8, glass1, new Color(0.09f, 0.10f, 0.12f));
+            // The window itself, in two lights with a mullion. Darker than the
+            // wall by a long way: glass reads as glass because it is a hole in
+            // a lit surface with a sharp specular on it, not because it is
+            // blue. The specular comes from the material's smoothness.
+            Rect(px, 8, glass0, Size - 8, glass1, new Color(0.045f, 0.055f, 0.075f));
             for (int i = 1; i < 3; i++)
                 VLineSegment(px, i * Size / 3, glass0, glass1, new Color(0.24f, 0.23f, 0.21f));
 
             // Lit from inside, most of the time. A parade of dark shops at
             // street level is the single biggest thing that reads as "empty".
             if (rng.Next() < 0.7f)
-                Rect(px, 12, glass0 + 6, Size - 12, glass1 - 30, new Color(0.34f, 0.29f, 0.22f));
+            {
+                Rect(px, 12, glass0 + 6, Size - 12, glass1 - 30, new Color(0.30f, 0.26f, 0.20f));
+                // Falls off toward the back of the shop. A flat rectangle of
+                // light reads as a lightbox; a gradient reads as a room.
+                Rect(px, 12, glass0 + 6, Size - 12, glass0 + 26, new Color(0.40f, 0.35f, 0.27f, 0.7f));
+            }
 
             // Stallriser under the glass, and the pavement line.
             Rect(px, 0, glass1, Size, Size, new Color(0.13f, 0.12f, 0.11f));
@@ -483,6 +548,12 @@ namespace TrapMadeIt.World
         /// </summary>
         static Texture2D Normal(Color32[] albedo, string name, float strength)
         {
+            // Same flip as Finish, and BEFORE the Sobel rather than after.
+            // Flipping the finished normal map would invert its green channel
+            // and light every wall from the wrong side -- which looks almost
+            // right, which is worse.
+            albedo = FlipRows(albedo);
+
             var h = new float[Size * Size];
             for (int i = 0; i < h.Length; i++)
             {
@@ -552,6 +623,8 @@ namespace TrapMadeIt.World
                 case "kerb":      made = Normal(RawSurface("kerb"), "n_kerb", 4f); break;
                 case "asphalt":   made = Normal(RawSurface("asphalt"), "n_asphalt", 2f); break;
                 case "gravel":    made = Normal(RawSurface("gravel"), "n_gravel", 4f); break;
+                // Trim is painted and flat by nature; relief on it would fight
+                // the geometry that already gives it depth.
                 // render, glass, grass, water, wood: flat by nature.
             }
             normals[family] = made;
@@ -561,8 +634,39 @@ namespace TrapMadeIt.World
         static readonly System.Collections.Generic.Dictionary<string, Texture2D> normals =
             new System.Collections.Generic.Dictionary<string, Texture2D>();
 
+        /// <summary>
+        /// Turn the drawing over.
+        ///
+        /// Every draw routine here works in image convention -- row 0 at the
+        /// TOP -- which is what anyone writing `fascia at 0.06, stallriser at
+        /// 0.86` means. Texture2D.SetPixels32 fills from the BOTTOM row up.
+        /// Nothing reconciled the two, so every generated texture rendered
+        /// upside down: shopfront fascias at pavement level, stallrisers at
+        /// first-floor level, and window sills sitting on top of their windows.
+        ///
+        /// Found while adding bays, and it had to be fixed here rather than
+        /// worked around, because the bay system aligns real geometry -- the
+        /// fascia band -- to a painted band that was at the wrong end of the
+        /// wall.
+        ///
+        /// One flip at the boundary, so the drawing code stays in the
+        /// convention it was written in and every texture is corrected at once.
+        /// </summary>
+        static Color32[] FlipRows(Color32[] px)
+        {
+            var flipped = new Color32[px.Length];
+            for (int y = 0; y < Size; y++)
+            {
+                int from = (Size - 1 - y) * Size;
+                int to = y * Size;
+                for (int x = 0; x < Size; x++) flipped[to + x] = px[from + x];
+            }
+            return flipped;
+        }
+
         static Texture2D Finish(Color32[] px, string name)
         {
+            px = FlipRows(px);
             var tex = new Texture2D(Size, Size, TextureFormat.RGBA32, true)
             {
                 name = name,

@@ -17,6 +17,8 @@
     <Compile Include="../../Unity/TRP23/Assets/Core/PointerFocus.cs" />
     <Compile Include="../../Unity/TRP23/Assets/Core/GameFreeze.cs" />
     <Compile Include="../../Unity/TRP23/Assets/Core/ModalSurface.cs" />
+    <Compile Include="../../Unity/TRP23/Assets/Core/TrapHash.cs" />
+    <Compile Include="../../Unity/TRP23/Assets/Core/FacadeLayout.cs" />
     <Compile Include="../../Unity/TRP23/Assets/World/Scripts/TrapGeo.cs" />
     <Compile Include="../../Unity/TRP23/Assets/World/Scripts/TrapMaterials.cs" />
     <Compile Include="../../Unity/TRP23/Assets/World/Scripts/TileModels.cs" />

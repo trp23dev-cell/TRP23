@@ -192,13 +192,37 @@ namespace TrapMadeIt.World
             "roof:" + (b.st == "limestone" || b.st == "monument" ? "slate" : "pantile");
 
         public static void Extrude(BuildingData b, Sink sink)
+            => Extrude(b, sink, facades: false);
+
+        /// <param name="facades">
+        /// WORLD-V02 bay subdivision. Gated per tile by TrapQuality, so the
+        /// High Street gets articulated frontages and the ring road keeps the
+        /// cheap path. Passed in rather than looked up: this class does the
+        /// geometry and does not get to decide policy.
+        /// </param>
+        public static void Extrude(BuildingData b, Sink sink, bool facades)
         {
             Extrude(b, sink.Get(WallKey(b)), sink.Get(RoofKey(b)),
-                    sink.Get(GroundKey(b)));
+                    sink.Get(GroundKey(b)),
+                    facades ? sink.Get(TrimKey) : null,
+                    facades ? sink.Get(EntranceKey(b)) : null,
+                    facades);
         }
 
+        /// Fascias and pilasters. ONE key for the whole city, not one per
+        /// building -- trim is painted timber and stone everywhere, and a
+        /// material per bay is the fastest way to turn a tile into a thousand
+        /// draw calls.
+        public const string TrimKey = "trim";
+
+        /// The door bay of a shop. Houses already have a door in their ground
+        /// texture, so they keep it and cost nothing extra.
+        public static string EntranceKey(BuildingData b) =>
+            b.g == "shopfront" ? "ground:entrance:" + (b.st ?? "brick") : GroundKey(b);
+
         public static void Extrude(BuildingData b, Buffers walls, Buffers roofs,
-                                   Buffers ground = null)
+                                   Buffers ground = null, Buffers trim = null,
+                                   Buffers entrance = null, bool facades = false)
         {
             var ring = b.p;
             if (ring == null || ring.Length < 6) return;
@@ -228,6 +252,22 @@ namespace TrapMadeIt.World
             // gave an 83m cathedral twenty-six rows of office windows.
             float vSpan = b.st == "monument" ? Mathf.Max(b.h, 1f) : TrapGeo.Storey;
 
+            // Which wall is the frontage, and therefore carries the door.
+            // The longest one: a terrace's front is longer than its returns,
+            // and a corner shop's front is the side facing the wider street.
+            int frontEdge = -1;
+            float frontLen = 0f;
+            if (facades)
+            {
+                for (int k = 0; k < n; k++)
+                {
+                    int i2 = order[k], j2 = order[(k + 1) % n];
+                    float dx = ring[j2 * 2] - ring[i2 * 2], dz = ring[j2 * 2 + 1] - ring[i2 * 2 + 1];
+                    float l2 = Mathf.Sqrt(dx * dx + dz * dz);
+                    if (l2 > frontLen) { frontLen = l2; frontEdge = k; }
+                }
+            }
+
             for (int k = 0; k < n; k++)
             {
                 int i = order[k];
@@ -241,24 +281,96 @@ namespace TrapMadeIt.World
 
                 // Anticlockwise ring: the outward normal is the edge turned right.
                 float nx = ez / len, nz = -ex / len;
+                float ux = ex / len, uz = ez / len;   // along the wall
 
                 if (street > baseY + 0.02f)
                 {
+                    // The plinth stays whole. It is below the pavement line and
+                    // has no openings, so dividing it would cost triangles to
+                    // draw exactly the same thing.
                     Quad(walls, ax, az, bx, bz, baseY, street, nx, nz, len, tint, 0.35f, 0.6f, baseY, vSpan);
                 }
-                // Split the ground floor off, where there is room for one.
-                // It is the storey people actually stand in front of, and the
-                // one that carries the shopfront.
+
                 float groundTop = Mathf.Min(street + TrapGeo.Storey, top);
-                if (ground != null && b.st != "monument" && groundTop > street + 0.4f)
+                bool hasGround = ground != null && b.st != "monument" && groundTop > street + 0.4f;
+
+                if (!facades || b.st == "monument")
                 {
-                    Quad(ground, ax, az, bx, bz, street, groundTop, nx, nz, len, tint, 0.55f, 1f, street, vSpan);
-                    if (top > groundTop + 0.1f)
-                        Quad(walls, ax, az, bx, bz, groundTop, top, nx, nz, len, tint, 0.72f, 1f, street, vSpan);
+                    // The cheap path, unchanged. Background tiles and monuments
+                    // -- a cathedral has no shopfront and no bay rhythm.
+                    if (hasGround)
+                    {
+                        Quad(ground, ax, az, bx, bz, street, groundTop, nx, nz, len, tint, 0.55f, 1f, street, vSpan);
+                        if (top > groundTop + 0.1f)
+                            Quad(walls, ax, az, bx, bz, groundTop, top, nx, nz, len, tint, 0.72f, 1f, street, vSpan);
+                    }
+                    else
+                    {
+                        Quad(walls, ax, az, bx, bz, street, top, nx, nz, len, tint, 0.62f, 1f, street, vSpan);
+                    }
+                    continue;
                 }
-                else
+
+                // ---- WORLD-V02: bays ----
+                int doorBay = -1;
+                if (k == frontEdge)
+                    doorBay = FacadeLayout.EntranceBay(FacadeLayout.CountFor(len, b.i, k), b.i);
+
+                var bays = FacadeLayout.Divide(len, b.i, k, doorBay);
+                bool frontage = len >= FacadeLayout.MinArticulated && bays.Count > 1;
+
+                for (int q = 0; q < bays.Count; q++)
                 {
-                    Quad(walls, ax, az, bx, bz, street, top, nx, nz, len, tint, 0.62f, 1f, street, vSpan);
+                    var bay = bays[q];
+                    float sx = ax + ux * bay.Start, sz = az + uz * bay.Start;
+                    float exx = ax + ux * bay.End, ezz = az + uz * bay.End;
+
+                    // Each bay gets its own colour, very slightly. This is the
+                    // cheapest cue there is -- no triangles at all -- and it is
+                    // most of what makes a terrace stop reading as one object.
+                    // Kept tiny on purpose: a High Street is not a rainbow.
+                    var bayTint = tint * (1f + TrapHash.Signed(b.i, 2100 + k * 32 + q) * 0.06f);
+
+                    if (hasGround)
+                    {
+                        var surface = bay.Entrance && entrance != null ? entrance : ground;
+
+                        if (bay.Entrance)
+                        {
+                            // A recessed doorway. One per building, so the cost
+                            // is bounded, and it is the single clearest signal
+                            // that a frontage has a way in.
+                            Recess(surface, walls, sx, sz, exx, ezz, street, groundTop,
+                                   nx, nz, bay.Width, bayTint, street, vSpan, 0.16f);
+                        }
+                        else
+                        {
+                            BayQuad(surface, sx, sz, exx, ezz, street, groundTop,
+                                    nx, nz, bayTint, 0.55f, 1f, street, vSpan);
+                        }
+
+                        // Fascia: the signboard band over a shopfront. Only on
+                        // shops, and only on an articulated frontage -- a
+                        // fascia round the back of a building is nonsense.
+                        if (trim != null && frontage && b.g == "shopfront")
+                            Fascia(trim, sx, sz, exx, ezz, groundTop, nx, nz, bayTint);
+
+                        if (top > groundTop + 0.1f)
+                            BayQuad(walls, sx, sz, exx, ezz, groundTop, top,
+                                    nx, nz, bayTint, 0.72f, 1f, street, vSpan);
+                    }
+                    else
+                    {
+                        BayQuad(walls, sx, sz, exx, ezz, street, top,
+                                nx, nz, bayTint, 0.62f, 1f, street, vSpan);
+                    }
+
+                    // Pilaster on the joint between this bay and the next. Not
+                    // after the last one -- that is the building corner, which
+                    // already reads as a break.
+                    if (trim != null && frontage && q < bays.Count - 1)
+                        Pilaster(trim, ax + ux * bay.End, az + uz * bay.End,
+                                 ux, uz, nx, nz, street, top, tint);
                 }
             }
 
@@ -603,6 +715,186 @@ namespace TrapMadeIt.World
                         3.2f, 3.2f, street, street + height * 1.5f, tint);
                 }
             }
+        }
+
+        // ------------------------------------------------ WORLD-V02 façade parts
+        //
+        // Every one of these is a handful of quads and none of them is a
+        // GameObject, a component or an Update. A tile's bays, fascias,
+        // pilasters and doorways all merge into the same per-material buffers
+        // the walls already use, so an articulated High Street tile costs a few
+        // more draw calls than a plain one -- not one per window.
+
+        /// <summary>
+        /// One bay of wall. The whole point is the UV: **u runs 0 to 1 across
+        /// the bay**, so exactly one texture tile fits it.
+        ///
+        /// That single change is what aligns windows to bays. The old code
+        /// tiled by metres (u = len / 6), which meant a 17m wall got 2.83 tiles
+        /// and the last window was sliced in half at the corner on almost every
+        /// building in Lincoln. Now the texture's two windows land inside the
+        /// bay by construction, at whatever spacing the bay is wide, and a
+        /// corner is always a wall rather than half a window.
+        /// </summary>
+        static void BayQuad(Buffers b, float ax, float az, float bx, float bz,
+                            float y0, float y1, float nx, float nz,
+                            Color tint, float bottomShade, float topShade,
+                            float baseY, float vSpan)
+        {
+            int i = b.vertices.Count;
+            b.vertices.Add(new Vector3(ax, y0, az));
+            b.vertices.Add(new Vector3(bx, y0, bz));
+            b.vertices.Add(new Vector3(bx, y1, bz));
+            b.vertices.Add(new Vector3(ax, y1, az));
+
+            var normal = new Vector3(nx, 0f, nz);
+            for (int k = 0; k < 4; k++) b.normals.Add(normal);
+
+            float v0 = (y0 - baseY) / vSpan;
+            float v1 = (y1 - baseY) / vSpan;
+            b.uvs.Add(new Vector2(0f, v0));
+            b.uvs.Add(new Vector2(1f, v0));
+            b.uvs.Add(new Vector2(1f, v1));
+            b.uvs.Add(new Vector2(0f, v1));
+
+            var lo = tint * bottomShade;
+            var hi = tint * topShade;
+            b.colors.Add(lo); b.colors.Add(lo); b.colors.Add(hi); b.colors.Add(hi);
+
+            b.triangles.Add(i); b.triangles.Add(i + 2); b.triangles.Add(i + 1);
+            b.triangles.Add(i); b.triangles.Add(i + 3); b.triangles.Add(i + 2);
+        }
+
+        /// <summary>A quad from four corners, for the parts that are not vertical wall.</summary>
+        static void Face(Buffers b, Vector3 p0, Vector3 p1, Vector3 p2, Vector3 p3,
+                         Vector3 normal, Color tint, float uMax = 1f, float vMax = 1f)
+        {
+            int i = b.vertices.Count;
+            b.vertices.Add(p0); b.vertices.Add(p1); b.vertices.Add(p2); b.vertices.Add(p3);
+            for (int k = 0; k < 4; k++) b.normals.Add(normal);
+            b.uvs.Add(new Vector2(0f, 0f));
+            b.uvs.Add(new Vector2(uMax, 0f));
+            b.uvs.Add(new Vector2(uMax, vMax));
+            b.uvs.Add(new Vector2(0f, vMax));
+            for (int k = 0; k < 4; k++) b.colors.Add(tint);
+            b.triangles.Add(i); b.triangles.Add(i + 2); b.triangles.Add(i + 1);
+            b.triangles.Add(i); b.triangles.Add(i + 3); b.triangles.Add(i + 2);
+        }
+
+        /// <summary>How far trim stands proud of the wall. Deliberately tiny.</summary>
+        const float TrimDepth = 0.10f;
+        const float PilasterWidth = 0.34f;
+        const float FasciaHeight = 0.45f;
+
+        /// <summary>
+        /// The vertical strip between two bays.
+        ///
+        /// Real geometry rather than a painted stripe, because a pilaster's
+        /// whole job is to catch the light from one side and shade on the
+        /// other -- at the grazing angles you walk a street at, a painted one
+        /// simply is not there.
+        ///
+        /// 10cm proud. That is enough to read and far too little to interfere
+        /// with the pavement: collision comes from the OSM footprint and is
+        /// untouched, so this can never push the player into the road.
+        /// </summary>
+        static void Pilaster(Buffers b, float x, float z, float ux, float uz,
+                             float nx, float nz, float y0, float y1, Color tint)
+        {
+            float hw = PilasterWidth * 0.5f;
+            var along = new Vector3(ux, 0f, uz);
+            var outward = new Vector3(nx, 0f, nz);
+            var at = new Vector3(x, 0f, z);
+
+            var l0 = at - along * hw;
+            var r0 = at + along * hw;
+            var l1 = l0 + outward * TrimDepth;
+            var r1 = r0 + outward * TrimDepth;
+
+            float h = Mathf.Max(y1 - y0, 0.1f);
+            var shade = tint * 0.92f;
+
+            // Front, then the two returns. The back is against the wall.
+            Face(b, new Vector3(l1.x, y0, l1.z), new Vector3(r1.x, y0, r1.z),
+                    new Vector3(r1.x, y1, r1.z), new Vector3(l1.x, y1, l1.z),
+                    outward, tint, 1f, h / TrapGeo.Storey);
+            Face(b, new Vector3(l0.x, y0, l0.z), new Vector3(l1.x, y0, l1.z),
+                    new Vector3(l1.x, y1, l1.z), new Vector3(l0.x, y1, l0.z),
+                    -along, shade, 1f, h / TrapGeo.Storey);
+            Face(b, new Vector3(r1.x, y0, r1.z), new Vector3(r0.x, y0, r0.z),
+                    new Vector3(r0.x, y1, r0.z), new Vector3(r1.x, y1, r1.z),
+                    along, shade, 1f, h / TrapGeo.Storey);
+        }
+
+        /// <summary>
+        /// The signboard band over a shopfront, and the line that separates it
+        /// from the storeys above.
+        ///
+        /// Two faces, not three: the front and the underside. The top surface
+        /// is 10cm deep and sits at first-floor level, so from the pavement it
+        /// is never seen, and paying four triangles a bay across a city for a
+        /// surface nobody looks at is how budgets go.
+        ///
+        /// **No lettering.** Signage is a later authored package -- this is the
+        /// board it will eventually go on.
+        /// </summary>
+        static void Fascia(Buffers b, float ax, float az, float bx, float bz,
+                           float yTop, float nx, float nz, Color tint)
+        {
+            var outward = new Vector3(nx, 0f, nz);
+            float yBot = yTop - FasciaHeight;
+
+            var a0 = new Vector3(ax, yBot, az) + outward * TrimDepth;
+            var b0 = new Vector3(bx, yBot, bz) + outward * TrimDepth;
+            var a1 = new Vector3(ax, yTop, az) + outward * TrimDepth;
+            var b1 = new Vector3(bx, yTop, bz) + outward * TrimDepth;
+
+            Face(b, a0, b0, b1, a1, outward, tint);
+            // Underside, in shadow: this is the soffit, and it is what makes
+            // the board read as standing off the wall rather than painted on.
+            Face(b, new Vector3(ax, yBot, az), a0, b0, new Vector3(bx, yBot, bz),
+                 Vector3.down, tint * 0.6f);
+        }
+
+        /// <summary>
+        /// A doorway set back into the frontage, with its reveals.
+        ///
+        /// The recess is the cue. A shop door flush with the glass reads as a
+        /// panel; set back 16cm with jambs and a head, it reads as somewhere
+        /// you could walk in -- which is the whole ask, and it stops there.
+        /// **Nothing here is interactive and nothing leads anywhere**: doors
+        /// are U07's, and this must not grow toward it.
+        ///
+        /// One per building, on the longest wall, so the cost is bounded at
+        /// roughly 500 doorways across the slice.
+        /// </summary>
+        static void Recess(Buffers face, Buffers reveal,
+                           float ax, float az, float bx, float bz,
+                           float y0, float y1, float nx, float nz, float width,
+                           Color tint, float baseY, float vSpan, float depth)
+        {
+            var inward = new Vector3(-nx, 0f, -nz) * depth;
+
+            float rx0 = ax + inward.x, rz0 = az + inward.z;
+            float rx1 = bx + inward.x, rz1 = bz + inward.z;
+
+            // The door itself, pushed back.
+            BayQuad(face, rx0, rz0, rx1, rz1, y0, y1, nx, nz, tint * 0.9f, 0.6f, 1f, baseY, vSpan);
+
+            var along = new Vector3(bx - ax, 0f, bz - az).normalized;
+            float h = Mathf.Max(y1 - y0, 0.1f);
+
+            // Jambs, facing each other across the opening.
+            Face(reveal, new Vector3(ax, y0, az), new Vector3(rx0, y0, rz0),
+                         new Vector3(rx0, y1, rz0), new Vector3(ax, y1, az),
+                         along, tint * 0.7f, depth, h / TrapGeo.Storey);
+            Face(reveal, new Vector3(rx1, y0, rz1), new Vector3(bx, y0, bz),
+                         new Vector3(bx, y1, bz), new Vector3(rx1, y1, rz1),
+                         -along, tint * 0.7f, depth, h / TrapGeo.Storey);
+            // Head.
+            Face(reveal, new Vector3(rx0, y1, rz0), new Vector3(rx1, y1, rz1),
+                         new Vector3(bx, y1, bz), new Vector3(ax, y1, az),
+                         Vector3.down, tint * 0.55f, width, depth);
         }
 
         static void Quad(Buffers b, float ax, float az, float bx, float bz,

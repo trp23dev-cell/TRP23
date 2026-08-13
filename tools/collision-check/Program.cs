@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
+using System.Globalization;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using UnityEngine;
 using TrapMadeIt.World;
 
@@ -21,11 +23,13 @@ namespace TrapCollisionCheck
     {
         const float Step = 0.35f;   // a sprint step, larger than a walk
 
+        /// The repository root, from the build output. Same hop the map export
+        /// already uses, kept in one place now that two things need it.
+        static string Root => Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../.."));
+
         static int Main()
         {
-            var path = Path.Combine(AppContext.BaseDirectory,
-                "../../../../../server/storage/map-export.json.gz");
-            path = Path.GetFullPath(path);
+            var path = Path.Combine(Root, "server/storage/map-export.json.gz");
             if (!File.Exists(path))
             {
                 Console.Error.WriteLine($"no map export at {path} — run `npm run map:export` first");
@@ -284,6 +288,170 @@ namespace TrapCollisionCheck
                 !TrapMadeIt.ModalSurface.AnyOpen);
 
             TrapMadeIt.ModalSurface.ReleaseAll();
+
+            bad += FacadeChecks();
+
+            return bad;
+        }
+
+        /// <summary>
+        /// The façade system (WORLD-V02).
+        ///
+        /// Two things are contractual here and neither is a colour or a width.
+        ///
+        /// DETERMINISM. The same building must produce the same frontage on
+        /// every machine and every run. It is chosen from a hash of the OSM id,
+        /// so this is provable rather than hopeful — and it has to be proved,
+        /// because the failure is invisible: a city that reshuffles on reload
+        /// looks fine in any single screenshot.
+        ///
+        /// EXACT COVER. Bays must tile their wall with no gap and no overlap.
+        /// A gap is a hole you can see the inside of the building through; an
+        /// overlap is z-fighting along a vertical seam. Both are the kind of
+        /// defect that shows up on one building in five hundred, which is
+        /// exactly what a test is for and an eye is not.
+        /// </summary>
+        static int FacadeChecks()
+        {
+            int bad = 0;
+            void Assert(string what, bool pass, string note = "")
+            {
+                Console.WriteLine($"{(pass ? "ok  " : "FAIL")}  {what}{(note.Length > 0 ? " — " + note : "")}");
+                if (!pass) bad++;
+            }
+
+            // ---- the hash agrees with the JS that generates the world ----
+            var casesPath = Path.Combine(Root, "scripts", "lib", "hash.cases.json");
+            if (!File.Exists(casesPath))
+            {
+                Assert("the shared hash table is present", false, casesPath);
+            }
+            else
+            {
+                var json = File.ReadAllText(casesPath);
+                int checkedCases = 0, wrong = 0;
+                string firstWrong = "";
+                foreach (Match m in Regex.Matches(json,
+                    @"\{\s*""id""\s*:\s*""([^""]*)""\s*,\s*""salt""\s*:\s*(-?\d+)\s*,\s*""unit""\s*:\s*([0-9.]+)\s*\}"))
+                {
+                    string id = m.Groups[1].Value;
+                    int salt = int.Parse(m.Groups[2].Value, CultureInfo.InvariantCulture);
+                    float want = float.Parse(m.Groups[3].Value, CultureInfo.InvariantCulture);
+                    float got = TrapMadeIt.TrapHash.Unit(id, salt);
+                    checkedCases++;
+                    if (Math.Abs(got - want) > 1e-6f && wrong++ == 0)
+                        firstWrong = $"{id} salt {salt}: C# {got}, JS {want}";
+                }
+                Assert($"TrapHash matches the tiler's hashUnit ({checkedCases} cases)", checkedCases > 0 && wrong == 0,
+                       wrong > 0 ? firstWrong : (checkedCases == 0 ? "no cases parsed" : ""));
+            }
+
+            // ---- bays cover their wall exactly ----
+            var lengths = new float[] { 0.5f, 3.4f, 5.9f, 6.0f, 7.3f, 12.0f, 18.5f, 27.0f, 41.0f, 96.0f };
+            var ids = new[] { "way/241765479", "way/705942979", "way/1214298451", "way/620328712" };
+
+            float worstGap = 0f, narrowest = float.MaxValue, widest = 0f;
+            bool everyBayPositive = true;
+            foreach (var id in ids)
+            {
+                foreach (var L in lengths)
+                {
+                    for (int edge = 0; edge < 6; edge++)
+                    {
+                        var bays = TrapMadeIt.FacadeLayout.Divide(L, id, edge);
+                        if (bays.Count == 0) continue;
+
+                        // Start at zero, end at the wall, and meet in between.
+                        worstGap = Math.Max(worstGap, Math.Abs(bays[0].Start));
+                        worstGap = Math.Max(worstGap, Math.Abs(bays[bays.Count - 1].End - L));
+                        for (int i = 1; i < bays.Count; i++)
+                            worstGap = Math.Max(worstGap, Math.Abs(bays[i].Start - bays[i - 1].End));
+
+                        foreach (var bay in bays)
+                        {
+                            if (bay.Width <= 0f) everyBayPositive = false;
+                            if (bays.Count > 1 || L >= TrapMadeIt.FacadeLayout.MinArticulated)
+                            {
+                                narrowest = Math.Min(narrowest, bay.Width);
+                                widest = Math.Max(widest, bay.Width);
+                            }
+                        }
+                    }
+                }
+            }
+
+            Assert("bays cover the wall exactly", worstGap < 0.001f, $"worst seam {worstGap:F6}m");
+            Assert("no bay has zero or negative width", everyBayPositive);
+            // The jitter is +/-14%, so the bounds are the layout's limits widened
+            // by that. Testing the CONSTANTS rather than a snapshot: widths are
+            // meant to be tuned, "no slivers and no barn doors" is not.
+            Assert("no bay is a sliver", narrowest > TrapMadeIt.FacadeLayout.MinBay * 0.80f,
+                   $"narrowest {narrowest:F2}m");
+            Assert("no bay is a barn door", widest < TrapMadeIt.FacadeLayout.MaxBay * 1.20f,
+                   $"widest {widest:F2}m");
+
+            // ---- the same building lays out the same way, every time ----
+            bool stable = true;
+            string drift = "";
+            foreach (var id in ids)
+            {
+                for (int edge = 0; edge < 4; edge++)
+                {
+                    var a = TrapMadeIt.FacadeLayout.Divide(17.4f, id, edge, 1);
+                    var b = TrapMadeIt.FacadeLayout.Divide(17.4f, id, edge, 1);
+                    if (a.Count != b.Count) { stable = false; drift = $"{id} edge {edge}: {a.Count} then {b.Count} bays"; break; }
+                    for (int i = 0; i < a.Count; i++)
+                        if (Math.Abs(a[i].Width - b[i].Width) > 1e-6f || a[i].Entrance != b[i].Entrance)
+                        { stable = false; drift = $"{id} edge {edge} bay {i}"; break; }
+                }
+            }
+            Assert("the same wall lays out identically twice", stable, drift);
+
+            // Different walls of one building must NOT be identical, or a
+            // building reads as extruded from a single elevation.
+            var e0 = TrapMadeIt.FacadeLayout.Divide(17.4f, ids[0], 0);
+            var e1 = TrapMadeIt.FacadeLayout.Divide(17.4f, ids[0], 1);
+            bool differ = e0.Count != e1.Count;
+            for (int i = 0; !differ && i < e0.Count; i++)
+                if (Math.Abs(e0[i].Width - e1[i].Width) > 1e-4f) differ = true;
+            Assert("two walls of one building are not the same wall", differ);
+
+            // And two buildings must not share a frontage.
+            var b0 = TrapMadeIt.FacadeLayout.Divide(17.4f, ids[0], 0);
+            var b1 = TrapMadeIt.FacadeLayout.Divide(17.4f, ids[1], 0);
+            bool distinct = b0.Count != b1.Count;
+            for (int i = 0; !distinct && i < b0.Count; i++)
+                if (Math.Abs(b0[i].Width - b1[i].Width) > 1e-4f) distinct = true;
+            Assert("two buildings do not share one frontage", distinct);
+
+            // ---- the entrance lands somewhere a door could be ----
+            bool doorsInside = true, doorsStable = true;
+            int cornerDoors = 0, doorSamples = 0;
+            foreach (var id in ids)
+            {
+                for (int n = 1; n <= 9; n++)
+                {
+                    int bay = TrapMadeIt.FacadeLayout.EntranceBay(n, id);
+                    if (bay < 0 || bay >= n) { doorsInside = false; break; }
+                    if (bay != TrapMadeIt.FacadeLayout.EntranceBay(n, id)) doorsStable = false;
+                    doorSamples++;
+                    if (n >= 3 && (bay == 0 || bay == n - 1)) cornerDoors++;
+                }
+            }
+            Assert("the entrance is always a real bay of the wall", doorsInside);
+            Assert("the entrance does not move between runs", doorsStable);
+            // On a frontage of three or more, a door tucked under the corner
+            // reads as a mistake rather than a building.
+            Assert("the entrance is never in a corner bay", cornerDoors == 0,
+                   $"{cornerDoors} of {doorSamples}");
+
+            // ---- storeys ----
+            Assert("a single-storey shop has no upper windows",
+                TrapMadeIt.FacadeLayout.UpperStoreys(3.4f, 3.2f, 3.2f) == 0);
+            Assert("a four-storey building gets three storeys of upper windows",
+                TrapMadeIt.FacadeLayout.UpperStoreys(12.8f, 3.2f, 3.2f) == 3);
+            Assert("windows never run past the top of the wall",
+                TrapMadeIt.FacadeLayout.UpperStoreys(9.0f, 3.2f, 3.2f) * 3.2f <= 9.0f - 3.2f + 0.01f + 1.6f);
 
             return bad;
         }

@@ -283,7 +283,10 @@ namespace TrapMadeIt.World
                         // Landmarks ride in the manifest and are built once,
                         // permanently. Drawing them here as well double-draws.
                         if (b.lm == 1) continue;
-                        BuildingMeshBuilder.Extrude(b, sink);
+                        // The quality tier decides, not the mesh builder. See
+                        // TrapQuality: bays are the ENHANCED tier and the High
+                        // Street slice is what is in it today.
+                        BuildingMeshBuilder.Extrude(b, sink, TrapQuality.Facades(t));
                     }
                     foreach (var kv in sink.All)
                     {
@@ -402,7 +405,16 @@ namespace TrapMadeIt.World
             float normalScale = 1f;
             float smooth = 0.06f;
 
-            if (parts[0] == "roof")
+            if (parts[0] == "trim")
+            {
+                // One trim material for the whole city. Fascias and pilasters
+                // from every building in a tile merge into it, so an
+                // articulated High Street tile costs ONE extra draw call, not
+                // one per shopfront.
+                tex = CityTextures.Trim();
+                smooth = TrapMaterials.Smoothness("trim");
+            }
+            else if (parts[0] == "roof")
             {
                 tex = CityTextures.Roof(parts[1]);
                 normal = CityTextures.NormalFor(parts[1]);
@@ -412,6 +424,7 @@ namespace TrapMadeIt.World
             {
                 // parts: ground : kind : style
                 tex = CityTextures.Ground(parts[1], parts.Length > 2 ? parts[2] : "brick");
+                smooth = TrapMaterials.Smoothness(parts[1]);
                 // Shop glass catches the sky, which is most of what says "glass".
                 // Ground floors get no relief: a shopfront is mostly glass,
                 // and glass with mortar in it is worse than glass without.

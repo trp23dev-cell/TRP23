@@ -95,7 +95,24 @@ namespace TrapMadeIt.World
             // between the two.
             RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Trilight;
             RenderSettings.ambientSkyColor = m.sky * (m.ambient + 0.35f);
-            RenderSettings.ambientEquatorColor = m.sky * (m.ambient * 0.7f);
+            // 0.7 -> 1.0, and this is the ONE lighting number WORLD-V02
+            // changed.
+            //
+            // Owner screenshots after V01 showed façades in shadow going
+            // almost black. The cause is not the materials: in Trilight
+            // ambient, a vertical surface samples mostly the EQUATOR band, and
+            // at 0.7 that band was landing near 0.012 linear -- so a shadowed
+            // brick wall reflected about 0.002 and no amount of correct albedo
+            // was going to be visible in it.
+            //
+            // Raising the equator term lifts vertical surfaces in shadow and
+            // leaves almost everything else alone: lit walls are dominated by
+            // the sun, and the ground samples the sky and ground terms, both
+            // untouched. That is why it is this number and not exposure, sun
+            // intensity or a material brightness -- those would undo V01's
+            // baseline, which the package brief rules out and which would be
+            // wrong anyway.
+            RenderSettings.ambientEquatorColor = m.sky * (m.ambient * 1.0f);
             // Bounce off the pavement is warmer and darker than the sky.
             RenderSettings.ambientGroundColor = new Color(0.16f, 0.14f, 0.12f) * m.ambient;
 

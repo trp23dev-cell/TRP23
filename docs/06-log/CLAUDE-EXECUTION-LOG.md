@@ -800,3 +800,53 @@ Fixed in all three passes and locked by a new `check:materials` assertion, prove
 ### Next
 
 Nothing until Unity compiles clean and the screenshots exist. Not V02.
+
+---
+
+## Session 20 — 10 August 2026 · WORLD-V02 High Street façade structure
+
+### What the audit found before anything changed
+
+One quad per wall edge, UV tiled by **metres** (`u = len / 6`). So a 17 m wall got 2.83 texture tiles and **the last window was sliced in half at the corner — on almost every building in Lincoln.** Nothing produced a vertical break anywhere, so a 40 m terrace was one uninterrupted plane.
+
+Subdivision belongs to the mesh builder, not the texture: the texture already draws a good window and cannot know how wide the wall is. Nothing was duplicated — `CityTextures` draws exactly what it drew, only the UV mapping moved.
+
+### The change that does most of the work
+
+**`u` now runs 0 → 1 across a bay.** One texture tile per bay, so windows land inside the bay by construction at whatever spacing it is wide, and a corner is always wall rather than half a window. **Zero extra triangles for that part.**
+
+Bays are 3.5–6 m, count derived width-first then pulled into range, widths normalised to sum to the wall exactly rather than dumping the remainder in the last bay — which would make the last bay the odd one on every building in the city and read as a bug.
+
+### Determinism, properly
+
+`TrapHash.Unit` is a C# port of the tiler's `hashUnit`, and the two are **proved to agree** across 62 cases generated from the JS against real High Street ids. Same shared-table discipline as the trap card, which drifted between languages once already.
+
+### Two things found on the way
+
+**Every generated texture was upside down.** The drawing routines use image convention — row 0 at the top, which is what "fascia at 0.06, stallriser at 0.86" means — and `SetPixels32` fills from the bottom up. Nothing reconciled them. So shopfront fascias rendered at pavement level, stallrisers at first-floor level, and **window sills sat on top of their windows**. One flip at the boundary fixes every texture at once; the same flip goes *before* the Sobel in the normal generator, because flipping a finished normal map inverts its green channel and lights every wall from the wrong side — which looks almost right, which is worse.
+
+**Shadowed walls were near-black, and it was one number.** In Trilight ambient a vertical surface samples mostly the equator band, which at `ambient × 0.7` landed near 0.012 linear — a shadowed brick wall reflected about 0.002, and no correct albedo survives that. Raised to `× 1.0`. That is the **only** lighting value V02 touched: lit walls are sun-dominated and the ground samples the other two terms, so it lifts exactly what was failing without disturbing the V01 baseline.
+
+### Cost, measured not guessed
+
+Slice: **15,328 → 71,312 wall triangles (×4.65)**. Whole city if ungated: ×3.93. **+1 material for the entire city** (`trim`) plus one entrance texture per style — about +2 draw calls per articulated tile, not per shopfront. +≈1.4 MB textures.
+
+Pilasters are 23,376 of the +55,984 and are the first thing to drop if the budget ever bites.
+
+Gated to the six slice tiles by `TrapQuality`, which is the audit's ENHANCED tier arriving as code rather than as a plan.
+
+### Verified
+
+`check:world` **40 checks** — including bays covering their wall to 0.000015 m, no slivers, no barn doors, the same wall laying out identically twice, two walls of one building differing, entrances never in a corner bay, and the C#/JS hash agreement. Three guard classes proven by breaking them: exact cover, determinism, and hash parity all fail loudly when sabotaged.
+
+Geometry unchanged: **0/288,726 triangles wound wrong, 0/5,969 approaches breached.** Collision authority untouched — trim stands 0.10 m proud of the footprint and the recess goes inward.
+
+`check:csharp` 0 errors ×3 · `check:assemblies` · `check:materials` · `check:repo` · `check:trap` · `check:api` · `map:verify`.
+
+### Not verified
+
+**Unity has not been run here and nothing has been seen.** Bay arithmetic is proved; whether a Lincoln terrace now reads as a terrace is not. The texture flip in particular changes every façade in the game and has never been looked at.
+
+### Next
+
+Nothing until the screenshots. **V03 is roofs** — eaves, gable ends, chimneys — renumbered because the owner reordered on the V01 evidence.

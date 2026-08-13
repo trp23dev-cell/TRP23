@@ -1,6 +1,6 @@
 # Visual roadmap — Lincoln
 
-**Status:** V01 built (10 Aug). V02–V07 proposed, **not authorised**.
+**Status:** V01 built + owner-verified. **V02 built 10 Aug** (façades, not roofs — see below). V03–V07 proposed, **not authorised**.
 **Evidence:** [LINCOLN-VISUAL-FIDELITY-AUDIT](../01-audit/LINCOLN-VISUAL-FIDELITY-AUDIT.md)
 **Standing constraints:** do not rewrite the world · do not replace the data pipeline · do not rescale Lincoln · do not import asset packs · beautify the slice, not the city.
 
@@ -52,7 +52,15 @@ V06 hero override system  (independent of V02–V05)
 
 ---
 
-## WORLD-V02 · Roof upgrade **[S–M]**
+## WORLD-V02 · High Street façade structure — ✅ **BUILT, 10 Aug** (owner screenshots pending)
+
+**The roadmap's V02 was roofs; the owner authorised façades instead**, on the evidence of the V01 screenshots: the dominant remaining defect was façade structure, not the skyline. Roofs move to V03. Recorded rather than quietly renumbered.
+
+Bay subdivision, per-bay UV, shopfront fascias, pilasters, recessed entrances, aligned upper-storey windows. Gated to the six-tile slice by `TrapQuality`. Full detail: [FACADE-SYSTEM](../03-technical/FACADE-SYSTEM.md).
+
+---
+
+## WORLD-V03 · Roof upgrade **[S–M]** *(was V02)*
 
 **Objective.** A Lincoln skyline: eaves, gable ends, chimneys.
 
@@ -163,7 +171,8 @@ V06 hero override system  (independent of V02–V05)
 | Package | Size | Depends on | Gated by art? |
 |---|---|---|---|
 | **V01 material + lighting** | **XS–S** | — | ✅ **built** |
-| V02 roofs | S–M | V01 | No |
+| **V02 façades** | **L** | V01 | ✅ **built** |
+| V03 roofs *(was V02)* | S–M | V01 | No |
 | V03 street surface | M | V01 | No |
 | V04 façades | **L** | V01 | No |
 | V05 dressing | M | V03 | Partly |

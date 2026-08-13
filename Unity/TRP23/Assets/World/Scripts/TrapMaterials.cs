@@ -160,6 +160,11 @@ namespace TrapMadeIt.World
                 // carriageway read at all, so the gap matters more than either
                 // value on its own.
                 case "kerb":     return new Color(0.643f, 0.631f, 0.596f);
+                // Painted trim: fascias and pilasters. Deliberately close to
+                // the render family and slightly cooler, so it reads as
+                // paintwork against brick without becoming a highlight. A
+                // High Street terrace should not turn into a rainbow.
+                case "trim":     return new Color(0.396f, 0.384f, 0.361f);
                 default:         return new Color(0.500f, 0.490f, 0.470f);
             }
         }
@@ -178,7 +183,14 @@ namespace TrapMadeIt.World
         {
             switch (family)
             {
-                case "shopfront": return 0.55f;   // glass catches the sky
+                // Glass. Higher than V01: what actually reads as glass is a
+                // tight specular on a dark surface, and 0.55 gave a broad soft
+                // sheen that read as polished stone. Still short of a mirror --
+                // real shop glass is dirty, and reflection probes are not in
+                // this package.
+                case "shopfront": return 0.74f;
+                case "entrance":  return 0.60f;
+                case "trim":      return 0.22f;   // painted timber, satin
                 case "modern":    return 0.45f;
                 case "water":     return 0.90f;
                 case "asphalt":   return 0.18f;   // tarmac is not matte

@@ -43,7 +43,7 @@ function centuryOf(startDate) {
 }
 
 /** Deterministic 0..1 from the OSM id, so a building never changes on reload. */
-function hashUnit(id, salt = 0) {
+export function hashUnit(id, salt = 0) {
   let h = 2166136261 ^ salt;
   for (let i = 0; i < id.length; i += 1) {
     h ^= id.charCodeAt(i);
