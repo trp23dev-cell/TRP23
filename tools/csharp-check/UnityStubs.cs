@@ -350,6 +350,18 @@ namespace UnityEngine {
   }
 }
 
+// WHAT THESE STUBS DO NOT CHECK
+//
+// They model the C# language and say NOTHING about Unity's assembly graph. A
+// stub is visible to every file in the csproj regardless of which Unity
+// assembly really provides the type, so "does this type exist" always answers
+// yes -- which is how TrapPostProcess passed here and put real Unity into Safe
+// Mode for want of two asmdef references.
+//
+// `npm run check:assemblies` is what checks that, against the real packages on
+// disk. Adding a stub here is not enough on its own; the assembly that declares
+// the real type has to be referenced too.
+//
 // Enough URP for TrapPostProcess to compile. The real types live in the
 // com.unity.render-pipelines.universal package, which is not on disk here --
 // this checks the SHAPE of the call, which is where the mistakes are (a

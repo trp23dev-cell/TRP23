@@ -754,3 +754,49 @@ Guard proven both ways: re-planting the original `WallColour` fails exactly the 
 ### Next recommended action
 
 **WORLD-V02, roofs** — but only after the screenshots. Judging V02 against an unverified V01 would repeat the mistake V01 exists to fix.
+
+---
+
+## Session 19 — 10 August 2026 · WORLD-V01 repair: Safe Mode
+
+Owner opened Unity. It refused to compile and entered Safe Mode. My fault, and worth being precise about why.
+
+### Root cause
+
+`TrapPostProcess.cs` uses `Volume` and `VolumeProfile` (namespace `UnityEngine.Rendering`, assembly **`Unity.RenderPipelines.Core.Runtime`**) and `Tonemapping` / `TonemappingMode` (namespace `UnityEngine.Rendering.Universal`, assembly **`Unity.RenderPipelines.Universal.Runtime`**). `TRP23.World.asmdef` referenced neither. Both confirmed by reading the real package cache, not from memory.
+
+Two references added. Nothing else. Core stays engine-free, UI still cannot see World, and UI deliberately does **not** get render-pipeline access — the Phone and the HUD have no business reaching into post-processing.
+
+### Why the check missed it, which is the more important half
+
+**`check:csharp` could not have caught this, and no amount of care would have made it.** It compiles Core + World + hand-written stubs into one csproj. Its job is to prove the assembly *boundary*, and it does that well. But a stub is visible to every file in the csproj regardless of which Unity assembly really provides the type, so "does this type exist" always answered yes.
+
+**The gap was not a missing stub. It was that stubs model the C# language and say nothing about Unity's assembly graph.** Adding a more permissive stub would have made it worse.
+
+### The repair
+
+`check:assemblies` indexes the real `.asmdef` files and type declarations in `Library/PackageCache`, then asks whether each of our assemblies references the assembly that actually declares each package type it uses.
+
+**Type-level, not namespace-level**, because the failing case was ambiguous by namespace: `using UnityEngine.Rendering;` is mostly built-in engine code, but `Volume` and `VolumeProfile` are not. A namespace rule would have waved it through.
+
+A first attempt matched bare identifiers and produced **27 failures, every one a coincidence** — `Move`, `Start`, `Add`, `Row`, `Range`, `Base`, `Transform` all exist as some nested type in some package. Resolving through the file's `using` list instead is both correct and quiet.
+
+Two layers, because `Library/` is gitignored: the deep scan where the Unity project exists, and a **portable reference lock** that runs anywhere and fails if a proved reference is removed. Both proven by removing the references and watching each fire.
+
+### A second defect found while checking the rest against the real API
+
+`_BumpScale` was declared in the forward pass's `UnityPerMaterial` CBUFFER **only**. The SRP Batcher compares that layout across passes and drops the whole shader from batching when they differ — **no error, no warning, just a city that costs more to draw.** Exactly the silent performance regression the package brief said not to introduce, and stubs cannot see it either.
+
+Fixed in all three passes and locked by a new `check:materials` assertion, proven both ways.
+
+### Verified
+
+`check:assemblies` (new) · `check:materials` (32 assertions) · `check:csharp` 0 errors ×3 · `check:world` — **geometry still 288,726 triangles / 5,969 approaches, unchanged** · `check:repo` · `check:trap` · `check:api` · `map:verify` all passed.
+
+### Not verified
+
+**Unity still has not been run here.** I can now show the assembly graph is right against the real packages, which is a much stronger claim than before — but it is not the same as the editor compiling. **Real Unity verification remains required**, and no visual assessment of V01 has happened at all.
+
+### Next
+
+Nothing until Unity compiles clean and the screenshots exist. Not V02.

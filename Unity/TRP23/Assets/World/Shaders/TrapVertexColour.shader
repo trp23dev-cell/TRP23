@@ -104,8 +104,10 @@ Shader "TRAP/Vertex Colour"
             }
 
             CBUFFER_START(UnityPerMaterial)
+                // Must match the ShadowCaster and DepthOnly passes EXACTLY --
+                // see the note there.
                 float4 _BaseMap_ST;
-                float _BumpScale;
+                float  _BumpScale;
                 half4  _BaseColor;
                 half   _Smoothness;
                 half   _Metallic;
@@ -186,7 +188,13 @@ Shader "TRAP/Vertex Colour"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Shadows.hlsl"
 
             CBUFFER_START(UnityPerMaterial)
+                // IDENTICAL IN EVERY PASS. The SRP Batcher compares the
+                // UnityPerMaterial layout across passes and quietly drops the
+                // whole shader from batching if they differ -- no error, no
+                // warning, just a city that costs more to draw. _BumpScale was
+                // added to the forward pass alone and had exactly that effect.
                 float4 _BaseMap_ST;
+                float  _BumpScale;
                 half4  _BaseColor;
                 half   _Smoothness;
                 half   _Metallic;
@@ -234,7 +242,13 @@ Shader "TRAP/Vertex Colour"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 
             CBUFFER_START(UnityPerMaterial)
+                // IDENTICAL IN EVERY PASS. The SRP Batcher compares the
+                // UnityPerMaterial layout across passes and quietly drops the
+                // whole shader from batching if they differ -- no error, no
+                // warning, just a city that costs more to draw. _BumpScale was
+                // added to the forward pass alone and had exactly that effect.
                 float4 _BaseMap_ST;
+                float  _BumpScale;
                 half4  _BaseColor;
                 half   _Smoothness;
                 half   _Metallic;

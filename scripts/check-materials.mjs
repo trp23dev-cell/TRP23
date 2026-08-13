@@ -201,6 +201,31 @@ const GRADE = ["Bloom", "Vignette", "ChromaticAberration", "FilmGrain", "ColorAd
 ok("the baseline is not graded", !added.some((a) => GRADE.includes(a)),
    "V01 must stay truthful — grading is a later, deliberate package");
 
+// ------------------------------------------------------------ 5. the shader
+//
+// The SRP Batcher compares the UnityPerMaterial layout across a shader's
+// passes and drops the whole shader from batching if they differ. There is no
+// error and no warning -- just a city that costs more to draw. Adding
+// _BumpScale to the forward pass alone did exactly that, and nothing in the
+// repository would have said so.
+
+const shader = readFileSync(
+  path.join(ROOT, "Unity/TRP23/Assets/World/Shaders/TrapVertexColour.shader"), "utf8");
+
+const cbuffers = [...shader.matchAll(/CBUFFER_START\(UnityPerMaterial\)([\s\S]*?)CBUFFER_END/g)]
+  .map((m) => m[1]
+    .replace(/\/\/[^\n]*/g, "")          // comments differ between passes on purpose
+    .split(";")
+    .map((l) => l.trim().replace(/\s+/g, " "))
+    .filter(Boolean)
+    .join("; "));
+
+ok("the shader declares UnityPerMaterial in every pass", cbuffers.length >= 3,
+   `${cbuffers.length} found — forward, shadow and depth are all required`);
+ok("every pass declares the SAME UnityPerMaterial layout",
+   cbuffers.length > 0 && cbuffers.every((c) => c === cbuffers[0]),
+   cbuffers.length > 1 ? `pass 1: ${cbuffers[0]} | differs from: ${cbuffers.find((c) => c !== cbuffers[0]) || "—"}` : "");
+
 process.stdout.write(bad === 0
   ? "\nall material checks passed\n"
   : `\n${bad} material check(s) failed\n`);

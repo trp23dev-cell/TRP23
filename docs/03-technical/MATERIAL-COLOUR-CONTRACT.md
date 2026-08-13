@@ -68,6 +68,7 @@ So `TrapMaterials.Variation` divides each tint by its style's mean and clamps to
 2. **Plausible albedo** — every family lands in a real-world linear reflectance range, brick and limestone separate by value, and **brick is brighter than the road it stands on** — the regression, named.
 3. **Tint means match the shipped data**, within 0.01.
 4. **The post-process baseline stays restrained** — Neutral tonemapping, `overrideState` set, and nothing else added.
+5. **Every shader pass declares the same `UnityPerMaterial` layout.** The SRP Batcher compares them across passes and silently drops the shader from batching if they differ — no error, no warning, just a city that costs more to draw. `_BumpScale` was added to the forward pass alone and did exactly that.
 
 **Proven in both directions.** Re-planting the original `WallColour` fails checks 1 and 2; removing it passes all of them.
 
